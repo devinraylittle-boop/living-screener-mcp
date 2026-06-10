@@ -30,11 +30,15 @@ class DebugValidationService:
                 "ops_command_center": "command_center_v1",
                 "manual_preflight_ticket": "manual_preflight_v1",
                 "paper_option_ledger": "paper_option_ledger_v1",
+                "morning_autopilot": "morning_autopilot_v1",
+                "live_review_cycle": "live_review_cycle_v1",
             },
             "debug_routes": [
                 "/health/full",
                 "/debug/tool-manifest",
                 "/debug/scan-schema",
+                "/ops/morning-autopilot",
+                "/ops/live-review-cycle",
                 "/paper/options/summary",
             ],
             "readiness": {
@@ -51,6 +55,8 @@ class DebugValidationService:
                 "session_playbook_route": True,
                 "harvest_followup_route": True,
                 "ops_command_center_route": True,
+                "morning_autopilot_route": True,
+                "live_review_cycle_route": True,
                 "manual_preflight_route": True,
                 "paper_option_ledger_routes": True,
             },
@@ -222,6 +228,8 @@ class DebugValidationService:
             "session_playbook_schema_preview": self._session_playbook_schema_preview(),
             "harvest_followup_schema_preview": self._harvest_followup_schema_preview(),
             "ops_command_center_schema_preview": self._ops_command_center_schema_preview(),
+            "morning_autopilot_schema_preview": self._morning_autopilot_schema_preview(),
+            "live_review_cycle_schema_preview": self._live_review_cycle_schema_preview(),
             "manual_preflight_schema_preview": self._manual_preflight_schema_preview(),
             "paper_option_ledger_schema_preview": self._paper_option_ledger_schema_preview(),
             "safety": self._safety(),
@@ -378,6 +386,60 @@ class DebugValidationService:
             "notes": "Static command-center schema preview only. It reads loop state and does not run scans.",
         }
 
+    def _morning_autopilot_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "AUTOPILOT_READY_FOR_HARVEST",
+            "schema_version": "morning_autopilot_v1",
+            "readiness": {
+                "status": "MARKET_REVIEW_READY",
+                "candidate_count": 3,
+                "valid_row_count": 20,
+                "quote_problem_count": 0,
+            },
+            "paper_ledger": {
+                "status": "PAPER_LEDGER_READY",
+                "entry_count": 2,
+                "open_count": 0,
+                "closed_count": 2,
+                "total_pnl_dollars": 4.0,
+            },
+            "next_action": "Run review harvest, then options-review only valid directional stock candidates.",
+            "action_links": {
+                "market_readiness": "/ops/market-readiness",
+                "review_harvest": "/ops/review-harvest",
+                "paper_ledger": "/paper/options/summary",
+            },
+            "notes": "Static autopilot schema preview only. The live tool summarizes readiness and the review loop but cannot execute broker actions.",
+        }
+
+    def _live_review_cycle_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "LIVE_CYCLE_CANDIDATES_READY",
+            "schema_version": "live_review_cycle_v1",
+            "readiness": {
+                "status": "MARKET_REVIEW_READY",
+                "valid_row_count": 20,
+                "quote_problem_count": 0,
+            },
+            "harvest": {
+                "status": "REVIEW_HARVEST_READY",
+                "reviewed_count": 8,
+                "eligible_count": 2,
+                "watch_only_count": 6,
+            },
+            "ranked_candidates": [
+                {
+                    "ticker": "EXAMPLE",
+                    "status": "REVIEW_ONLY_OPTIONS_READY",
+                    "small_account_review": {"status": "SMALL_ACCOUNT_SCALP_ACCEPTABLE", "priority_score": 86},
+                    "selected_contract": {"contract_symbol": "EXAMPLE260612P00100000", "ask": 0.42, "max_loss_dollars": 42.0},
+                }
+            ],
+            "next_action": "Manually inspect the top candidate in broker, then run manual preflight with broker-visible bid/ask/volume/OI.",
+            "manual_preflight_required": True,
+            "notes": "Static live-cycle schema preview only. The live tool can run readiness and harvest but cannot execute broker actions.",
+        }
+
     def _manual_preflight_schema_preview(self) -> dict[str, Any]:
         return {
             "status": "MANUAL_PREFLIGHT_READY",
@@ -442,6 +504,8 @@ class DebugValidationService:
             "get_market_session_playbook",
             "run_latest_harvest_followup",
             "get_ops_command_center",
+            "run_morning_readiness_autopilot",
+            "run_live_review_cycle",
             "build_manual_trade_preflight_ticket",
             "log_manual_option_paper_entry",
             "close_manual_option_paper_trade",
@@ -460,7 +524,7 @@ class DebugValidationService:
         return {name: name in available for name in required}
 
     def _category(self, name: str) -> str:
-        if "harvest" in name or "readiness" in name or "playbook" in name or "command_center" in name or "preflight" in name or "paper" in name:
+        if "harvest" in name or "readiness" in name or "playbook" in name or "command_center" in name or "autopilot" in name or "cycle" in name or "preflight" in name or "paper" in name:
             return "market_operations"
         if "evidence" in name or "blueprint" in name or "feature" in name or "scoring" in name:
             return "research_validation"
@@ -487,6 +551,10 @@ class DebugValidationService:
             return "Review-only market session operating checklist."
         if "command_center" in name:
             return "Review-only command center summary; reads logs and suggests the next safe action."
+        if "autopilot" in name:
+            return "Review-only morning readiness summary; checks data readiness, ledger state, and next safe action."
+        if "cycle" in name:
+            return "Review-only live market cycle; runs readiness and harvest gates without broker action."
         if "preflight" in name:
             return "Review-only broker snapshot, risk, and manual ticket preflight."
         if "paper" in name:

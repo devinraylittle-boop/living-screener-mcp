@@ -96,6 +96,23 @@ def get_ops_command_center(tickers: list[str] | None = None, account_value: floa
 
 
 @mcp.tool
+def run_morning_readiness_autopilot(tickers: list[str] | None = None, account_value: float = 50.0, max_candidates: int = 25) -> dict:
+    return _run_morning_readiness_autopilot(container, tickers, account_value, max_candidates)
+
+
+@mcp.tool
+def run_live_review_cycle(
+    tickers: list[str] | None = None,
+    account_value: float = 50.0,
+    max_candidates: int = 25,
+    review_top_n: int = 8,
+    max_contract_price: float | None = None,
+    include_followup: bool = False,
+) -> dict:
+    return _run_live_review_cycle(container, tickers, account_value, max_candidates, review_top_n, max_contract_price, include_followup)
+
+
+@mcp.tool
 def analyze_ticker(ticker: str, mode: str | None = None) -> dict:
     return container.scanner.analyze_ticker(ticker, mode)
 
@@ -540,6 +557,187 @@ def _get_ops_command_center(service_container, tickers: list[str] | None, accoun
     return service_container.events.log("ops_command_center", payload)
 
 
+def _run_morning_readiness_autopilot(service_container, tickers: list[str] | None, account_value: float, max_candidates: int) -> dict:
+    max_candidates = max(1, min(int(max_candidates or 25), 50))
+    universe = [str(ticker).upper().strip() for ticker in (tickers or service_container.settings.default_tickers) if str(ticker).strip()]
+    readiness = _market_readiness_check(service_container, universe, max_candidates)
+    playbook = _get_market_session_playbook(service_container, universe, account_value)
+    command_center = _get_ops_command_center(service_container, universe, account_value)
+    paper_ledger = _summarize_manual_option_paper_trades(service_container, 100)
+    readiness_status = readiness.get("status")
+    command_status = command_center.get("status")
+    if readiness_status == "MARKET_DATA_BLOCKED":
+        status = "AUTOPILOT_DATA_BLOCKED"
+        next_action = "Wait for cleaner data or fix quote/candle provider before reviewing options."
+    elif readiness_status == "MARKET_REVIEW_READY":
+        status = "AUTOPILOT_READY_FOR_HARVEST"
+        next_action = "Run review harvest, then options-review only valid directional stock candidates."
+    elif readiness_status == "MARKET_DATA_READY_NO_CANDIDATES":
+        status = "AUTOPILOT_KEEP_SCANNING"
+        next_action = "Keep readiness/harvest cadence; do not force a setup without stock candidates."
+    elif command_status == "HARVEST_READY_NEEDS_FOLLOWUP":
+        status = "AUTOPILOT_NEEDS_FOLLOWUP"
+        next_action = "Run harvest follow-up before trusting stale candidate context."
+    else:
+        status = "AUTOPILOT_STANDBY"
+        next_action = "Confirm build/safety and rerun readiness near the next market window."
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "mode": "morning_readiness_autopilot",
+        "generated_at": utc_now(),
+        "universe": universe,
+        "account_value_reference": account_value,
+        "safety": {
+            "review_only": True,
+            "place_orders": False,
+            "market_orders_allowed": False,
+            "manual_approval_required": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        },
+        "readiness": _compact_autopilot_result(readiness),
+        "command_center": _compact_autopilot_result(command_center),
+        "paper_ledger": {
+            "status": paper_ledger.get("status"),
+            "entry_count": paper_ledger.get("entry_count"),
+            "open_count": paper_ledger.get("open_count"),
+            "closed_count": paper_ledger.get("closed_count"),
+            "win_rate": paper_ledger.get("win_rate"),
+            "total_pnl_dollars": paper_ledger.get("total_pnl_dollars"),
+        },
+        "session_blocks": playbook.get("session_blocks") or [],
+        "manual_trade_gate": playbook.get("manual_trade_gate") or [],
+        "next_action": next_action,
+        "action_links": {
+            "command_center": f"/ops/command-center?tickers={','.join(universe)}&account_value={_float_or_zero(account_value) or 50.0}",
+            "market_readiness": f"/ops/market-readiness?tickers={','.join(universe)}&max_candidates={max_candidates}",
+            "review_harvest": f"/ops/review-harvest?tickers={','.join(universe)}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}",
+            "harvest_followup": "/ops/harvest-followup?limit=5&classify=true",
+            "paper_ledger": "/paper/options/summary",
+            "debug_health": f"/health/full?expected_build_version={BUILD_VERSION}",
+            "debug_schema": f"/debug/scan-schema?expected_build_version={BUILD_VERSION}",
+        },
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "notes": [
+            "Autopilot runs readiness and summarizes the operating loop; it does not place, submit, simulate, modify, or cancel broker orders.",
+            "Only rank candidates after stock setup and SMALL_ACCOUNT_SCALP_ACCEPTABLE both pass.",
+            "Use the paper ledger to record manual/paper outcomes so the mistake engine can learn after the fact.",
+        ],
+    }
+    return service_container.events.log("morning_readiness_autopilot", payload)
+
+
+def _run_live_review_cycle(
+    service_container,
+    tickers: list[str] | None,
+    account_value: float,
+    max_candidates: int,
+    review_top_n: int,
+    max_contract_price: float | None,
+    include_followup: bool,
+) -> dict:
+    max_candidates = max(1, min(int(max_candidates or 25), 50))
+    review_top_n = max(1, min(int(review_top_n or 8), 20))
+    universe = [str(ticker).upper().strip() for ticker in (tickers or service_container.settings.default_tickers) if str(ticker).strip()]
+    effective_contract_cap = max_contract_price
+    if effective_contract_cap is None:
+        effective_contract_cap = service_container.settings.scalp_max_contract_price
+    readiness = _market_readiness_check(service_container, universe, max_candidates)
+    harvest: dict[str, Any] | None = None
+    followup: dict[str, Any] | None = None
+    if readiness.get("status") not in {"MARKET_DATA_BLOCKED", "MARKET_READINESS_UNKNOWN"}:
+        harvest = _run_review_harvest(
+            service_container,
+            universe,
+            "scalp_review",
+            max_candidates,
+            review_top_n,
+            effective_contract_cap,
+        )
+        if include_followup:
+            followup = _run_latest_harvest_followup(service_container, 5, True)
+
+    paper_ledger = _summarize_manual_option_paper_trades(service_container, 100)
+    ranked_candidates = (harvest or {}).get("ranked_candidates") or []
+    if readiness.get("status") == "MARKET_DATA_BLOCKED":
+        status = "LIVE_CYCLE_DATA_BLOCKED"
+        next_action = "Do not review options; wait for clean quote/candle data."
+    elif not harvest:
+        status = "LIVE_CYCLE_STANDBY"
+        next_action = "Rerun readiness near the next market window."
+    elif ranked_candidates:
+        status = "LIVE_CYCLE_CANDIDATES_READY"
+        next_action = "Manually inspect the top candidate in broker, then run manual preflight with broker-visible bid/ask/volume/OI."
+    else:
+        status = "NO_TRADE_PLAN"
+        next_action = "No candidate passed both stock setup and small-account options gates. Keep scanning; do not force a trade."
+
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "mode": "live_review_cycle",
+        "generated_at": utc_now(),
+        "universe": universe,
+        "account_value_reference": account_value,
+        "max_candidates": max_candidates,
+        "review_top_n": review_top_n,
+        "max_contract_price_used": effective_contract_cap,
+        "readiness": _compact_autopilot_result(readiness),
+        "harvest": _compact_harvest_for_cycle(harvest),
+        "ranked_candidates": ranked_candidates,
+        "watch_only_reviews": (harvest or {}).get("watch_only") or [],
+        "skipped_candidates": (harvest or {}).get("skipped") or [],
+        "paper_ledger": {
+            "status": paper_ledger.get("status"),
+            "entry_count": paper_ledger.get("entry_count"),
+            "open_count": paper_ledger.get("open_count"),
+            "closed_count": paper_ledger.get("closed_count"),
+            "win_rate": paper_ledger.get("win_rate"),
+            "total_pnl_dollars": paper_ledger.get("total_pnl_dollars"),
+        },
+        "followup": _compact_autopilot_result(followup),
+        "next_action": next_action,
+        "manual_preflight_required": bool(ranked_candidates),
+        "manual_trade_gate": [
+            "Live review cycle status is LIVE_CYCLE_CANDIDATES_READY.",
+            "Candidate status is REVIEW_ONLY_OPTIONS_READY.",
+            "Small-account gate is SMALL_ACCOUNT_SCALP_ACCEPTABLE.",
+            "Broker-visible contract snapshot still matches or improves the reviewed contract.",
+            "Manual preflight returns MANUAL_PREFLIGHT_READY.",
+            "No market order; any broker action is manual and outside this MCP.",
+            "If a buy sits pending for more than 60 seconds, re-review it before trusting it.",
+        ],
+        "action_links": {
+            "morning_autopilot": f"/ops/morning-autopilot?tickers={','.join(universe)}&account_value={_float_or_zero(account_value) or 50.0}&max_candidates={max_candidates}",
+            "live_review_cycle": f"/ops/live-review-cycle?tickers={','.join(universe)}&account_value={_float_or_zero(account_value) or 50.0}&max_candidates={max_candidates}&review_top_n={review_top_n}&max_contract_price={effective_contract_cap}",
+            "review_harvest": f"/ops/review-harvest?tickers={','.join(universe)}&max_candidates={max_candidates}&review_top_n={review_top_n}&max_contract_price={effective_contract_cap}",
+            "manual_preflight": "/review/manual-preflight",
+            "paper_ledger": "/paper/options/summary",
+            "harvest_followup": "/ops/harvest-followup?limit=5&classify=true",
+        },
+        "safety": {
+            "review_only": True,
+            "place_orders": False,
+            "market_orders_allowed": False,
+            "manual_approval_required": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        },
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "notes": [
+            "This cycle can run market data review and options review, but cannot create broker action.",
+            "NO_TRADE_PLAN is the expected result whenever stock setup, options quality, small-account friction, or data quality is not strong enough.",
+            "Use paper ledger entry/close to learn from manual or hypothetical choices after the fact.",
+        ],
+    }
+    return service_container.events.log("live_review_cycle", payload)
+
+
 def _build_manual_trade_preflight_ticket(service_container, snapshot: dict[str, Any], account_value: float, max_contract_price: float | None, notes: str = "") -> dict:
     account_value = _float_or_zero(account_value) or 50.0
     effective_max_contract_price = max_contract_price
@@ -848,6 +1046,42 @@ def _compact_event(event: dict[str, Any] | None) -> dict[str, Any] | None:
         "checks_completed": event.get("checks_completed"),
         "sample_size": event.get("sample_size"),
         "next_step": event.get("next_step"),
+    }
+
+
+def _compact_autopilot_result(result: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not result:
+        return None
+    return {
+        "id": result.get("id"),
+        "timestamp": result.get("timestamp"),
+        "status": result.get("status"),
+        "mode": result.get("mode"),
+        "data_status": result.get("data_status"),
+        "candidate_count": result.get("candidate_count"),
+        "eligible_count": result.get("eligible_count"),
+        "reviewed_count": result.get("reviewed_count"),
+        "valid_row_count": result.get("valid_row_count"),
+        "quote_problem_count": result.get("quote_problem_count"),
+        "next_step": result.get("next_step"),
+        "next_action": result.get("next_action"),
+    }
+
+
+def _compact_harvest_for_cycle(harvest: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not harvest:
+        return None
+    return {
+        "id": harvest.get("id"),
+        "timestamp": harvest.get("timestamp"),
+        "status": harvest.get("status"),
+        "mode": harvest.get("mode"),
+        "reviewed_count": harvest.get("reviewed_count"),
+        "eligible_count": harvest.get("eligible_count"),
+        "watch_only_count": harvest.get("watch_only_count"),
+        "skipped_count": len(harvest.get("skipped") or []),
+        "scan_summary": harvest.get("scan_summary"),
+        "next_step": harvest.get("next_step"),
     }
 
 

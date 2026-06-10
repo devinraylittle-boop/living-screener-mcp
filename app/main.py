@@ -20,11 +20,13 @@ from app.fallback_endpoints import (
     fallback_learning_dashboard,
     fallback_learning_proposals,
     fallback_setup_memory,
+    fallback_live_review_cycle,
     fallback_log_review_decision,
     fallback_manual_preflight,
     fallback_market_scan,
     fallback_market_readiness,
     fallback_health_full,
+    fallback_morning_autopilot,
     fallback_offhours_plan,
     fallback_options_review,
     fallback_paper_option_close,
@@ -62,6 +64,8 @@ def create_app():
     app.add_route("/ops/session-playbook", fallback_session_playbook, methods=["GET"])
     app.add_route("/ops/harvest-followup", fallback_harvest_followup, methods=["GET"])
     app.add_route("/ops/command-center", fallback_command_center, methods=["GET"])
+    app.add_route("/ops/morning-autopilot", fallback_morning_autopilot, methods=["GET"])
+    app.add_route("/ops/live-review-cycle", fallback_live_review_cycle, methods=["GET"])
     app.add_route("/review/options", fallback_options_review, methods=["GET"])
     app.add_route("/review/manual-preflight", fallback_manual_preflight, methods=["GET", "POST"])
     app.add_route("/review/broker-option-snapshot", fallback_validate_broker_snapshot, methods=["POST"])

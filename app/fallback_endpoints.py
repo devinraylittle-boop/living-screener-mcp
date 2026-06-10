@@ -16,6 +16,8 @@ from app.mcp_server import (
     _log_manual_option_paper_entry,
     _market_readiness_check,
     _review_candidate_for_options,
+    _run_live_review_cycle,
+    _run_morning_readiness_autopilot,
     _run_latest_harvest_followup,
     _run_review_harvest,
     _summarize_manual_option_paper_trades,
@@ -714,6 +716,171 @@ def _command_center_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Ops Command Center", body, payload)
 
 
+def _morning_autopilot_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    readiness = result.get("readiness") or {}
+    ledger = result.get("paper_ledger") or {}
+    action_links = result.get("action_links") or {}
+    link_rows = []
+    for label, url in action_links.items():
+        link_rows.append(
+            "<tr>"
+            f"<td>{escape(str(label).replace('_', ' ').title())}</td>"
+            f"<td><a href=\"{escape(str(url))}\">{escape(str(url))}</a></td>"
+            "</tr>"
+        )
+    session_rows = []
+    for block in result.get("session_blocks") or []:
+        session_rows.append(
+            "<tr>"
+            f"<td>{escape(str(block.get('central_time') or ''))}</td>"
+            f"<td>{escape(str(block.get('label') or ''))}</td>"
+            f"<td>{escape(str(block.get('intent') or ''))}</td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Morning Readiness Autopilot</h1>
+    <p>Build/safety, data readiness, paper ledger, and next action for the live review loop.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Next Action", result.get("next_action")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+    ("Can Cancel Orders", payload.get("can_cancel_order_from_this_mcp")),
+])}
+<h2>Readiness</h2>
+{_field_grid([
+    ("Readiness Status", readiness.get("status")),
+    ("Data Status", readiness.get("data_status")),
+    ("Candidates", readiness.get("candidate_count")),
+    ("Valid Rows", readiness.get("valid_row_count")),
+    ("Quote Problems", readiness.get("quote_problem_count")),
+])}
+<h2>Paper Ledger</h2>
+{_field_grid([
+    ("Ledger Status", ledger.get("status")),
+    ("Entries", ledger.get("entry_count")),
+    ("Open", ledger.get("open_count")),
+    ("Closed", ledger.get("closed_count")),
+    ("Win Rate", ledger.get("win_rate")),
+    ("Total P/L", ledger.get("total_pnl_dollars")),
+])}
+<h2>Action Links</h2>
+<table>
+  <thead><tr><th>Action</th><th>Link</th></tr></thead>
+  <tbody>{''.join(link_rows)}</tbody>
+</table>
+<h2>Session Blocks</h2>
+<table>
+  <thead><tr><th>Central Time</th><th>Block</th><th>Intent</th></tr></thead>
+  <tbody>{''.join(session_rows) if session_rows else '<tr><td colspan="3">No session blocks available.</td></tr>'}</tbody>
+</table>
+<h2>Manual Trade Gate</h2>
+{_list(result.get("manual_trade_gate") or [])}
+"""
+    return _html_page("Morning Readiness Autopilot", body, payload)
+
+
+def _live_review_cycle_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    readiness = result.get("readiness") or {}
+    harvest = result.get("harvest") or {}
+    ledger = result.get("paper_ledger") or {}
+    candidate_rows = []
+    for item in result.get("ranked_candidates") or []:
+        selected = item.get("selected_contract") or {}
+        small = item.get("small_account_review") or {}
+        stock = item.get("stock_setup") or {}
+        candidate_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('ticker') or stock.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('direction') or stock.get('direction') or ''))}</td>"
+            f"<td>{escape(str((stock.get('score') if isinstance(stock, dict) else '') or ''))}</td>"
+            f"<td>{escape(str(small.get('priority_score') or ''))}</td>"
+            f"<td>{escape(str(selected.get('contract_symbol') or ''))}</td>"
+            f"<td>{escape(str(selected.get('ask') or ''))}</td>"
+            f"<td>{escape(str(selected.get('max_loss_dollars') or ''))}</td>"
+            f"<td>{escape(str(item.get('status') or ''))}</td>"
+            "</tr>"
+        )
+    watch_rows = []
+    for item in result.get("watch_only_reviews") or []:
+        watch_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('status') or ''))}</td>"
+            f"<td>{escape(str(item.get('reason') or ''))}</td>"
+            "</tr>"
+        )
+    action_rows = []
+    for label, url in (result.get("action_links") or {}).items():
+        action_rows.append(
+            "<tr>"
+            f"<td>{escape(str(label).replace('_', ' ').title())}</td>"
+            f"<td><a href=\"{escape(str(url))}\">{escape(str(url))}</a></td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Live Review Cycle</h1>
+    <p>Market-hours scan, options review harvest, paper ledger state, and next manual action.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Next Action", result.get("next_action")),
+    ("Manual Preflight Required", result.get("manual_preflight_required")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Readiness And Harvest</h2>
+{_field_grid([
+    ("Readiness", readiness.get("status")),
+    ("Data Status", readiness.get("data_status")),
+    ("Valid Rows", readiness.get("valid_row_count")),
+    ("Quote Problems", readiness.get("quote_problem_count")),
+    ("Harvest", harvest.get("status")),
+    ("Reviewed", harvest.get("reviewed_count")),
+    ("Eligible", harvest.get("eligible_count")),
+    ("Watch Only", harvest.get("watch_only_count")),
+])}
+<h2>Ranked Candidates</h2>
+<table>
+  <thead><tr><th>Ticker</th><th>Direction</th><th>Stock Score</th><th>Priority</th><th>Contract</th><th>Ask</th><th>Max Loss</th><th>Status</th></tr></thead>
+  <tbody>{''.join(candidate_rows) if candidate_rows else '<tr><td colspan="8">No candidate cleared both stock and small-account options gates.</td></tr>'}</tbody>
+</table>
+<h2>Watch Only Reviews</h2>
+<table>
+  <thead><tr><th>Ticker</th><th>Status</th><th>Reason</th></tr></thead>
+  <tbody>{''.join(watch_rows) if watch_rows else '<tr><td colspan="3">No watch-only reviews in this cycle.</td></tr>'}</tbody>
+</table>
+<h2>Paper Ledger</h2>
+{_field_grid([
+    ("Ledger", ledger.get("status")),
+    ("Entries", ledger.get("entry_count")),
+    ("Open", ledger.get("open_count")),
+    ("Closed", ledger.get("closed_count")),
+    ("Win Rate", ledger.get("win_rate")),
+    ("Total P/L", ledger.get("total_pnl_dollars")),
+])}
+<h2>Manual Trade Gate</h2>
+{_list(result.get("manual_trade_gate") or [])}
+<h2>Action Links</h2>
+<table>
+  <thead><tr><th>Action</th><th>Link</th></tr></thead>
+  <tbody>{''.join(action_rows)}</tbody>
+</table>
+"""
+    return _html_page("Live Review Cycle", body, payload)
+
+
 def _manual_preflight_html(payload: dict[str, Any]) -> HTMLResponse:
     result = payload.get("result") or {}
     ticket = result.get("manual_ticket") or {}
@@ -1002,6 +1169,38 @@ async def fallback_command_center(request: Request) -> JSONResponse | HTMLRespon
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _command_center_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_morning_autopilot(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _run_morning_readiness_autopilot(
+        container,
+        _tickers(params.get("tickers")),
+        _float_or_none(params.get("account_value")) or 50.0,
+        _int_or_default(params.get("max_candidates"), 25),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _morning_autopilot_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_live_review_cycle(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    include_followup = (params.get("include_followup") or "false").strip().lower() in {"1", "true", "yes"}
+    result = _run_live_review_cycle(
+        container,
+        _tickers(params.get("tickers")),
+        _float_or_none(params.get("account_value")) or 50.0,
+        _int_or_default(params.get("max_candidates"), 25),
+        _int_or_default(params.get("review_top_n"), 8),
+        _float_or_none(params.get("max_contract_price")),
+        include_followup,
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _live_review_cycle_html(payload)
     return JSONResponse(payload)
 
 
