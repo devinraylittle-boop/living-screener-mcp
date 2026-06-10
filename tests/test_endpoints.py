@@ -36,6 +36,7 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("run_morning_readiness_autopilot", tools.json()["tools"])
         self.assertIn("run_live_review_cycle", tools.json()["tools"])
         self.assertIn("run_market_open_observer", tools.json()["tools"])
+        self.assertIn("run_observer_followup", tools.json()["tools"])
         self.assertIn("review_candidate_for_options", tools.json()["tools"])
         self.assertIn("validate_broker_option_snapshot", tools.json()["tools"])
         self.assertIn("build_manual_trade_preflight_ticket", tools.json()["tools"])
@@ -423,7 +424,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_trade_desk_endpoint_can_render_human_readable_html(self) -> None:
         fake_trade_desk = {
             "status": "MANUAL_TRADE_DESK_READY",
-            "build_version": "2026.06.10-market-open-observer",
+            "build_version": "2026.06.10-observer-followup",
             "ticker": "SOFI",
             "direction": "put",
             "contract_symbol": "SOFI260612P00015000",
@@ -485,7 +486,7 @@ class EndpointTests(unittest.TestCase):
     def test_market_open_observer_endpoint_logs_evidence_without_broker_action(self) -> None:
         fake_observer = {
             "status": "OBSERVER_STOCK_CANDIDATES",
-            "build_version": "2026.06.10-market-open-observer",
+            "build_version": "2026.06.10-observer-followup",
             "mode": "market_open_observer",
             "cadence_minutes": 5,
             "candidate_count": 1,
@@ -536,6 +537,57 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("Evidence Quality", html.text)
         self.assertEqual(json_response.status_code, 200)
         self.assertEqual(json_response.json()["result"]["status"], "OBSERVER_STOCK_CANDIDATES")
+        self.assertFalse(json_response.json()["can_place_order_from_this_mcp"])
+
+    def test_observer_followup_endpoint_can_render_missed_move_learning(self) -> None:
+        fake_followup = {
+            "status": "OBSERVER_FOLLOWUP_LEARNING_NEEDED",
+            "build_version": "2026.06.10-observer-followup",
+            "mode": "observer_followup",
+            "source_observation_count": 2,
+            "items_checked": 3,
+            "missed_move_count": 1,
+            "good_pass_count": 1,
+            "outcome_unavailable_count": 0,
+            "outcomes": [
+                {
+                    "ticker": "SOFI",
+                    "source_bucket": "pass",
+                    "direction": "short",
+                    "current_return_pct": 0.004,
+                    "max_favorable_excursion": 0.007,
+                    "max_adverse_excursion": -0.001,
+                    "verdict": "HELPED",
+                }
+            ],
+            "classifications": [
+                {
+                    "ticker": "SOFI",
+                    "classification": "MISSED_MOVE",
+                    "direction": "short",
+                    "lesson_tags": ["low_relative_volume"],
+                    "reason": "The pass/reject item later had enough favorable excursion to study.",
+                }
+            ],
+            "next_action": "Review missed-move labels and rule proposals before changing any active gate.",
+            "action_links": {"learning_dashboard": "/learning/dashboard", "journal_checkpoint": "/journal/checkpoint?limit=500&format=json"},
+            "notes": ["Observer follow-up grades previously observed candidates and pass rows."],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+            "broker_action": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints._run_observer_followup", return_value=fake_followup):
+            html = client.get("/ops/observer-followup?limit_observations=2&max_items=10", headers={"accept": "text/html"})
+            json_response = client.get("/ops/observer-followup?limit_observations=2&max_items=10")
+
+        self.assertEqual(html.status_code, 200)
+        self.assertIn("Observer Follow-Up", html.text)
+        self.assertIn("MISSED_MOVE", html.text)
+        self.assertIn("SOFI", html.text)
+        self.assertEqual(json_response.status_code, 200)
+        self.assertEqual(json_response.json()["result"]["status"], "OBSERVER_FOLLOWUP_LEARNING_NEEDED")
         self.assertFalse(json_response.json()["can_place_order_from_this_mcp"])
 
     def test_offhours_and_crypto_fallbacks_are_review_only(self) -> None:
@@ -654,10 +706,10 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.10-market-open-observer")
+        full = client.get("/health/full?expected_build_version=2026.06.10-observer-followup")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-market-open-observer")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-observer-followup")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -674,6 +726,7 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_morning_readiness_autopilot"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_live_review_cycle"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_market_open_observer"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["run_observer_followup"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["build_manual_trade_preflight_ticket"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["build_manual_trade_desk"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["log_manual_option_paper_entry"])
@@ -706,6 +759,8 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(live_cycle_preview["status"], "LIVE_CYCLE_CANDIDATES_READY")
         observer_preview = schema.json()["result"]["market_open_observer_schema_preview"]
         self.assertEqual(observer_preview["status"], "OBSERVER_STOCK_CANDIDATES")
+        observer_followup_preview = schema.json()["result"]["observer_followup_schema_preview"]
+        self.assertEqual(observer_followup_preview["status"], "OBSERVER_FOLLOWUP_COMPLETE")
         preflight_preview = schema.json()["result"]["manual_preflight_schema_preview"]
         self.assertEqual(preflight_preview["status"], "MANUAL_PREFLIGHT_READY")
         desk_preview = schema.json()["result"]["manual_trade_desk_schema_preview"]
