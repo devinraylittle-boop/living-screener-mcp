@@ -35,6 +35,7 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("get_ops_command_center", tools.json()["tools"])
         self.assertIn("run_morning_readiness_autopilot", tools.json()["tools"])
         self.assertIn("run_live_review_cycle", tools.json()["tools"])
+        self.assertIn("run_market_open_observer", tools.json()["tools"])
         self.assertIn("review_candidate_for_options", tools.json()["tools"])
         self.assertIn("validate_broker_option_snapshot", tools.json()["tools"])
         self.assertIn("build_manual_trade_preflight_ticket", tools.json()["tools"])
@@ -422,7 +423,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_trade_desk_endpoint_can_render_human_readable_html(self) -> None:
         fake_trade_desk = {
             "status": "MANUAL_TRADE_DESK_READY",
-            "build_version": "2026.06.10-manual-trade-desk",
+            "build_version": "2026.06.10-market-open-observer",
             "ticker": "SOFI",
             "direction": "put",
             "contract_symbol": "SOFI260612P00015000",
@@ -479,6 +480,62 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("/journal/checkpoint", html.text)
         self.assertEqual(json_response.status_code, 200)
         self.assertEqual(json_response.json()["result"]["status"], "MANUAL_TRADE_DESK_READY")
+        self.assertFalse(json_response.json()["can_place_order_from_this_mcp"])
+
+    def test_market_open_observer_endpoint_logs_evidence_without_broker_action(self) -> None:
+        fake_observer = {
+            "status": "OBSERVER_STOCK_CANDIDATES",
+            "build_version": "2026.06.10-market-open-observer",
+            "mode": "market_open_observer",
+            "cadence_minutes": 5,
+            "candidate_count": 1,
+            "pass_count": 2,
+            "valid_row_count": 3,
+            "evidence_packet_count": 3,
+            "evidence_batch_event_id": 77,
+            "evidence_summary": {
+                "data_confidence_counts": {"HIGH": 2, "MEDIUM": 1},
+                "top_data_flags": {"pass_first_decision": 2},
+                "recommendation": "Evidence packets are usable for review learning, with manual backtest approval still required.",
+            },
+            "candidate_observations": [
+                {
+                    "ticker": "SOFI",
+                    "direction": "short",
+                    "score": 82,
+                    "relative_volume": 1.4,
+                    "vwap_state": "below",
+                    "relative_strength_label": "leading_spy",
+                    "data_confidence": "HIGH",
+                    "data_flags": [],
+                }
+            ],
+            "pass_observations": [{"ticker": "AAPL", "score": 50, "direction": "none", "primary_reason": "Score below threshold."}],
+            "delta_vs_previous_observer": {
+                "status": "OBSERVER_DELTA_READY",
+                "new_candidate_tickers": ["SOFI"],
+                "dropped_candidate_tickers": [],
+                "persistent_candidate_tickers": [],
+            },
+            "next_action": "After spreads stabilize, run live review cycle.",
+            "action_links": {"live_review_cycle": "/ops/live-review-cycle", "journal_checkpoint": "/journal/checkpoint?limit=500&format=json"},
+            "observer_rules": ["This observer records market evidence; it does not options-review, rank contracts, or create trade plans."],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+            "broker_action": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints._run_market_open_observer", return_value=fake_observer):
+            html = client.get("/ops/market-open-observer?tickers=SOFI,AAPL&max_candidates=10", headers={"accept": "text/html"})
+            json_response = client.get("/ops/market-open-observer?tickers=SOFI,AAPL&max_candidates=10")
+
+        self.assertEqual(html.status_code, 200)
+        self.assertIn("Market Open Observer", html.text)
+        self.assertIn("SOFI", html.text)
+        self.assertIn("Evidence Quality", html.text)
+        self.assertEqual(json_response.status_code, 200)
+        self.assertEqual(json_response.json()["result"]["status"], "OBSERVER_STOCK_CANDIDATES")
         self.assertFalse(json_response.json()["can_place_order_from_this_mcp"])
 
     def test_offhours_and_crypto_fallbacks_are_review_only(self) -> None:
@@ -597,10 +654,10 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.10-manual-trade-desk")
+        full = client.get("/health/full?expected_build_version=2026.06.10-market-open-observer")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-manual-trade-desk")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-market-open-observer")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -616,6 +673,7 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_ops_command_center"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_morning_readiness_autopilot"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_live_review_cycle"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["run_market_open_observer"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["build_manual_trade_preflight_ticket"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["build_manual_trade_desk"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["log_manual_option_paper_entry"])
@@ -646,6 +704,8 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(autopilot_preview["status"], "AUTOPILOT_READY_FOR_HARVEST")
         live_cycle_preview = schema.json()["result"]["live_review_cycle_schema_preview"]
         self.assertEqual(live_cycle_preview["status"], "LIVE_CYCLE_CANDIDATES_READY")
+        observer_preview = schema.json()["result"]["market_open_observer_schema_preview"]
+        self.assertEqual(observer_preview["status"], "OBSERVER_STOCK_CANDIDATES")
         preflight_preview = schema.json()["result"]["manual_preflight_schema_preview"]
         self.assertEqual(preflight_preview["status"], "MANUAL_PREFLIGHT_READY")
         desk_preview = schema.json()["result"]["manual_trade_desk_schema_preview"]

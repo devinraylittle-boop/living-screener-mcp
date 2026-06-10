@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.10-manual-trade-desk
+2026.06.10-market-open-observer
 ```
 
 ## Render Environment
@@ -80,6 +80,8 @@ Morning readiness autopilot gives tomorrow's workflow a single starting page. Us
 
 Live review cycle is the market-hours decision page. Use `run_live_review_cycle` or `/ops/live-review-cycle` after the market has usable data. It checks readiness, stops early on bad data, runs review harvest only when data is usable, ranks only candidates that pass both stock setup and `SMALL_ACCOUNT_SCALP_ACCEPTABLE`, summarizes paper ledger state, and returns the next manual action. It cannot place, submit, simulate, modify, or cancel broker orders.
 
+Market open observer is the first 15-30 minute evidence capture loop. Use `run_market_open_observer` or `/ops/market-open-observer` to run a review-only scalp scan, save evidence packets for candidates and passes, compare candidates against the previous observer refresh, and decide whether to wait, keep observing, or move to `/ops/live-review-cycle`. It does not options-review, rank contracts, create trade plans, or contact a broker.
+
 Journal checkpoints protect tomorrow's learning loop from Render restarts. Use `export_journal_checkpoint` or `/journal/checkpoint` after important scan/review/paper events to export recent local journal events, event-type counts, and restore guidance. Save the JSON externally and paste it back into ChatGPT/Codex later for analysis if the hosted local SQLite journal resets. This is evidence export only; it cannot create broker action.
 
 Manual trade desk is the final human checkpoint page. Use `build_manual_trade_desk` or `/trade/manual-desk` with broker-visible option fields after a live review cycle identifies a candidate. It runs manual preflight, shows blocking reasons/warnings, prepares a paper-entry payload, and reminds you to export a journal checkpoint after the decision. It still cannot place, submit, simulate, modify, or cancel broker orders.
@@ -104,7 +106,7 @@ These routes call the same review-only services as the MCP tools. They exist so 
 
 ```text
 GET /safety
-GET /health/full?expected_build_version=2026.06.10-manual-trade-desk
+GET /health/full?expected_build_version=2026.06.10-market-open-observer
 GET /scan/scalp?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
 GET /scan/market?mode=conservative_review_only&tickers=SPY,QQQ,KO,PG
 GET /ops/command-center?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50
@@ -113,6 +115,8 @@ GET /ops/morning-autopilot?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=5
 GET /ops/morning-autopilot?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&format=html
 GET /ops/live-review-cycle?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25&review_top_n=8&max_contract_price=1.00
 GET /ops/live-review-cycle?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&format=html
+GET /ops/market-open-observer?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25&cadence_minutes=5
+GET /ops/market-open-observer?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&format=html
 GET /ops/session-playbook?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50
 GET /ops/session-playbook?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&format=html
 GET /ops/market-readiness?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
@@ -155,7 +159,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.10-manual-trade-desk
+GET /debug/scan-schema?expected_build_version=2026.06.10-market-open-observer
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -185,6 +189,8 @@ Opening `/ops/command-center` returns the simplest live operations view: latest 
 Opening `/ops/morning-autopilot` returns the morning checkpoint: build/safety, readiness, paper ledger status, session blocks, manual trade gate, and next action links. Use this as the first page tomorrow before any harvest.
 
 Opening `/ops/live-review-cycle` returns the market-hours checkpoint: data readiness, harvest summary, ranked eligible candidates, watch-only reviews, paper ledger state, and the exact manual preflight gate. It is the page to use when you are deciding whether anything deserves broker-side inspection.
+
+Opening `/ops/market-open-observer` returns the opening-window evidence recorder: candidate/pass observations, evidence confidence, data flags, deltas versus the previous refresh, and the next safe action. It is designed for repeated refreshes while spreads stabilize.
 
 Opening `/journal/checkpoint` returns a saveable local journal export with event counts, recent events, and restore guidance. Use it after meaningful review cycles, paper entries/closes, and learning classifications.
 
@@ -229,7 +235,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.10-manual-trade-desk",
+  "build_version": "2026.06.10-market-open-observer",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false
