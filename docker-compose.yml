@@ -1,0 +1,17 @@
+services:
+  living-screener:
+    build: .
+    ports:
+      - "8000:10000"
+    environment:
+      PORT: "10000"
+      HOSTED_MODE: "false"
+      REVIEW_ONLY: "true"
+      PLACE_ORDERS: "false"
+      MARKET_DATA_PROVIDER: "finnhub"
+      MARKET_DATA_INTERVAL: "5m"
+      MARKET_DATA_PERIOD: "5d"
+      MAX_DATA_STALENESS_MINUTES: "1440"
+      FINNHUB_API_KEY: ""
+    volumes:
+      - ./data:/app/data

@@ -1,0 +1,9 @@
+{
+  "review_only": true,
+  "place_orders": false,
+  "market_orders_allowed": false,
+  "manual_approval_required": true,
+  "approval_phrase": "APPROVED EXACT ORDER",
+  "max_trade_risk_pct": 0.10,
+  "default_watchlist": ["SPY", "QQQ", "KO", "PG", "HOOD", "LULU"]
+}

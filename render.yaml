@@ -1,0 +1,55 @@
+services:
+  - type: web
+    name: living-screener-mcp
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: HOSTED_MODE
+        value: "false"
+      - key: REVIEW_ONLY
+        value: "true"
+      - key: PLACE_ORDERS
+        value: "false"
+      - key: REQUIRE_MANUAL_APPROVAL
+        value: "true"
+      - key: PENDING_BUY_RECHECK_SECONDS
+        value: "60"
+      - key: MAX_PENDING_ORDER_PRICE_DRIFT_PCT
+        value: "0.003"
+      - key: SCALP_WATCHLIST
+        value: "SPY,QQQ,IWM,DIA,AAPL,MSFT,NVDA,AMD,TSLA,AMZN,META,GOOGL,NFLX,AVGO,SMCI,PLTR,COIN,HOOD,SOFI,RBLX,UBER,SHOP,JPM,BAC,XOM,CVX,LLY,UNH,LULU,PG,KO"
+      - key: MAX_SCAN_UNIVERSE
+        value: "75"
+      - key: MARKET_DATA_PROVIDER
+        value: "finnhub"
+      - key: MARKET_DATA_INTERVAL
+        value: "5m"
+      - key: MARKET_DATA_PERIOD
+        value: "5d"
+      - key: MAX_DATA_STALENESS_MINUTES
+        value: "1440"
+      - key: REGULAR_MARKET_MAX_STALENESS_MINUTES
+        value: "15"
+      - key: SCALP_CANDIDATE_SCORE_THRESHOLD
+        value: "65"
+      - key: SCALP_MIN_ABS_CHANGE_PCT
+        value: "0.006"
+      - key: SCALP_MIN_RELATIVE_VOLUME
+        value: "1.15"
+      - key: SCALP_MAX_CONTRACT_PRICE
+        value: "1.00"
+      - key: MAX_OPTION_SPREAD_PCT
+        value: "0.18"
+      - key: MIN_OPTION_VOLUME
+        value: "10"
+      - key: MIN_OPTION_OPEN_INTEREST
+        value: "50"
+      - key: MIN_OPTION_DAYS_TO_EXPIRATION
+        value: "1"
+      - key: MAX_OPTION_DAYS_TO_EXPIRATION
+        value: "45"
+      - key: FINNHUB_API_KEY
+        sync: false
+      - key: SCREENER_AUTH_TOKEN
+        sync: false
