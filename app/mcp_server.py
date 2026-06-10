@@ -5,6 +5,7 @@ import json
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastmcp import FastMCP
 
@@ -102,6 +103,18 @@ def get_ops_command_center(tickers: list[str] | None = None, account_value: floa
 @mcp.tool
 def get_trading_day_launch_checklist(tickers: list[str] | None = None, account_value: float = 50.0, max_candidates: int = 25) -> dict:
     return _get_trading_day_launch_checklist(container, tickers, account_value, max_candidates)
+
+
+@mcp.tool
+def run_trading_day_heartbeat(
+    tickers: list[str] | None = None,
+    account_value: float = 50.0,
+    max_candidates: int = 25,
+    review_top_n: int = 8,
+    max_contract_price: float | None = None,
+    force_phase: str | None = None,
+) -> dict:
+    return _run_trading_day_heartbeat(container, tickers, account_value, max_candidates, review_top_n, max_contract_price, force_phase)
 
 
 @mcp.tool
@@ -728,6 +741,156 @@ def _get_trading_day_launch_checklist(service_container, tickers: list[str] | No
         ],
     }
     return service_container.events.log("trading_day_launch_checklist", payload)
+
+
+def _market_phase(force_phase: str | None = None) -> dict[str, Any]:
+    forced = str(force_phase or "").strip().lower()
+    allowed = {"premarket", "opening", "active", "late", "afterhours", "closed", "offhours"}
+    now_utc = datetime.now(UTC)
+    now_et = now_utc.astimezone(ZoneInfo("America/New_York"))
+    if forced in allowed:
+        phase = "offhours" if forced == "closed" else forced
+        forced_phase = True
+    elif now_et.weekday() >= 5:
+        phase = "offhours"
+        forced_phase = False
+    else:
+        minutes = now_et.hour * 60 + now_et.minute
+        if minutes < 9 * 60 + 30:
+            phase = "premarket"
+        elif minutes < 10 * 60:
+            phase = "opening"
+        elif minutes < 15 * 60 + 30:
+            phase = "active"
+        elif minutes < 16 * 60:
+            phase = "late"
+        else:
+            phase = "afterhours"
+        forced_phase = False
+    return {
+        "phase": phase,
+        "forced": forced_phase,
+        "now_utc": now_utc.isoformat().replace("+00:00", "Z"),
+        "now_et": now_et.isoformat(),
+    }
+
+
+def _heartbeat_next_refresh_seconds(phase: str, pending_recheck_required: bool) -> int:
+    if pending_recheck_required:
+        return 60
+    if phase == "opening":
+        return 300
+    if phase in {"active", "late"}:
+        return 300
+    if phase == "premarket":
+        return 600
+    return 1800
+
+
+def _run_trading_day_heartbeat(
+    service_container,
+    tickers: list[str] | None,
+    account_value: float,
+    max_candidates: int,
+    review_top_n: int,
+    max_contract_price: float | None,
+    force_phase: str | None = None,
+) -> dict:
+    max_candidates = max(1, min(int(max_candidates or 25), 50))
+    review_top_n = max(1, min(int(review_top_n or 8), 20))
+    account_value = _float_or_zero(account_value) or 50.0
+    max_contract_price = max_contract_price if max_contract_price is not None else service_container.settings.scalp_max_contract_price
+    universe = [str(ticker).upper().strip() for ticker in (tickers or service_container.settings.default_tickers) if str(ticker).strip()]
+    ticker_query = ",".join(universe)
+    phase_info = _market_phase(force_phase)
+    phase = str(phase_info.get("phase") or "offhours")
+    latest_manual_action = _latest_payload(service_container, "manual_broker_action")
+    pending_recheck_required = bool(latest_manual_action and latest_manual_action.get("pending_buy"))
+    operation = "none"
+    operation_result: dict[str, Any] | None = None
+    followup_result: dict[str, Any] | None = None
+    if pending_recheck_required:
+        status = "HEARTBEAT_PENDING_RECHECK_REQUIRED"
+        next_action = "Run pending-buy recheck before any new review cycle."
+        operation = "pending_recheck_required"
+    elif phase == "premarket":
+        operation_result = _market_readiness_check(service_container, universe, max_candidates)
+        operation = "market_readiness"
+        status = "HEARTBEAT_PREMARKET_READY"
+        next_action = "Keep readiness checks warm; start market-open observer when regular-session data begins."
+    elif phase == "opening":
+        operation_result = _run_market_open_observer(service_container, universe, max_candidates, 5)
+        operation = "market_open_observer"
+        status = "HEARTBEAT_OBSERVER_RECORDED"
+        next_action = "Keep observing until spreads/data stabilize, then move to live review cycle only if candidates persist."
+    elif phase in {"active", "late"}:
+        operation_result = _run_live_review_cycle(service_container, universe, account_value, max_candidates, review_top_n, max_contract_price, include_followup=False)
+        operation = "live_review_cycle"
+        ranked = operation_result.get("ranked_candidates") or []
+        if ranked:
+            status = "HEARTBEAT_MANUAL_REVIEW_READY"
+            next_action = "Inspect top ranked candidate in broker and use manual trade desk with broker-visible fields."
+        elif operation_result.get("status") in {"LIVE_CYCLE_DATA_BLOCKED", "LIVE_CYCLE_NOT_READY"}:
+            status = "HEARTBEAT_DATA_BLOCKED"
+            next_action = "Do not review contracts; fix data/readiness or wait for cleaner market data."
+        else:
+            status = "HEARTBEAT_NO_TRADE_PLAN"
+            next_action = "No eligible small-account scalp candidate; continue cadence without forcing a setup."
+    else:
+        operation_result = _run_observer_followup(service_container, 5, 30, True, True)
+        operation = "observer_followup"
+        followup_result = operation_result
+        status = "HEARTBEAT_LEARNING_REVIEW_READY"
+        next_action = "Review learning labels, export a journal checkpoint, and avoid live options decisions while closed."
+
+    refresh_seconds = _heartbeat_next_refresh_seconds(phase, pending_recheck_required)
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "mode": "trading_day_heartbeat",
+        "generated_at": utc_now(),
+        "phase": phase_info,
+        "universe": universe,
+        "account_value_reference": account_value,
+        "max_candidates": max_candidates,
+        "review_top_n": review_top_n,
+        "max_contract_price": max_contract_price,
+        "operation": operation,
+        "operation_status": (operation_result or {}).get("status"),
+        "operation_result": _compact_event(operation_result),
+        "followup_result": _compact_event(followup_result),
+        "pending_recheck_required": pending_recheck_required,
+        "latest_manual_action": _compact_event(latest_manual_action),
+        "next_action": next_action,
+        "next_refresh_seconds": refresh_seconds,
+        "action_links": {
+            "self": f"/ops/day-heartbeat?tickers={ticker_query}&account_value={account_value}&max_candidates={max_candidates}&review_top_n={review_top_n}&max_contract_price={max_contract_price}&format=html",
+            "launch": f"/ops/trading-day-launch?tickers={ticker_query}&account_value={account_value}&max_candidates={max_candidates}&format=html",
+            "market_open_observer": f"/ops/market-open-observer?tickers={ticker_query}&max_candidates={max_candidates}&cadence_minutes=5&format=html",
+            "live_review_cycle": f"/ops/live-review-cycle?tickers={ticker_query}&account_value={account_value}&max_candidates={max_candidates}&review_top_n={review_top_n}&max_contract_price={max_contract_price}&format=html",
+            "manual_trade_desk": "/trade/manual-desk",
+            "pending_recheck": "/trade/pending-recheck",
+            "observer_followup": "/ops/observer-followup?limit_observations=5&max_items=30&include_passes=true&classify=true&format=html",
+            "journal_checkpoint": "/journal/checkpoint?limit=500&format=json",
+        },
+        "absolute_no_trade_rules": [
+            "No market orders.",
+            "No broker action from this MCP.",
+            "No trade from the heartbeat alone; use live review cycle plus manual trade desk.",
+            "No stale pending buy trusted after 60 seconds without recheck.",
+            "No rule changes auto-applied from heartbeat learning labels.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "broker_action": False,
+        "notes": [
+            "Heartbeat is a cadence helper for monitoring and learning, not a trade recommendation.",
+            "It runs exactly one safe workflow step based on market phase.",
+            "Manual broker inspection still requires broker-visible bid/ask, volume, OI, DTE, strike, and max loss.",
+        ],
+    }
+    return service_container.events.log("trading_day_heartbeat", payload)
 
 
 def _run_morning_readiness_autopilot(service_container, tickers: list[str] | None, account_value: float, max_candidates: int) -> dict:

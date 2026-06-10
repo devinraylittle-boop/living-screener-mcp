@@ -39,6 +39,7 @@ class DebugValidationService:
                 "observer_followup": "observer_followup_v1",
                 "manual_broker_action": "manual_broker_action_v1",
                 "trading_day_launch": "trading_day_launch_v1",
+                "trading_day_heartbeat": "trading_day_heartbeat_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -49,6 +50,7 @@ class DebugValidationService:
                 "/ops/market-open-observer",
                 "/ops/observer-followup",
                 "/ops/trading-day-launch",
+                "/ops/day-heartbeat",
                 "/paper/options/summary",
                 "/journal/checkpoint",
                 "/trade/manual-desk",
@@ -74,6 +76,7 @@ class DebugValidationService:
                 "market_open_observer_route": True,
                 "observer_followup_route": True,
                 "trading_day_launch_route": True,
+                "trading_day_heartbeat_route": True,
                 "manual_preflight_route": True,
                 "paper_option_ledger_routes": True,
                 "journal_checkpoint_route": True,
@@ -251,6 +254,7 @@ class DebugValidationService:
             "harvest_followup_schema_preview": self._harvest_followup_schema_preview(),
             "ops_command_center_schema_preview": self._ops_command_center_schema_preview(),
             "trading_day_launch_schema_preview": self._trading_day_launch_schema_preview(),
+            "trading_day_heartbeat_schema_preview": self._trading_day_heartbeat_schema_preview(),
             "morning_autopilot_schema_preview": self._morning_autopilot_schema_preview(),
             "live_review_cycle_schema_preview": self._live_review_cycle_schema_preview(),
             "market_open_observer_schema_preview": self._market_open_observer_schema_preview(),
@@ -435,6 +439,28 @@ class DebugValidationService:
                 "No broker action from this MCP.",
             ],
             "notes": "Static launch checklist preview only. The live tool maps safe next actions and cannot execute broker actions.",
+        }
+
+    def _trading_day_heartbeat_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "HEARTBEAT_NO_TRADE_PLAN",
+            "schema_version": "trading_day_heartbeat_v1",
+            "phase": {
+                "phase": "active",
+                "forced": True,
+                "now_utc": "2026-06-10T15:00:00Z",
+                "now_et": "2026-06-10T11:00:00-04:00",
+            },
+            "operation": "live_review_cycle",
+            "operation_status": "LIVE_CYCLE_NO_ELIGIBLE_CANDIDATES",
+            "next_refresh_seconds": 300,
+            "pending_recheck_required": False,
+            "absolute_no_trade_rules": [
+                "No market orders.",
+                "No broker action from this MCP.",
+                "No trade from the heartbeat alone; use live review cycle plus manual trade desk.",
+            ],
+            "notes": "Static heartbeat schema preview only. The live tool runs one safe cadence step and cannot execute broker actions.",
         }
 
     def _morning_autopilot_schema_preview(self) -> dict[str, Any]:
@@ -713,6 +739,7 @@ class DebugValidationService:
             "run_latest_harvest_followup",
             "get_ops_command_center",
             "get_trading_day_launch_checklist",
+            "run_trading_day_heartbeat",
             "run_morning_readiness_autopilot",
             "run_live_review_cycle",
             "run_market_open_observer",
@@ -739,7 +766,7 @@ class DebugValidationService:
         return {name: name in available for name in required}
 
     def _category(self, name: str) -> str:
-        if "harvest" in name or "readiness" in name or "observer" in name or "playbook" in name or "command_center" in name or "launch" in name or "autopilot" in name or "cycle" in name or "preflight" in name or "desk" in name or "manual_broker" in name or "paper" in name or "journal" in name or "checkpoint" in name:
+        if "harvest" in name or "readiness" in name or "observer" in name or "playbook" in name or "command_center" in name or "launch" in name or "heartbeat" in name or "autopilot" in name or "cycle" in name or "preflight" in name or "desk" in name or "manual_broker" in name or "paper" in name or "journal" in name or "checkpoint" in name:
             return "market_operations"
         if "evidence" in name or "blueprint" in name or "feature" in name or "scoring" in name:
             return "research_validation"

@@ -1,1 +1,1 @@
-BUILD_VERSION = "2026.06.10-checkpoint-restore"
+BUILD_VERSION = "2026.06.10-day-heartbeat"

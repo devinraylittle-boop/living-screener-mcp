@@ -25,6 +25,7 @@ from app.mcp_server import (
     _run_market_open_observer,
     _run_morning_readiness_autopilot,
     _run_observer_followup,
+    _run_trading_day_heartbeat,
     _run_latest_harvest_followup,
     _run_review_harvest,
     _summarize_manual_option_paper_trades,
@@ -789,6 +790,62 @@ def _trading_day_launch_html(payload: dict[str, Any]) -> HTMLResponse:
 </table>
 """
     return _html_page("Trading Day Launch", body, payload)
+
+
+def _trading_day_heartbeat_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    phase = result.get("phase") or {}
+    operation = result.get("operation_result") or {}
+    action_rows = []
+    for label, url in (result.get("action_links") or {}).items():
+        action_rows.append(
+            "<tr>"
+            f"<td>{escape(str(label).replace('_', ' ').title())}</td>"
+            f"<td><a href=\"{escape(str(url))}\">{escape(str(url))}</a></td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Trading Day Heartbeat</h1>
+    <p>One safe cadence tick: observe, review, or learn based on market phase. Review-only.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Phase", phase.get("phase")),
+    ("ET Time", phase.get("now_et")),
+    ("Operation", result.get("operation")),
+    ("Operation Status", result.get("operation_status")),
+    ("Next Refresh Seconds", result.get("next_refresh_seconds")),
+    ("Pending Recheck Required", result.get("pending_recheck_required")),
+    ("Next Action", result.get("next_action")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Operation Summary</h2>
+{_field_grid([
+    ("Event ID", operation.get("id")),
+    ("Timestamp", operation.get("timestamp")),
+    ("Status", operation.get("status")),
+    ("Mode", operation.get("mode")),
+    ("Candidates", operation.get("candidate_count")),
+    ("Eligible", operation.get("eligible_count")),
+    ("Reviewed", operation.get("reviewed_count")),
+    ("Next Step", operation.get("next_step")),
+])}
+<h2>Absolute No-Trade Rules</h2>
+{_list(result.get("absolute_no_trade_rules") or [])}
+<h2>Action Links</h2>
+<table>
+  <thead><tr><th>Action</th><th>Link</th></tr></thead>
+  <tbody>{''.join(action_rows)}</tbody>
+</table>
+<h2>Notes</h2>
+{_list(result.get("notes") or [])}
+"""
+    return _html_page("Trading Day Heartbeat", body, payload)
 
 
 def _morning_autopilot_html(payload: dict[str, Any]) -> HTMLResponse:
@@ -1671,6 +1728,23 @@ async def fallback_trading_day_launch(request: Request) -> JSONResponse | HTMLRe
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _trading_day_launch_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_trading_day_heartbeat(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _run_trading_day_heartbeat(
+        container,
+        _tickers(params.get("tickers")),
+        _float_or_none(params.get("account_value")) or 50.0,
+        _int_or_default(params.get("max_candidates"), 25),
+        _int_or_default(params.get("review_top_n"), 8),
+        _float_or_none(params.get("max_contract_price")),
+        params.get("force_phase"),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _trading_day_heartbeat_html(payload)
     return JSONResponse(payload)
 
 
