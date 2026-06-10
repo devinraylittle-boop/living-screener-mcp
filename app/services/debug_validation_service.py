@@ -33,6 +33,7 @@ class DebugValidationService:
                 "morning_autopilot": "morning_autopilot_v1",
                 "live_review_cycle": "live_review_cycle_v1",
                 "journal_checkpoint": "journal_checkpoint_v1",
+                "journal_checkpoint_restore": "journal_checkpoint_restore_v1",
                 "manual_trade_desk": "manual_trade_desk_v1",
                 "market_open_observer": "market_open_observer_v1",
                 "observer_followup": "observer_followup_v1",
@@ -76,6 +77,7 @@ class DebugValidationService:
                 "manual_preflight_route": True,
                 "paper_option_ledger_routes": True,
                 "journal_checkpoint_route": True,
+                "journal_checkpoint_restore": True,
                 "manual_trade_desk_route": True,
                 "manual_broker_action_route": True,
                 "pending_recheck_route": True,
@@ -258,6 +260,7 @@ class DebugValidationService:
             "manual_broker_action_schema_preview": self._manual_broker_action_schema_preview(),
             "paper_option_ledger_schema_preview": self._paper_option_ledger_schema_preview(),
             "journal_checkpoint_schema_preview": self._journal_checkpoint_schema_preview(),
+            "journal_checkpoint_restore_schema_preview": self._journal_checkpoint_restore_schema_preview(),
             "safety": self._safety(),
         }
 
@@ -680,6 +683,26 @@ class DebugValidationService:
             "notes": "Static checkpoint schema preview only. The live tool exports local journal evidence and cannot execute broker actions.",
         }
 
+    def _journal_checkpoint_restore_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "CHECKPOINT_RESTORE_READY",
+            "schema_version": "journal_checkpoint_restore_v1",
+            "source_label": "saved_checkpoint",
+            "requested_event_count": 3,
+            "restored_count": 3,
+            "skipped_duplicate_count": 0,
+            "invalid_count": 0,
+            "restored_event_type_counts": {
+                "live_review_cycle": 1,
+                "manual_option_paper_close": 1,
+                "learning_outcome_classification": 1,
+            },
+            "restored_events": [
+                {"id": 201, "event_type": "live_review_cycle", "original_id": 123}
+            ],
+            "notes": "Static restore preview only. The live tool restores local MCP journal evidence and cannot execute broker actions.",
+        }
+
     def _required_tool_status(self, tools: list[str]) -> dict[str, bool]:
         required = [
             "get_version",
@@ -701,6 +724,7 @@ class DebugValidationService:
             "close_manual_option_paper_trade",
             "summarize_manual_option_paper_trades",
             "export_journal_checkpoint",
+            "restore_journal_checkpoint",
             "get_trading_monster_blueprint",
             "get_feature_registry",
             "get_scoring_model",

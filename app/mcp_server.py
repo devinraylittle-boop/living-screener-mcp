@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -177,6 +179,11 @@ def summarize_manual_option_paper_trades(limit: int = 100) -> dict:
 @mcp.tool
 def export_journal_checkpoint(limit: int = 500, event_types: list[str] | None = None) -> dict:
     return _export_journal_checkpoint(container, limit, event_types)
+
+
+@mcp.tool
+def restore_journal_checkpoint(checkpoint: dict[str, Any], source_label: str = "manual_restore", max_events: int = 500) -> dict:
+    return _restore_journal_checkpoint(container, checkpoint, source_label, max_events)
 
 
 @mcp.tool
@@ -1519,6 +1526,144 @@ def _export_journal_checkpoint(service_container, limit: int = 500, event_types:
         },
     )
     return {**checkpoint, "checkpoint_event_id": checkpoint_event.get("id")}
+
+
+def _checkpoint_event_fingerprint(event: dict[str, Any]) -> str:
+    payload = dict(event.get("payload") or {})
+    payload.pop("_restored_from_checkpoint", None)
+    source = {
+        "id": event.get("id"),
+        "timestamp": event.get("timestamp"),
+        "event_type": event.get("event_type"),
+        "payload": payload,
+    }
+    serialized = json.dumps(source, sort_keys=True, default=str, separators=(",", ":"))
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def _restore_journal_checkpoint(service_container, checkpoint: dict[str, Any], source_label: str = "manual_restore", max_events: int = 500) -> dict:
+    max_events = max(1, min(int(max_events or 500), 2000))
+    source_label = str(source_label or "manual_restore").strip()[:80] or "manual_restore"
+    if not isinstance(checkpoint, dict):
+        return {
+            "status": "CHECKPOINT_RESTORE_REJECTED",
+            "reason": "checkpoint must be an object",
+            "restored_count": 0,
+            "skipped_duplicate_count": 0,
+            "invalid_count": 0,
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+    raw_events = checkpoint.get("events")
+    if not isinstance(raw_events, list):
+        return {
+            "status": "CHECKPOINT_RESTORE_REJECTED",
+            "reason": "checkpoint.events must be a list",
+            "restored_count": 0,
+            "skipped_duplicate_count": 0,
+            "invalid_count": 0,
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+
+    existing_events = service_container.events.recent(None, 2000)
+    existing_fingerprints: set[str] = set()
+    for event in existing_events:
+        payload = event.get("payload") or {}
+        restored = payload.get("_restored_from_checkpoint") if isinstance(payload, dict) else None
+        if isinstance(restored, dict) and restored.get("fingerprint"):
+            existing_fingerprints.add(str(restored.get("fingerprint")))
+        existing_fingerprints.add(_checkpoint_event_fingerprint(event))
+
+    restored_events: list[dict[str, Any]] = []
+    skipped_duplicates: list[dict[str, Any]] = []
+    invalid_events: list[dict[str, Any]] = []
+    for raw_event in raw_events[:max_events]:
+        if not isinstance(raw_event, dict):
+            invalid_events.append({"reason": "event is not an object"})
+            continue
+        event_type = str(raw_event.get("event_type") or "").strip()
+        payload = raw_event.get("payload")
+        if not event_type or not isinstance(payload, dict):
+            invalid_events.append(
+                {
+                    "id": raw_event.get("id"),
+                    "event_type": event_type or None,
+                    "reason": "event_type and payload object are required",
+                }
+            )
+            continue
+        fingerprint = _checkpoint_event_fingerprint(raw_event)
+        if fingerprint in existing_fingerprints:
+            skipped_duplicates.append({"id": raw_event.get("id"), "event_type": event_type, "fingerprint": fingerprint})
+            continue
+        restored_payload = {
+            **payload,
+            "_restored_from_checkpoint": {
+                "source_label": source_label,
+                "original_id": raw_event.get("id"),
+                "original_timestamp": raw_event.get("timestamp"),
+                "fingerprint": fingerprint,
+                "restored_build_version": BUILD_VERSION,
+            },
+        }
+        restored = service_container.events.log(event_type, restored_payload)
+        restored_events.append(
+            {
+                "id": restored.get("id"),
+                "event_type": event_type,
+                "original_id": raw_event.get("id"),
+                "fingerprint": fingerprint,
+            }
+        )
+        existing_fingerprints.add(fingerprint)
+
+    counts = Counter(event["event_type"] for event in restored_events)
+    status = "CHECKPOINT_RESTORE_READY" if restored_events else "CHECKPOINT_RESTORE_NO_NEW_EVENTS"
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "source_label": source_label,
+        "checkpoint_build_version": checkpoint.get("build_version"),
+        "checkpoint_exported_at": checkpoint.get("exported_at"),
+        "requested_event_count": len(raw_events),
+        "processed_event_count": min(len(raw_events), max_events),
+        "restored_count": len(restored_events),
+        "skipped_duplicate_count": len(skipped_duplicates),
+        "invalid_count": len(invalid_events),
+        "restored_event_type_counts": dict(counts),
+        "restored_events": restored_events[:50],
+        "skipped_duplicates": skipped_duplicates[:50],
+        "invalid_events": invalid_events[:50],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "broker_action": False,
+        "notes": [
+            "Checkpoint restore rehydrates local MCP journal evidence only.",
+            "Restored events are marked with _restored_from_checkpoint metadata.",
+            "This is not broker proof and cannot place, submit, simulate, modify, or cancel orders.",
+        ],
+    }
+    restore_event = service_container.events.log(
+        "journal_checkpoint_restore",
+        {
+            "status": status,
+            "build_version": BUILD_VERSION,
+            "source_label": source_label,
+            "checkpoint_build_version": checkpoint.get("build_version"),
+            "restored_count": len(restored_events),
+            "skipped_duplicate_count": len(skipped_duplicates),
+            "invalid_count": len(invalid_events),
+            "restored_event_type_counts": dict(counts),
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        },
+    )
+    return {**payload, "restore_event_id": restore_event.get("id")}
 
 
 def _find_open_paper_entry(service_container, entry_id: int | None, contract_symbol: str | None) -> dict[str, Any] | None:

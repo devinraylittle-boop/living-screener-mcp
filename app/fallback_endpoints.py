@@ -20,6 +20,7 @@ from app.mcp_server import (
     _log_manual_broker_action,
     _market_readiness_check,
     _review_candidate_for_options,
+    _restore_journal_checkpoint,
     _run_live_review_cycle,
     _run_market_open_observer,
     _run_morning_readiness_autopilot,
@@ -1425,6 +1426,61 @@ def _journal_checkpoint_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Journal Checkpoint", body, payload)
 
 
+def _journal_checkpoint_restore_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    count_rows = []
+    for event_type, count in sorted((result.get("restored_event_type_counts") or {}).items()):
+        count_rows.append(
+            "<tr>"
+            f"<td>{escape(str(event_type))}</td>"
+            f"<td>{escape(str(count))}</td>"
+            "</tr>"
+        )
+    restored_rows = []
+    for item in (result.get("restored_events") or [])[:25]:
+        restored_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('event_type') or ''))}</td>"
+            f"<td>{escape(str(item.get('original_id') or ''))}</td>"
+            f"<td>{escape(str(item.get('id') or ''))}</td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Journal Checkpoint Restore</h1>
+    <p>Restore saved local journal evidence after a Render restart. Review-only; no broker access.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Source", result.get("source_label")),
+    ("Checkpoint Build", result.get("checkpoint_build_version")),
+    ("Requested Events", result.get("requested_event_count")),
+    ("Restored Events", result.get("restored_count")),
+    ("Skipped Duplicates", result.get("skipped_duplicate_count")),
+    ("Invalid Events", result.get("invalid_count")),
+    ("Restore Event ID", result.get("restore_event_id")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Restored Event Type Counts</h2>
+<table>
+  <thead><tr><th>Event Type</th><th>Count</th></tr></thead>
+  <tbody>{''.join(count_rows) if count_rows else '<tr><td colspan="2">No event types restored.</td></tr>'}</tbody>
+</table>
+<h2>Restored Events</h2>
+<table>
+  <thead><tr><th>Type</th><th>Original ID</th><th>New ID</th></tr></thead>
+  <tbody>{''.join(restored_rows) if restored_rows else '<tr><td colspan="3">No new events restored.</td></tr>'}</tbody>
+</table>
+<h2>Notes</h2>
+{_list(result.get("notes") or [])}
+"""
+    return _html_page("Journal Checkpoint Restore", body, payload)
+
+
 def _blueprint_html(payload: dict[str, Any], title: str) -> HTMLResponse:
     result = payload.get("result") or {}
     sections = []
@@ -1845,6 +1901,19 @@ async def fallback_paper_option_summary(request: Request) -> JSONResponse | HTML
 async def fallback_journal_checkpoint(request: Request) -> JSONResponse | HTMLResponse:
     if request.method == "POST":
         body = await request.json()
+        restore_source = body.get("source_label") or body.get("restore_source") or "manual_restore"
+        checkpoint = body.get("checkpoint") if isinstance(body.get("checkpoint"), dict) else body
+        if isinstance(checkpoint, dict) and isinstance(checkpoint.get("events"), list):
+            result = _restore_journal_checkpoint(
+                container,
+                checkpoint,
+                str(restore_source),
+                _int_or_default(str(body.get("max_events")) if body.get("max_events") is not None else None, 500),
+            )
+            payload = _review_only_envelope({"result": result})
+            if _wants_html(request):
+                return _journal_checkpoint_restore_html(payload)
+            return JSONResponse(payload)
         limit = _int_or_default(str(body.get("limit")) if body.get("limit") is not None else None, 500)
         event_types_raw = body.get("event_types")
         event_types = event_types_raw if isinstance(event_types_raw, list) else None
