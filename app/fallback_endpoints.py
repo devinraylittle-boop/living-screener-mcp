@@ -19,6 +19,7 @@ from app.mcp_server import (
     _market_readiness_check,
     _review_candidate_for_options,
     _run_live_review_cycle,
+    _run_market_open_observer,
     _run_morning_readiness_autopilot,
     _run_latest_harvest_followup,
     _run_review_harvest,
@@ -883,6 +884,96 @@ def _live_review_cycle_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Live Review Cycle", body, payload)
 
 
+def _market_open_observer_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    evidence = result.get("evidence_summary") or {}
+    delta = result.get("delta_vs_previous_observer") or {}
+    candidate_rows = []
+    for item in result.get("candidate_observations") or []:
+        candidate_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('direction') or ''))}</td>"
+            f"<td>{escape(str(item.get('score') or ''))}</td>"
+            f"<td>{escape(str(item.get('relative_volume') or ''))}</td>"
+            f"<td>{escape(str(item.get('vwap_state') or ''))}</td>"
+            f"<td>{escape(str(item.get('relative_strength_label') or ''))}</td>"
+            f"<td>{escape(str(item.get('data_confidence') or ''))}</td>"
+            f"<td>{escape(', '.join(str(flag) for flag in item.get('data_flags', [])[:4]))}</td>"
+            "</tr>"
+        )
+    pass_rows = []
+    for item in result.get("pass_observations") or []:
+        pass_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('score') or ''))}</td>"
+            f"<td>{escape(str(item.get('direction') or ''))}</td>"
+            f"<td>{escape(str(item.get('primary_reason') or ''))}</td>"
+            "</tr>"
+        )
+    action_rows = []
+    for label, url in (result.get("action_links") or {}).items():
+        action_rows.append(
+            "<tr>"
+            f"<td>{escape(str(label).replace('_', ' ').title())}</td>"
+            f"<td><a href=\"{escape(str(url))}\">{escape(str(url))}</a></td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Market Open Observer</h1>
+    <p>Evidence capture for opening-window scans. No options review, no trade plan, no broker action.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Next Action", result.get("next_action")),
+    ("Cadence Minutes", result.get("cadence_minutes")),
+    ("Candidates", result.get("candidate_count")),
+    ("Pass Count", result.get("pass_count")),
+    ("Valid Rows", result.get("valid_row_count")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Evidence Quality</h2>
+{_field_grid([
+    ("Packet Count", result.get("evidence_packet_count")),
+    ("Evidence Batch ID", result.get("evidence_batch_event_id")),
+    ("Confidence Counts", evidence.get("data_confidence_counts")),
+    ("Top Data Flags", evidence.get("top_data_flags")),
+    ("Recommendation", evidence.get("recommendation")),
+])}
+<h2>Delta Versus Previous Refresh</h2>
+{_field_grid([
+    ("Delta Status", delta.get("status")),
+    ("New Candidates", delta.get("new_candidate_tickers")),
+    ("Dropped Candidates", delta.get("dropped_candidate_tickers")),
+    ("Persistent Candidates", delta.get("persistent_candidate_tickers")),
+])}
+<h2>Stock Candidate Observations</h2>
+<table>
+  <thead><tr><th>Ticker</th><th>Direction</th><th>Score</th><th>RVOL</th><th>VWAP</th><th>Rel. Strength</th><th>Data Conf.</th><th>Flags</th></tr></thead>
+  <tbody>{''.join(candidate_rows) if candidate_rows else '<tr><td colspan="8">No stock candidates in this observer refresh.</td></tr>'}</tbody>
+</table>
+<h2>Pass Observations</h2>
+<table>
+  <thead><tr><th>Ticker</th><th>Score</th><th>Direction</th><th>Primary Reason</th></tr></thead>
+  <tbody>{''.join(pass_rows) if pass_rows else '<tr><td colspan="4">No pass rows returned.</td></tr>'}</tbody>
+</table>
+<h2>Observer Rules</h2>
+{_list(result.get("observer_rules") or [])}
+<h2>Action Links</h2>
+<table>
+  <thead><tr><th>Action</th><th>Link</th></tr></thead>
+  <tbody>{''.join(action_rows)}</tbody>
+</table>
+"""
+    return _html_page("Market Open Observer", body, payload)
+
+
 def _manual_preflight_html(payload: dict[str, Any]) -> HTMLResponse:
     result = payload.get("result") or {}
     ticket = result.get("manual_ticket") or {}
@@ -1320,6 +1411,20 @@ async def fallback_live_review_cycle(request: Request) -> JSONResponse | HTMLRes
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _live_review_cycle_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_market_open_observer(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _run_market_open_observer(
+        container,
+        _tickers(params.get("tickers")),
+        _int_or_default(params.get("max_candidates"), 25),
+        _int_or_default(params.get("cadence_minutes"), 5),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _market_open_observer_html(payload)
     return JSONResponse(payload)
 
 

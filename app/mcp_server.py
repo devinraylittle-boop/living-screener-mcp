@@ -114,6 +114,11 @@ def run_live_review_cycle(
 
 
 @mcp.tool
+def run_market_open_observer(tickers: list[str] | None = None, max_candidates: int = 25, cadence_minutes: int = 5) -> dict:
+    return _run_market_open_observer(container, tickers, max_candidates, cadence_minutes)
+
+
+@mcp.tool
 def analyze_ticker(ticker: str, mode: str | None = None) -> dict:
     return container.scanner.analyze_ticker(ticker, mode)
 
@@ -749,6 +754,86 @@ def _run_live_review_cycle(
     return service_container.events.log("live_review_cycle", payload)
 
 
+def _run_market_open_observer(service_container, tickers: list[str] | None, max_candidates: int, cadence_minutes: int) -> dict:
+    max_candidates = max(1, min(int(max_candidates or 25), 50))
+    cadence_minutes = max(1, min(int(cadence_minutes or 5), 30))
+    universe = [str(ticker).upper().strip() for ticker in (tickers or service_container.settings.default_tickers) if str(ticker).strip()]
+    scan = service_container.scanner.run_market_scan("scalp_review", universe, max_candidates)
+    rows = list(scan.get("top_candidates") or []) + list(scan.get("pass_list") or [])
+    valid_rows = [row for row in rows if row.get("data_status") == "valid"]
+    candidate_rows = list(scan.get("top_candidates") or [])
+    pass_rows = list(scan.get("pass_list") or [])
+    evidence_batch = service_container.evidence_packets.build_packets_from_scan(scan, "market_open_observer")
+    evidence_summary = evidence_batch.get("summary") or {}
+    low_confidence_count = int((evidence_summary.get("data_confidence_counts") or {}).get("LOW") or 0)
+    quote_problem_count = sum(1 for row in rows if any("quote" in str(reason).lower() for reason in (row.get("reasons") or [])))
+    stale_count = sum(1 for row in rows if any("stale" in str(reason).lower() for reason in (row.get("reasons") or [])))
+
+    if not rows:
+        status = "OBSERVER_EMPTY"
+        next_action = "No scan rows returned; verify provider, watchlist, and deployed build before reviewing candidates."
+    elif not valid_rows:
+        status = "OBSERVER_DATA_BLOCKED"
+        next_action = "Do not run options review. Wait for clean quote/candle data or fix the data provider."
+    elif low_confidence_count:
+        status = "OBSERVER_LOW_CONFIDENCE"
+        next_action = "Keep observing and saving evidence; do not tune rules from low-confidence packets."
+    elif candidate_rows:
+        status = "OBSERVER_STOCK_CANDIDATES"
+        next_action = "After spreads stabilize, run live review cycle; only continue if stock setup and SMALL_ACCOUNT_SCALP_ACCEPTABLE both pass."
+    else:
+        status = "OBSERVER_NO_CANDIDATES"
+        next_action = f"Keep observing every {cadence_minutes} minutes; no stock setup has cleared the gate yet."
+
+    candidate_summaries = [_observer_row_summary(row) for row in candidate_rows[:max_candidates]]
+    pass_summaries = [_observer_pass_summary(row) for row in pass_rows[: min(12, len(pass_rows))]]
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "mode": "market_open_observer",
+        "generated_at": utc_now(),
+        "universe": universe,
+        "max_candidates": max_candidates,
+        "cadence_minutes": cadence_minutes,
+        "data_provider": scan.get("data_provider"),
+        "data_status": scan.get("data_status"),
+        "row_count": len(rows),
+        "valid_row_count": len(valid_rows),
+        "candidate_count": len(candidate_rows),
+        "pass_count": len(pass_rows),
+        "quote_problem_count": quote_problem_count,
+        "stale_row_count": stale_count,
+        "candidate_tickers": [row.get("ticker") for row in candidate_rows],
+        "scan_summary": _scan_summary(scan),
+        "evidence_batch_event_id": evidence_batch.get("id"),
+        "evidence_packet_count": evidence_batch.get("packet_count"),
+        "evidence_summary": evidence_summary,
+        "candidate_observations": candidate_summaries,
+        "pass_observations": pass_summaries,
+        "delta_vs_previous_observer": _observer_delta(service_container, candidate_summaries),
+        "next_action": next_action,
+        "action_links": {
+            "observer_refresh": f"/ops/market-open-observer?tickers={','.join(universe)}&max_candidates={max_candidates}&cadence_minutes={cadence_minutes}",
+            "market_readiness": f"/ops/market-readiness?tickers={','.join(universe)}&max_candidates={max_candidates}",
+            "live_review_cycle": f"/ops/live-review-cycle?tickers={','.join(universe)}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}",
+            "review_harvest": f"/ops/review-harvest?tickers={','.join(universe)}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}",
+            "journal_checkpoint": "/journal/checkpoint?limit=500&format=json",
+        },
+        "observer_rules": [
+            "This observer records market evidence; it does not options-review, rank contracts, or create trade plans.",
+            "Use it during the first 15-30 minutes to learn without chasing opening noise.",
+            "Move to live review cycle only after data quality is acceptable and stock candidates exist.",
+            "Export a journal checkpoint after meaningful observations so the evidence survives restarts.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_allowed": False,
+        "broker_action": False,
+    }
+    return service_container.events.log("market_open_observer", payload)
+
+
 def _build_manual_trade_preflight_ticket(service_container, snapshot: dict[str, Any], account_value: float, max_contract_price: float | None, notes: str = "") -> dict:
     account_value = _float_or_zero(account_value) or 50.0
     effective_max_contract_price = max_contract_price
@@ -1268,6 +1353,78 @@ def _scan_summary(scan: dict[str, Any]) -> dict[str, Any]:
         "top_candidate_count": len(scan.get("top_candidates") or []),
         "pass_count": len(scan.get("pass_list") or []),
         "market_regime": scan.get("market_regime"),
+    }
+
+
+def _observer_row_summary(row: dict[str, Any]) -> dict[str, Any]:
+    signals = row.get("key_signals") or {}
+    evidence = row.get("evidence_packet") or {}
+    confidence = evidence.get("data_confidence") or {}
+    scorecard = signals.get("evidence_scorecard") or {}
+    return {
+        "ticker": row.get("ticker"),
+        "status": row.get("status"),
+        "score": row.get("score"),
+        "confidence": row.get("confidence"),
+        "direction": row.get("direction"),
+        "data_status": row.get("data_status"),
+        "relative_volume": signals.get("relative_volume"),
+        "relative_volume_status": signals.get("relative_volume_status"),
+        "vwap_state": "above" if signals.get("above_vwap") else "below" if signals.get("below_vwap") else "unknown",
+        "relative_strength_label": (signals.get("relative_strength") or {}).get("label"),
+        "data_confidence": confidence.get("status"),
+        "data_confidence_score": confidence.get("score"),
+        "data_flags": evidence.get("data_flags") or [],
+        "missing_modules": evidence.get("missing_or_planned_modules") or scorecard.get("missing_or_planned_modules") or [],
+        "reasons": row.get("reasons") or [],
+    }
+
+
+def _observer_pass_summary(row: dict[str, Any]) -> dict[str, Any]:
+    summary = _observer_row_summary(row)
+    reasons = summary.get("reasons") or []
+    summary["primary_reason"] = reasons[0] if reasons else row.get("reason")
+    return summary
+
+
+def _observer_delta(service_container, current_candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    previous = service_container.events.recent("market_open_observer", 1)
+    if not previous:
+        return {
+            "status": "NO_PRIOR_OBSERVER",
+            "new_candidate_tickers": [item.get("ticker") for item in current_candidates],
+            "dropped_candidate_tickers": [],
+            "persistent_candidate_tickers": [],
+            "score_changes": [],
+        }
+    prior_payload = previous[0].get("payload") or {}
+    prior_candidates = prior_payload.get("candidate_observations") or []
+    prior_by_ticker = {str(item.get("ticker") or "").upper(): item for item in prior_candidates if isinstance(item, dict)}
+    current_by_ticker = {str(item.get("ticker") or "").upper(): item for item in current_candidates if isinstance(item, dict)}
+    prior_set = set(prior_by_ticker)
+    current_set = set(current_by_ticker)
+    score_changes = []
+    for ticker in sorted(prior_set & current_set):
+        old_score = _float_or_zero(prior_by_ticker[ticker].get("score"))
+        new_score = _float_or_zero(current_by_ticker[ticker].get("score"))
+        score_changes.append(
+            {
+                "ticker": ticker,
+                "prior_score": old_score,
+                "current_score": new_score,
+                "change": round(new_score - old_score, 4),
+                "prior_direction": prior_by_ticker[ticker].get("direction"),
+                "current_direction": current_by_ticker[ticker].get("direction"),
+            }
+        )
+    return {
+        "status": "OBSERVER_DELTA_READY",
+        "previous_event_id": previous[0].get("id"),
+        "previous_timestamp": previous[0].get("timestamp"),
+        "new_candidate_tickers": sorted(current_set - prior_set),
+        "dropped_candidate_tickers": sorted(prior_set - current_set),
+        "persistent_candidate_tickers": sorted(prior_set & current_set),
+        "score_changes": score_changes,
     }
 
 

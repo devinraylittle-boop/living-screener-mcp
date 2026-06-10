@@ -34,6 +34,7 @@ class DebugValidationService:
                 "live_review_cycle": "live_review_cycle_v1",
                 "journal_checkpoint": "journal_checkpoint_v1",
                 "manual_trade_desk": "manual_trade_desk_v1",
+                "market_open_observer": "market_open_observer_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -41,6 +42,7 @@ class DebugValidationService:
                 "/debug/scan-schema",
                 "/ops/morning-autopilot",
                 "/ops/live-review-cycle",
+                "/ops/market-open-observer",
                 "/paper/options/summary",
                 "/journal/checkpoint",
                 "/trade/manual-desk",
@@ -61,6 +63,7 @@ class DebugValidationService:
                 "ops_command_center_route": True,
                 "morning_autopilot_route": True,
                 "live_review_cycle_route": True,
+                "market_open_observer_route": True,
                 "manual_preflight_route": True,
                 "paper_option_ledger_routes": True,
                 "journal_checkpoint_route": True,
@@ -236,6 +239,7 @@ class DebugValidationService:
             "ops_command_center_schema_preview": self._ops_command_center_schema_preview(),
             "morning_autopilot_schema_preview": self._morning_autopilot_schema_preview(),
             "live_review_cycle_schema_preview": self._live_review_cycle_schema_preview(),
+            "market_open_observer_schema_preview": self._market_open_observer_schema_preview(),
             "manual_preflight_schema_preview": self._manual_preflight_schema_preview(),
             "manual_trade_desk_schema_preview": self._manual_trade_desk_schema_preview(),
             "paper_option_ledger_schema_preview": self._paper_option_ledger_schema_preview(),
@@ -448,6 +452,39 @@ class DebugValidationService:
             "notes": "Static live-cycle schema preview only. The live tool can run readiness and harvest but cannot execute broker actions.",
         }
 
+    def _market_open_observer_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "OBSERVER_STOCK_CANDIDATES",
+            "schema_version": "market_open_observer_v1",
+            "cadence_minutes": 5,
+            "candidate_count": 2,
+            "pass_count": 18,
+            "evidence_packet_count": 20,
+            "evidence_summary": {
+                "decision_counts": {"CANDIDATE": 2, "PASS": 18},
+                "data_confidence_counts": {"HIGH": 14, "MEDIUM": 6},
+                "top_data_flags": {"pass_first_decision": 18, "catalyst_context_missing": 20},
+            },
+            "candidate_observations": [
+                {
+                    "ticker": "EXAMPLE",
+                    "direction": "short",
+                    "score": 76,
+                    "relative_volume": 1.4,
+                    "vwap_state": "below",
+                    "data_confidence": "HIGH",
+                }
+            ],
+            "delta_vs_previous_observer": {
+                "status": "OBSERVER_DELTA_READY",
+                "new_candidate_tickers": ["EXAMPLE"],
+                "dropped_candidate_tickers": [],
+                "persistent_candidate_tickers": [],
+            },
+            "next_action": "After spreads stabilize, run live review cycle; only continue if stock setup and SMALL_ACCOUNT_SCALP_ACCEPTABLE both pass.",
+            "notes": "Static observer schema preview only. The live tool records scan evidence and cannot options-review, rank contracts, or execute broker actions.",
+        }
+
     def _manual_preflight_schema_preview(self) -> dict[str, Any]:
         return {
             "status": "MANUAL_PREFLIGHT_READY",
@@ -559,6 +596,7 @@ class DebugValidationService:
             "get_ops_command_center",
             "run_morning_readiness_autopilot",
             "run_live_review_cycle",
+            "run_market_open_observer",
             "build_manual_trade_preflight_ticket",
             "build_manual_trade_desk",
             "log_manual_option_paper_entry",
@@ -579,7 +617,7 @@ class DebugValidationService:
         return {name: name in available for name in required}
 
     def _category(self, name: str) -> str:
-        if "harvest" in name or "readiness" in name or "playbook" in name or "command_center" in name or "autopilot" in name or "cycle" in name or "preflight" in name or "desk" in name or "paper" in name or "journal" in name or "checkpoint" in name:
+        if "harvest" in name or "readiness" in name or "observer" in name or "playbook" in name or "command_center" in name or "autopilot" in name or "cycle" in name or "preflight" in name or "desk" in name or "paper" in name or "journal" in name or "checkpoint" in name:
             return "market_operations"
         if "evidence" in name or "blueprint" in name or "feature" in name or "scoring" in name:
             return "research_validation"
@@ -610,6 +648,8 @@ class DebugValidationService:
             return "Review-only morning readiness summary; checks data readiness, ledger state, and next safe action."
         if "cycle" in name:
             return "Review-only live market cycle; runs readiness and harvest gates without broker action."
+        if "observer" in name:
+            return "Review-only market-open observer; records scan evidence and deltas without options review or broker action."
         if "preflight" in name:
             return "Review-only broker snapshot, risk, and manual ticket preflight."
         if "desk" in name:
