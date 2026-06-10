@@ -79,13 +79,18 @@ def _wants_html(request: Request) -> bool:
     return "text/html" in accept and "application/json" not in accept
 
 
-def _html_page(title: str, body: str, payload: dict[str, Any]) -> HTMLResponse:
+def _truthy(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on", "auto"}
+
+
+def _html_page(title: str, body: str, payload: dict[str, Any], extra_head: str = "") -> HTMLResponse:
     raw_json = escape(json.dumps(payload, indent=2, sort_keys=True, default=str))
     html = f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  {extra_head}
   <title>{escape(title)}</title>
   <style>
     :root {{
@@ -792,10 +797,17 @@ def _trading_day_launch_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Trading Day Launch", body, payload)
 
 
-def _trading_day_heartbeat_html(payload: dict[str, Any]) -> HTMLResponse:
+def _trading_day_heartbeat_html(payload: dict[str, Any], auto_refresh: bool = False) -> HTMLResponse:
     result = payload.get("result") or {}
     phase = result.get("phase") or {}
     operation = result.get("operation_result") or {}
+    refresh_seconds = max(60, min(int(result.get("next_refresh_seconds") or 300), 1800))
+    extra_head = f'<meta http-equiv="refresh" content="{refresh_seconds}">' if auto_refresh else ""
+    monitor_banner = (
+        f"<p><strong>Monitor mode:</strong> this page refreshes every {refresh_seconds} seconds while the tab stays open.</p>"
+        if auto_refresh
+        else ""
+    )
     action_rows = []
     for label, url in (result.get("action_links") or {}).items():
         action_rows.append(
@@ -809,6 +821,7 @@ def _trading_day_heartbeat_html(payload: dict[str, Any]) -> HTMLResponse:
   <div>
     <h1>Trading Day Heartbeat</h1>
     <p>One safe cadence tick: observe, review, or learn based on market phase. Review-only.</p>
+    {monitor_banner}
   </div>
   <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
 </div>
@@ -845,7 +858,7 @@ def _trading_day_heartbeat_html(payload: dict[str, Any]) -> HTMLResponse:
 <h2>Notes</h2>
 {_list(result.get("notes") or [])}
 """
-    return _html_page("Trading Day Heartbeat", body, payload)
+    return _html_page("Trading Day Heartbeat", body, payload, extra_head=extra_head)
 
 
 def _morning_autopilot_html(payload: dict[str, Any]) -> HTMLResponse:
@@ -1744,7 +1757,24 @@ async def fallback_trading_day_heartbeat(request: Request) -> JSONResponse | HTM
     )
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
-        return _trading_day_heartbeat_html(payload)
+        return _trading_day_heartbeat_html(payload, auto_refresh=_truthy(params.get("auto_refresh")))
+    return JSONResponse(payload)
+
+
+async def fallback_day_monitor(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _run_trading_day_heartbeat(
+        container,
+        _tickers(params.get("tickers")),
+        _float_or_none(params.get("account_value")) or 50.0,
+        _int_or_default(params.get("max_candidates"), 25),
+        _int_or_default(params.get("review_top_n"), 8),
+        _float_or_none(params.get("max_contract_price")),
+        params.get("force_phase"),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _trading_day_heartbeat_html(payload, auto_refresh=not _truthy(params.get("no_refresh")))
     return JSONResponse(payload)
 
 

@@ -40,6 +40,7 @@ class DebugValidationService:
                 "manual_broker_action": "manual_broker_action_v1",
                 "trading_day_launch": "trading_day_launch_v1",
                 "trading_day_heartbeat": "trading_day_heartbeat_v1",
+                "day_monitor": "day_monitor_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -51,6 +52,7 @@ class DebugValidationService:
                 "/ops/observer-followup",
                 "/ops/trading-day-launch",
                 "/ops/day-heartbeat",
+                "/ops/day-monitor",
                 "/paper/options/summary",
                 "/journal/checkpoint",
                 "/trade/manual-desk",
@@ -77,6 +79,7 @@ class DebugValidationService:
                 "observer_followup_route": True,
                 "trading_day_launch_route": True,
                 "trading_day_heartbeat_route": True,
+                "day_monitor_route": True,
                 "manual_preflight_route": True,
                 "paper_option_ledger_routes": True,
                 "journal_checkpoint_route": True,
@@ -255,6 +258,7 @@ class DebugValidationService:
             "ops_command_center_schema_preview": self._ops_command_center_schema_preview(),
             "trading_day_launch_schema_preview": self._trading_day_launch_schema_preview(),
             "trading_day_heartbeat_schema_preview": self._trading_day_heartbeat_schema_preview(),
+            "day_monitor_schema_preview": self._day_monitor_schema_preview(),
             "morning_autopilot_schema_preview": self._morning_autopilot_schema_preview(),
             "live_review_cycle_schema_preview": self._live_review_cycle_schema_preview(),
             "market_open_observer_schema_preview": self._market_open_observer_schema_preview(),
@@ -461,6 +465,18 @@ class DebugValidationService:
                 "No trade from the heartbeat alone; use live review cycle plus manual trade desk.",
             ],
             "notes": "Static heartbeat schema preview only. The live tool runs one safe cadence step and cannot execute broker actions.",
+        }
+
+    def _day_monitor_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "DAY_MONITOR_READY",
+            "schema_version": "day_monitor_v1",
+            "route": "/ops/day-monitor",
+            "wraps": "run_trading_day_heartbeat",
+            "auto_refresh_default": True,
+            "min_refresh_seconds": 60,
+            "max_refresh_seconds": 1800,
+            "notes": "Static monitor preview only. The live route auto-refreshes the review-only heartbeat page while the browser tab is open.",
         }
 
     def _morning_autopilot_schema_preview(self) -> dict[str, Any]:
