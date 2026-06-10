@@ -14,16 +14,20 @@ from app.fallback_endpoints import (
     fallback_explain_premove_score,
     fallback_feature_registry,
     fallback_global_research_scan,
+    fallback_harvest_followup,
     fallback_learning_classify,
     fallback_learning_dashboard,
     fallback_learning_proposals,
     fallback_setup_memory,
     fallback_log_review_decision,
     fallback_market_scan,
+    fallback_market_readiness,
     fallback_health_full,
     fallback_offhours_plan,
     fallback_options_review,
+    fallback_review_harvest,
     fallback_premove_blueprint,
+    fallback_session_playbook,
     fallback_safety,
     fallback_scalp_scan,
     fallback_scoring_model,
@@ -48,6 +52,10 @@ def create_app():
     app.add_route("/safety", fallback_safety, methods=["GET"])
     app.add_route("/scan/market", fallback_market_scan, methods=["GET"])
     app.add_route("/scan/scalp", fallback_scalp_scan, methods=["GET"])
+    app.add_route("/ops/market-readiness", fallback_market_readiness, methods=["GET"])
+    app.add_route("/ops/review-harvest", fallback_review_harvest, methods=["GET"])
+    app.add_route("/ops/session-playbook", fallback_session_playbook, methods=["GET"])
+    app.add_route("/ops/harvest-followup", fallback_harvest_followup, methods=["GET"])
     app.add_route("/review/options", fallback_options_review, methods=["GET"])
     app.add_route("/review/broker-option-snapshot", fallback_validate_broker_snapshot, methods=["POST"])
     app.add_route("/review/log-decision", fallback_log_review_decision, methods=["POST"])

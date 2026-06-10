@@ -25,6 +25,8 @@ class DebugValidationService:
                 "scorecard_model": "research_report_v1_preview",
                 "small_account_friction": "friction_adjusted_v1",
                 "setup_memory": "setup_fingerprint_v1",
+                "market_harvest": "review_harvest_v1",
+                "session_loop": "session_loop_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -40,6 +42,10 @@ class DebugValidationService:
                 "scan_rows_include_evidence_scorecard": True,
                 "options_review_includes_friction_score": True,
                 "options_review_includes_setup_memory": True,
+                "market_readiness_route": True,
+                "review_harvest_route": True,
+                "session_playbook_route": True,
+                "harvest_followup_route": True,
             },
             "safety": self._safety(),
         }
@@ -205,6 +211,9 @@ class DebugValidationService:
             "example_candidate": example,
             "options_review_schema_preview": self._options_review_schema_preview(),
             "setup_memory_schema_preview": self._setup_memory_schema_preview(),
+            "review_harvest_schema_preview": self._review_harvest_schema_preview(),
+            "session_playbook_schema_preview": self._session_playbook_schema_preview(),
+            "harvest_followup_schema_preview": self._harvest_followup_schema_preview(),
             "safety": self._safety(),
         }
 
@@ -264,10 +273,86 @@ class DebugValidationService:
             "notes": "Static setup-memory schema preview only. It does not run a scan or create a trade plan.",
         }
 
+    def _review_harvest_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "REVIEW_HARVEST_READY",
+            "schema_version": "review_harvest_v1",
+            "ranked_candidates": [
+                {
+                    "ticker": "EXAMPLE",
+                    "status": "REVIEW_ONLY_OPTIONS_READY",
+                    "direction": "short",
+                    "score": 86.0,
+                    "priority_score": 82.0,
+                    "friction_adjusted_score": 84.0,
+                    "contract": "EXAMPLE260612P00100000",
+                    "ask": 0.42,
+                    "max_loss_dollars": 42.0,
+                    "memory_signal": "NO_MEMORY_YET",
+                }
+            ],
+            "followup_checks": [
+                {
+                    "ticker": "EXAMPLE",
+                    "direction": "short",
+                    "entry_reference": 100.0,
+                    "check_after_minutes": [15, 30, 60],
+                }
+            ],
+            "notes": "Static harvest schema preview only. It does not run a live scan or create a trade plan.",
+        }
+
+    def _session_playbook_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "SESSION_PLAYBOOK_READY",
+            "schema_version": "session_loop_v1",
+            "session_blocks": [
+                {"label": "Pre-market setup", "central_time": "07:45-08:25"},
+                {"label": "Opening stabilization", "central_time": "08:30-08:50"},
+                {"label": "First review harvest", "central_time": "08:50-10:15"},
+                {"label": "Afternoon decision window", "central_time": "12:30-14:15"},
+                {"label": "After-action learning", "central_time": "After each review and after close"},
+            ],
+            "manual_trade_gate": [
+                "Build and safety confirmed.",
+                "Harvest candidate is REVIEW_ONLY_OPTIONS_READY.",
+                "Small-account gate is SMALL_ACCOUNT_SCALP_ACCEPTABLE.",
+                "Broker-visible option snapshot matches or improves the MCP quote.",
+            ],
+            "notes": "Static playbook schema preview only. It cannot create a trade plan or broker action.",
+        }
+
+    def _harvest_followup_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "HARVEST_FOLLOWUP_COMPLETE",
+            "schema_version": "session_loop_v1",
+            "outcomes": [
+                {
+                    "ticker": "EXAMPLE",
+                    "verdict": "HELPED",
+                    "current_return_pct": 0.004,
+                    "max_favorable_excursion": 0.007,
+                    "max_adverse_excursion": -0.001,
+                }
+            ],
+            "classifications": [
+                {
+                    "ticker": "EXAMPLE",
+                    "classification": "GOOD_SIGNAL",
+                    "lesson_tags": ["wide_spread"],
+                }
+            ],
+            "notes": "Static follow-up schema preview only. It does not run market data or apply rule changes.",
+        }
+
     def _required_tool_status(self, tools: list[str]) -> dict[str, bool]:
         required = [
             "get_version",
             "run_scalp_scan",
+            "market_readiness_check",
+            "run_review_harvest",
+            "get_market_session_playbook",
+            "run_latest_harvest_followup",
             "get_trading_monster_blueprint",
             "get_feature_registry",
             "get_scoring_model",
@@ -282,6 +367,8 @@ class DebugValidationService:
         return {name: name in available for name in required}
 
     def _category(self, name: str) -> str:
+        if "harvest" in name or "readiness" in name or "playbook" in name:
+            return "market_operations"
         if "evidence" in name or "blueprint" in name or "feature" in name or "scoring" in name:
             return "research_validation"
         if "scan" in name or "ticker" in name:
@@ -299,6 +386,12 @@ class DebugValidationService:
             return "Review-only plan generator; cannot place broker orders."
         if "evidence" in name:
             return "Research/audit packet tool for replay and learning."
+        if "harvest" in name:
+            return "Review-only scan, options review, ranking, and follow-up planning."
+        if "readiness" in name:
+            return "Review-only market readiness check; no trade plan or broker action."
+        if "playbook" in name:
+            return "Review-only market session operating checklist."
         if "scan" in name:
             return "Review-only scan; no execution path."
         return "Review-only tool."

@@ -7,6 +7,7 @@ from fastmcp import FastMCP
 from app.factory import create_container
 from app.models.enums import Direction, OrderType
 from app.models.schemas import TradePlan
+from app.utils import utc_now
 from app.version import BUILD_VERSION
 
 
@@ -69,6 +70,26 @@ def run_scalp_scan(tickers: list[str] | None = None, max_candidates: int = 25) -
 
 
 @mcp.tool
+def market_readiness_check(tickers: list[str] | None = None, max_candidates: int = 25) -> dict:
+    return _market_readiness_check(container, tickers, max_candidates)
+
+
+@mcp.tool
+def run_review_harvest(tickers: list[str] | None = None, mode: str = "scalp_review", max_candidates: int = 25, review_top_n: int = 8, max_contract_price: float | None = None) -> dict:
+    return _run_review_harvest(container, tickers, mode, max_candidates, review_top_n, max_contract_price)
+
+
+@mcp.tool
+def get_market_session_playbook(tickers: list[str] | None = None, account_value: float = 50.0) -> dict:
+    return _get_market_session_playbook(container, tickers, account_value)
+
+
+@mcp.tool
+def run_latest_harvest_followup(limit: int = 5, classify: bool = True) -> dict:
+    return _run_latest_harvest_followup(container, limit, classify)
+
+
+@mcp.tool
 def analyze_ticker(ticker: str, mode: str | None = None) -> dict:
     return container.scanner.analyze_ticker(ticker, mode)
 
@@ -101,6 +122,401 @@ def build_setup_fingerprint(snapshot: dict[str, Any]) -> dict:
 @mcp.tool
 def compare_setup_memory(snapshot: dict[str, Any], limit: int = 100) -> dict:
     return container.setup_memory.compare_snapshot(snapshot, limit)
+
+
+def _market_readiness_check(service_container, tickers: list[str] | None, max_candidates: int) -> dict:
+    max_candidates = max(1, min(int(max_candidates or 25), 50))
+    scan = service_container.scanner.run_market_scan("scalp_review", tickers, max_candidates)
+    rows = (scan.get("top_candidates") or []) + (scan.get("pass_list") or [])
+    valid_rows = [row for row in rows if row.get("data_status") == "valid"]
+    stale_rows = [
+        row
+        for row in rows
+        if any("stale" in str(reason).lower() for reason in (row.get("reasons") or []))
+    ]
+    quote_problem_rows = [
+        row
+        for row in rows
+        if any("quote" in str(reason).lower() for reason in (row.get("reasons") or []))
+    ]
+    candidate_count = len(scan.get("top_candidates") or [])
+    if not rows:
+        status = "MARKET_READINESS_UNKNOWN"
+        next_step = "No rows returned; verify provider and watchlist."
+    elif not valid_rows:
+        status = "MARKET_DATA_BLOCKED"
+        next_step = "Do not review options; fix quote/candle availability first."
+    elif candidate_count == 0:
+        status = "MARKET_DATA_READY_NO_CANDIDATES"
+        next_step = "Keep harvesting; no stock setup cleared the gate yet."
+    else:
+        status = "MARKET_REVIEW_READY"
+        next_step = "Run review harvest and only rank candidates that pass stock and small-account options gates."
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "mode": "scalp_review",
+        "data_provider": scan.get("data_provider"),
+        "data_status": scan.get("data_status"),
+        "checked_tickers": [row.get("ticker") for row in rows],
+        "row_count": len(rows),
+        "valid_row_count": len(valid_rows),
+        "candidate_count": candidate_count,
+        "pass_count": len(scan.get("pass_list") or []),
+        "stale_row_count": len(stale_rows),
+        "quote_problem_count": len(quote_problem_rows),
+        "top_stock_candidates": [_stock_summary(row) for row in (scan.get("top_candidates") or [])],
+        "next_step": next_step,
+        "scan_summary": _scan_summary(scan),
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "notes": [
+            "Readiness can run a scan, but it does not create a trade plan or broker action.",
+            "Options should only be reviewed after stock setup quality is valid and direction is clear.",
+        ],
+    }
+    return service_container.events.log("market_readiness", payload)
+
+
+def _run_review_harvest(service_container, tickers: list[str] | None, mode: str, max_candidates: int, review_top_n: int, max_contract_price: float | None) -> dict:
+    max_candidates = max(1, min(int(max_candidates or 25), 50))
+    review_top_n = max(1, min(int(review_top_n or 8), 20))
+    scan = service_container.scanner.run_market_scan(mode, tickers, max_candidates)
+    stock_candidates = [
+        row
+        for row in (scan.get("top_candidates") or [])
+        if row.get("status") == "CANDIDATE"
+        and (row.get("quality_gates") or {}).get("stock_setup_quality") == "VALID_CANDIDATE"
+        and str(row.get("direction") or "").lower() in {"long", "short"}
+    ]
+    reviews: list[dict[str, Any]] = []
+    skipped: list[dict[str, Any]] = []
+    for candidate in stock_candidates[:review_top_n]:
+        direction = str(candidate.get("direction") or "").lower()
+        option_direction = "call" if direction == "long" else "put"
+        review = _review_candidate_for_options(
+            service_container,
+            str(candidate.get("ticker") or ""),
+            option_direction,
+            mode,
+            max_contract_price,
+        )
+        reviews.append(review)
+
+    for candidate in (scan.get("top_candidates") or []):
+        if candidate not in stock_candidates:
+            skipped.append(
+                {
+                    "ticker": candidate.get("ticker"),
+                    "reason": "Skipped because stock setup was not a valid directional candidate.",
+                    "status": candidate.get("status"),
+                    "direction": candidate.get("direction"),
+                    "quality_gates": candidate.get("quality_gates"),
+                }
+            )
+
+    ready_reviews = [
+        review
+        for review in reviews
+        if review.get("status") == "REVIEW_ONLY_OPTIONS_READY"
+        and (review.get("small_account_review") or {}).get("status") == "SMALL_ACCOUNT_SCALP_ACCEPTABLE"
+    ]
+    ranked = sorted(ready_reviews, key=_review_rank_key, reverse=True)
+    watch_only = [review for review in reviews if review not in ready_reviews]
+    status = "REVIEW_HARVEST_READY" if ranked else "NO_TRADE_PLAN"
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "mode": mode,
+        "scan_summary": _scan_summary(scan),
+        "reviewed_count": len(reviews),
+        "eligible_count": len(ranked),
+        "watch_only_count": len(watch_only),
+        "skipped_count": len(skipped),
+        "ranked_candidates": [_review_summary(review) for review in ranked],
+        "watch_only": [_review_summary(review) for review in watch_only],
+        "skipped": skipped,
+        "followup_checks": [_review_followup(review) for review in ranked[:5]],
+        "raw_reviews": reviews,
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_allowed": False,
+        "notes": [
+            "Harvest ranks only candidates that passed stock setup and SMALL_ACCOUNT_SCALP_ACCEPTABLE.",
+            "This is still review-only; broker review and manual decision remain required.",
+            "Use followup_checks after 15/30/60 minutes to classify whether the review helped or hurt.",
+        ],
+    }
+    return service_container.events.log("review_harvest", payload)
+
+
+def _get_market_session_playbook(service_container, tickers: list[str] | None, account_value: float) -> dict:
+    universe = tickers or list(service_container.settings.scalp_watchlist)
+    ticker_query = ",".join(universe)
+    account_value = _float_or_zero(account_value) or 50.0
+    max_contract = service_container.settings.scalp_max_contract_price
+    payload = {
+        "status": "SESSION_PLAYBOOK_READY",
+        "build_version": BUILD_VERSION,
+        "generated_at": utc_now(),
+        "timezone": "America/Chicago",
+        "target": "Review-only live-market workflow for the next U.S. regular session.",
+        "universe": universe,
+        "account_value_reference": account_value,
+        "small_account_contract_cap": max_contract,
+        "safety": {
+            "review_only": True,
+            "place_orders": False,
+            "market_orders_allowed": False,
+            "manual_approval_required": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        },
+        "session_blocks": [
+            {
+                "label": "Pre-market setup",
+                "central_time": "07:45-08:25",
+                "intent": "Confirm deployment, safety, data provider, and watchlist before options liquidity matters.",
+                "actions": [
+                    "/version",
+                    "/health/full?expected_build_version=2026.06.09-session-loop",
+                    "/debug/scan-schema?expected_build_version=2026.06.09-session-loop",
+                    f"/ops/market-readiness?tickers={ticker_query}&max_candidates=25",
+                ],
+                "pass_condition": "Build matches, safety is review-only, and readiness is not MARKET_DATA_BLOCKED.",
+                "fail_condition": "Wrong build, stale data during regular market, quote/candle failure across the universe, or missing safety flags.",
+            },
+            {
+                "label": "Opening stabilization",
+                "central_time": "08:30-08:50",
+                "intent": "Let spreads and first candles stabilize; gather readiness only.",
+                "actions": [
+                    f"/ops/market-readiness?tickers={ticker_query}&max_candidates=25",
+                ],
+                "pass_condition": "Fresh data appears and stock candidates are not forced into options review too early.",
+                "fail_condition": "Wide opening noise, stale quotes, or no valid rows.",
+            },
+            {
+                "label": "First review harvest",
+                "central_time": "08:50-10:15",
+                "intent": "Run harvest loops, rank only candidates that pass stock and small-account options gates.",
+                "actions": [
+                    f"/ops/review-harvest?tickers={ticker_query}&max_candidates=25&review_top_n=8&max_contract_price={max_contract}",
+                    "/ops/harvest-followup?limit=5&classify=true",
+                ],
+                "pass_condition": "At least one REVIEW_ONLY_OPTIONS_READY candidate with SMALL_ACCOUNT_SCALP_ACCEPTABLE and manageable friction.",
+                "fail_condition": "NO_TRADE_PLAN, options-chain gaps, high friction, VWAP conflict, or setup memory warning from similar risk.",
+            },
+            {
+                "label": "Midday caution",
+                "central_time": "10:15-12:30",
+                "intent": "Prefer learning and watchlist maintenance unless a setup remains unusually clean.",
+                "actions": [
+                    "/learning/dashboard",
+                    f"/ops/market-readiness?tickers={ticker_query}&max_candidates=25",
+                ],
+                "pass_condition": "Only continue if data is fresh and momentum/participation remains clear.",
+                "fail_condition": "Chop, collapsing RVOL, spread widening, or no clean follow-through.",
+            },
+            {
+                "label": "Afternoon decision window",
+                "central_time": "12:30-14:15",
+                "intent": "Use the strictest manual review window for possible small number of carefully gated trades.",
+                "actions": [
+                    f"/ops/review-harvest?tickers={ticker_query}&max_candidates=25&review_top_n=8&max_contract_price={max_contract}",
+                    "/review/options?ticker=REPLACE&direction=put&mode=scalp_review&format=html",
+                    "/review/broker-option-snapshot",
+                ],
+                "pass_condition": "Stock setup, options chain, friction, setup memory, broker-visible quote, and risk limit all agree.",
+                "fail_condition": "Any gate unclear. PASS is the default.",
+            },
+            {
+                "label": "After-action learning",
+                "central_time": "After each review and after close",
+                "intent": "Classify what helped, hurt, faded, or was missed.",
+                "actions": [
+                    "/ops/harvest-followup?limit=5&classify=true",
+                    "/learning/dashboard",
+                    "/learning/proposals",
+                ],
+                "pass_condition": "Outcomes and classifications are logged without auto-applying rule changes.",
+                "fail_condition": "Outcome unavailable; keep the review as unclassified rather than inventing a lesson.",
+            },
+        ],
+        "manual_trade_gate": [
+            "Build and safety confirmed.",
+            "Harvest candidate is REVIEW_ONLY_OPTIONS_READY.",
+            "Small-account gate is SMALL_ACCOUNT_SCALP_ACCEPTABLE.",
+            "Friction band is not BLOCKED_BY_FRICTION.",
+            "Setup memory does not show repeated similar risk.",
+            "Broker-visible option snapshot matches or improves the MCP quote.",
+            "No market order; limit-only review.",
+            "Manual approval phrase remains required outside this MCP.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "notes": [
+            "This is an operating checklist, not a trade recommendation.",
+            "The MCP cannot execute; every broker action remains manual and separate.",
+        ],
+    }
+    return service_container.events.log("session_playbook", payload)
+
+
+def _run_latest_harvest_followup(service_container, limit: int, classify: bool) -> dict:
+    limit = max(1, min(int(limit or 5), 20))
+    recent = service_container.events.recent("review_harvest", 1)
+    if not recent:
+        return service_container.events.log(
+            "harvest_followup",
+            {
+                "status": "NO_HARVEST_TO_FOLLOW_UP",
+                "reason": "No review_harvest event has been logged yet.",
+                "outcomes": [],
+                "classifications": [],
+                "review_only": True,
+                "can_place_order_from_this_mcp": False,
+                "can_cancel_order_from_this_mcp": False,
+            },
+        )
+
+    harvest_event = recent[0]
+    harvest = harvest_event.get("payload") or {}
+    raw_reviews = harvest.get("raw_reviews") or []
+    checks = harvest.get("followup_checks") or []
+    raw_by_ticker = {str(review.get("ticker") or "").upper(): review for review in raw_reviews if isinstance(review, dict)}
+    outcomes: list[dict[str, Any]] = []
+    classifications: list[dict[str, Any]] = []
+    for check in checks[:limit]:
+        ticker = str(check.get("ticker") or "").upper()
+        review = {
+            "review_id": f"{ticker}-{check.get('direction')}-{check.get('entry_reference')}",
+            "ticker": ticker,
+            "direction": check.get("direction"),
+            "entry_reference": check.get("entry_reference"),
+            "review_timestamp": check.get("review_timestamp"),
+            "contract_symbol": check.get("contract_symbol"),
+        }
+        outcome = service_container.review_outcomes.check_review_outcome(review, {"15m": 3, "30m": 6, "60m": 12})
+        outcomes.append(outcome)
+        snapshot = raw_by_ticker.get(ticker) or check
+        if classify:
+            classifications.append(service_container.learning.classify_review_outcome(snapshot, outcome))
+
+    summary = service_container.review_outcomes.summarize_review_outcomes(outcomes) if outcomes else None
+    learning_summary = service_container.learning.summarize_learning(classifications, limit) if classifications else None
+    payload = {
+        "status": "HARVEST_FOLLOWUP_COMPLETE" if outcomes else "HARVEST_FOLLOWUP_EMPTY",
+        "build_version": BUILD_VERSION,
+        "harvest_event_id": harvest_event.get("id"),
+        "harvest_timestamp": harvest_event.get("timestamp"),
+        "checks_requested": len(checks),
+        "checks_completed": len(outcomes),
+        "classify": bool(classify),
+        "outcomes": outcomes,
+        "classifications": classifications,
+        "outcome_summary": summary,
+        "learning_summary": learning_summary,
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "notes": [
+            "Follow-up grades prior review-only harvest candidates.",
+            "If market data is unavailable, outcomes are logged as unavailable rather than forced.",
+            "Classifications are learning labels only; rule proposals still require manual review and backtesting.",
+        ],
+    }
+    return service_container.events.log("harvest_followup", payload)
+
+
+def _scan_summary(scan: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "mode": scan.get("mode"),
+        "data_provider": scan.get("data_provider"),
+        "data_status": scan.get("data_status"),
+        "top_candidate_count": len(scan.get("top_candidates") or []),
+        "pass_count": len(scan.get("pass_list") or []),
+        "market_regime": scan.get("market_regime"),
+    }
+
+
+def _stock_summary(row: dict[str, Any]) -> dict[str, Any]:
+    signals = row.get("key_signals") or {}
+    return {
+        "ticker": row.get("ticker"),
+        "status": row.get("status"),
+        "score": row.get("score"),
+        "direction": row.get("direction"),
+        "relative_volume": signals.get("relative_volume"),
+        "above_vwap": signals.get("above_vwap"),
+        "below_vwap": signals.get("below_vwap"),
+        "relative_strength_label": (signals.get("relative_strength") or {}).get("label"),
+    }
+
+
+def _review_rank_key(review: dict[str, Any]) -> tuple[float, float, float]:
+    small = review.get("small_account_review") or {}
+    selected = small.get("selected_contract") or {}
+    priority = _float_or_zero(small.get("priority_score"))
+    friction = _float_or_zero(small.get("friction_adjusted_score"))
+    max_loss = _float_or_zero(selected.get("max_loss_dollars"))
+    return (priority, friction, -max_loss)
+
+
+def _review_summary(review: dict[str, Any]) -> dict[str, Any]:
+    small = review.get("small_account_review") or {}
+    selected = small.get("selected_contract") or {}
+    stock = review.get("stock_setup") or {}
+    signals = stock.get("key_signals") or {}
+    memory = review.get("setup_memory") or {}
+    return {
+        "ticker": review.get("ticker"),
+        "status": review.get("status"),
+        "reason": review.get("reason"),
+        "direction": stock.get("direction"),
+        "score": stock.get("score"),
+        "relative_volume": signals.get("relative_volume"),
+        "vwap_state": "above" if signals.get("above_vwap") else "below" if signals.get("below_vwap") else "unknown",
+        "priority_score": small.get("priority_score"),
+        "friction_adjusted_score": small.get("friction_adjusted_score"),
+        "friction_band": small.get("friction_band"),
+        "contract": selected.get("contract_symbol"),
+        "ask": selected.get("ask"),
+        "max_loss_dollars": selected.get("max_loss_dollars"),
+        "spread_pct": selected.get("spread_pct"),
+        "dte": selected.get("days_to_expiration"),
+        "memory_signal": memory.get("memory_signal"),
+        "warnings": review.get("warnings") or small.get("warnings") or [],
+    }
+
+
+def _review_followup(review: dict[str, Any]) -> dict[str, Any]:
+    stock = review.get("stock_setup") or {}
+    quote = stock.get("quote_summary") or {}
+    small = review.get("small_account_review") or {}
+    selected = small.get("selected_contract") or {}
+    direction = str(stock.get("direction") or "").lower()
+    return {
+        "ticker": review.get("ticker"),
+        "direction": direction,
+        "entry_reference": quote.get("price"),
+        "review_timestamp": quote.get("timestamp") or review.get("timestamp"),
+        "contract_symbol": selected.get("contract_symbol"),
+        "check_after_minutes": [15, 30, 60],
+        "endpoint_template": "/review/outcome?ticker={ticker}&direction={direction}&entry_reference={entry_reference}&review_timestamp={review_timestamp}",
+    }
+
+
+def _float_or_zero(value: Any) -> float:
+    try:
+        if value is None or value != value:
+            return 0.0
+        return float(value)
+    except Exception:
+        return 0.0
 
 
 def _review_candidate_for_options(service_container, ticker: str, direction: str, mode: str, max_contract_price: float | None) -> dict:

@@ -8,7 +8,14 @@ from typing import Any
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 
-from app.mcp_server import _review_candidate_for_options, container
+from app.mcp_server import (
+    _get_market_session_playbook,
+    _market_readiness_check,
+    _review_candidate_for_options,
+    _run_latest_harvest_followup,
+    _run_review_harvest,
+    container,
+)
 from app.version import BUILD_VERSION
 
 
@@ -467,6 +474,168 @@ def _crypto_backtest_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Crypto Paper Backtest", body, payload)
 
 
+def _review_harvest_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    rows = []
+    for item in result.get("ranked_candidates") or []:
+        rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('status') or ''))}</td>"
+            f"<td>{escape(str(item.get('direction') or ''))}</td>"
+            f"<td>{escape(str(item.get('score') or ''))}</td>"
+            f"<td>{escape(str(item.get('priority_score') or ''))}</td>"
+            f"<td>{escape(str(item.get('friction_adjusted_score') or ''))}</td>"
+            f"<td>{escape(str(item.get('contract') or ''))}</td>"
+            f"<td>{escape(str(item.get('ask') or ''))} / {escape(str(item.get('max_loss_dollars') or ''))}</td>"
+            f"<td>{escape(str(item.get('memory_signal') or ''))}</td>"
+            "</tr>"
+        )
+    watch_rows = []
+    for item in result.get("watch_only") or []:
+        watch_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('status') or ''))}</td>"
+            f"<td>{escape(str(item.get('reason') or ''))}</td>"
+            f"<td>{escape('; '.join(str(warning) for warning in item.get('warnings', [])))}</td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Review Harvest</h1>
+    <p>Review-only scan harvest. Ranks only candidates passing stock setup and small-account options gates.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Mode", result.get("mode")),
+    ("Reviewed", result.get("reviewed_count")),
+    ("Eligible", result.get("eligible_count")),
+    ("Watch Only", result.get("watch_only_count")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Ranked Candidates</h2>
+<table>
+  <thead>
+    <tr><th>Ticker</th><th>Status</th><th>Direction</th><th>Stock Score</th><th>Priority</th><th>Friction</th><th>Contract</th><th>Ask / Max Loss</th><th>Memory</th></tr>
+  </thead>
+  <tbody>{''.join(rows) if rows else '<tr><td colspan="9">No eligible ranked candidates.</td></tr>'}</tbody>
+</table>
+<h2>Watch Only</h2>
+<table>
+  <thead>
+    <tr><th>Ticker</th><th>Status</th><th>Reason</th><th>Warnings</th></tr>
+  </thead>
+  <tbody>{''.join(watch_rows) if watch_rows else '<tr><td colspan="4">No watch-only reviews.</td></tr>'}</tbody>
+</table>
+"""
+    return _html_page("Review Harvest", body, payload)
+
+
+def _session_playbook_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    rows = []
+    for block in result.get("session_blocks") or []:
+        rows.append(
+            "<tr>"
+            f"<td>{escape(str(block.get('central_time') or ''))}</td>"
+            f"<td>{escape(str(block.get('label') or ''))}</td>"
+            f"<td>{escape(str(block.get('intent') or ''))}</td>"
+            f"<td>{escape('; '.join(str(action) for action in block.get('actions', [])))}</td>"
+            f"<td>{escape(str(block.get('pass_condition') or ''))}</td>"
+            f"<td>{escape(str(block.get('fail_condition') or ''))}</td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Market Session Playbook</h1>
+    <p>{escape(str(result.get('target') or 'Review-only live market workflow.'))}</p>
+  </div>
+  <div><span class="badge ok">REVIEW ONLY</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Generated", result.get("generated_at")),
+    ("Universe", ', '.join(result.get("universe") or [])),
+    ("Account Ref.", result.get("account_value_reference")),
+    ("Contract Cap", result.get("small_account_contract_cap")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Session Blocks</h2>
+<table>
+  <thead>
+    <tr><th>CT</th><th>Block</th><th>Intent</th><th>Actions</th><th>Pass</th><th>Fail</th></tr>
+  </thead>
+  <tbody>{''.join(rows) if rows else '<tr><td colspan="6">No playbook blocks returned.</td></tr>'}</tbody>
+</table>
+<h2>Manual Trade Gate</h2>
+{_list(result.get("manual_trade_gate") or [])}
+"""
+    return _html_page("Market Session Playbook", body, payload)
+
+
+def _harvest_followup_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    outcome_rows = []
+    for item in result.get("outcomes") or []:
+        outcome_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('verdict') or item.get('status') or ''))}</td>"
+            f"<td>{escape(str(item.get('current_return_pct') or ''))}</td>"
+            f"<td>{escape(str(item.get('max_favorable_excursion') or ''))}</td>"
+            f"<td>{escape(str(item.get('max_adverse_excursion') or ''))}</td>"
+            f"<td>{escape(str(item.get('reason') or item.get('outcome_window_status') or ''))}</td>"
+            "</tr>"
+        )
+    class_rows = []
+    for item in result.get("classifications") or []:
+        class_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('classification') or ''))}</td>"
+            f"<td>{escape(str(item.get('reason') or ''))}</td>"
+            f"<td>{escape(', '.join(str(tag) for tag in item.get('lesson_tags', [])))}</td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Harvest Follow-Up</h1>
+    <p>Outcome checks and learning labels from the latest review-only harvest.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Harvest Event", result.get("harvest_event_id")),
+    ("Checks Requested", result.get("checks_requested")),
+    ("Checks Completed", result.get("checks_completed")),
+    ("Classify", result.get("classify")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Outcomes</h2>
+<table>
+  <thead>
+    <tr><th>Ticker</th><th>Verdict</th><th>Return</th><th>MFE</th><th>MAE</th><th>Note</th></tr>
+  </thead>
+  <tbody>{''.join(outcome_rows) if outcome_rows else '<tr><td colspan="6">No outcomes checked.</td></tr>'}</tbody>
+</table>
+<h2>Learning Labels</h2>
+<table>
+  <thead>
+    <tr><th>Ticker</th><th>Classification</th><th>Reason</th><th>Tags</th></tr>
+  </thead>
+  <tbody>{''.join(class_rows) if class_rows else '<tr><td colspan="4">No classifications logged.</td></tr>'}</tbody>
+</table>
+"""
+    return _html_page("Harvest Follow-Up", body, payload)
+
+
 def _blueprint_html(payload: dict[str, Any], title: str) -> HTMLResponse:
     result = payload.get("result") or {}
     sections = []
@@ -581,6 +750,56 @@ async def fallback_scalp_scan(request: Request) -> JSONResponse:
     max_candidates = _int_or_default(params.get("max_candidates"), 25)
     result = container.scanner.run_market_scan("scalp_review", _tickers(params.get("tickers")), max_candidates)
     return JSONResponse(_review_only_envelope({"result": result}))
+
+
+async def fallback_market_readiness(request: Request) -> JSONResponse:
+    params = request.query_params
+    max_candidates = _int_or_default(params.get("max_candidates"), 25)
+    result = _market_readiness_check(container, _tickers(params.get("tickers")), max_candidates)
+    return JSONResponse(_review_only_envelope({"result": result}))
+
+
+async def fallback_review_harvest(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _run_review_harvest(
+        container,
+        _tickers(params.get("tickers")),
+        params.get("mode") or "scalp_review",
+        _int_or_default(params.get("max_candidates"), 25),
+        _int_or_default(params.get("review_top_n"), 8),
+        _float_or_none(params.get("max_contract_price")),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _review_harvest_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_session_playbook(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _get_market_session_playbook(
+        container,
+        _tickers(params.get("tickers")),
+        _float_or_none(params.get("account_value")) or 50.0,
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _session_playbook_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_harvest_followup(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    classify_raw = (params.get("classify") or "true").strip().lower()
+    result = _run_latest_harvest_followup(
+        container,
+        _int_or_default(params.get("limit"), 5),
+        classify_raw not in {"false", "0", "no"},
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _harvest_followup_html(payload)
+    return JSONResponse(payload)
 
 
 async def fallback_options_review(request: Request) -> JSONResponse:
