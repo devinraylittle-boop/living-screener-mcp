@@ -41,6 +41,7 @@ class DebugValidationService:
                 "trading_day_launch": "trading_day_launch_v1",
                 "trading_day_heartbeat": "trading_day_heartbeat_v1",
                 "day_monitor": "day_monitor_v1",
+                "trading_day_alerts": "trading_day_alerts_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -53,6 +54,7 @@ class DebugValidationService:
                 "/ops/trading-day-launch",
                 "/ops/day-heartbeat",
                 "/ops/day-monitor",
+                "/ops/day-alerts",
                 "/paper/options/summary",
                 "/journal/checkpoint",
                 "/trade/manual-desk",
@@ -80,6 +82,7 @@ class DebugValidationService:
                 "trading_day_launch_route": True,
                 "trading_day_heartbeat_route": True,
                 "day_monitor_route": True,
+                "trading_day_alerts_route": True,
                 "manual_preflight_route": True,
                 "paper_option_ledger_routes": True,
                 "journal_checkpoint_route": True,
@@ -259,6 +262,7 @@ class DebugValidationService:
             "trading_day_launch_schema_preview": self._trading_day_launch_schema_preview(),
             "trading_day_heartbeat_schema_preview": self._trading_day_heartbeat_schema_preview(),
             "day_monitor_schema_preview": self._day_monitor_schema_preview(),
+            "trading_day_alerts_schema_preview": self._trading_day_alerts_schema_preview(),
             "morning_autopilot_schema_preview": self._morning_autopilot_schema_preview(),
             "live_review_cycle_schema_preview": self._live_review_cycle_schema_preview(),
             "market_open_observer_schema_preview": self._market_open_observer_schema_preview(),
@@ -477,6 +481,24 @@ class DebugValidationService:
             "min_refresh_seconds": 60,
             "max_refresh_seconds": 1800,
             "notes": "Static monitor preview only. The live route auto-refreshes the review-only heartbeat page while the browser tab is open.",
+        }
+
+    def _trading_day_alerts_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "ALERTS_MANUAL_REVIEW_READY",
+            "schema_version": "trading_day_alerts_v1",
+            "top_level": "REVIEW",
+            "alert_count": 1,
+            "alerts": [
+                {
+                    "level": "REVIEW",
+                    "type": "MANUAL_REVIEW_READY",
+                    "title": "Heartbeat found a candidate ready for manual broker inspection",
+                    "next_action": "Use manual trade desk with broker-visible fields.",
+                    "link": "/trade/manual-desk",
+                }
+            ],
+            "notes": "Static alerts preview only. The live tool summarizes review-only journal events and cannot execute broker actions.",
         }
 
     def _morning_autopilot_schema_preview(self) -> dict[str, Any]:
@@ -756,6 +778,7 @@ class DebugValidationService:
             "get_ops_command_center",
             "get_trading_day_launch_checklist",
             "run_trading_day_heartbeat",
+            "summarize_trading_day_alerts",
             "run_morning_readiness_autopilot",
             "run_live_review_cycle",
             "run_market_open_observer",

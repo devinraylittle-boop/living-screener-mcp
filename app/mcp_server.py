@@ -118,6 +118,11 @@ def run_trading_day_heartbeat(
 
 
 @mcp.tool
+def summarize_trading_day_alerts(limit: int = 50) -> dict:
+    return _summarize_trading_day_alerts(container, limit)
+
+
+@mcp.tool
 def run_morning_readiness_autopilot(tickers: list[str] | None = None, account_value: float = 50.0, max_candidates: int = 25) -> dict:
     return _run_morning_readiness_autopilot(container, tickers, account_value, max_candidates)
 
@@ -891,6 +896,182 @@ def _run_trading_day_heartbeat(
         ],
     }
     return service_container.events.log("trading_day_heartbeat", payload)
+
+
+def _summarize_trading_day_alerts(service_container, limit: int = 50) -> dict:
+    limit = max(1, min(int(limit or 50), 200))
+    heartbeats = service_container.events.recent("trading_day_heartbeat", limit)
+    live_cycles = service_container.events.recent("live_review_cycle", limit)
+    manual_actions = service_container.events.recent("manual_broker_action", limit)
+    checkpoints = service_container.events.recent("journal_checkpoint_export", 5)
+    alerts: list[dict[str, Any]] = []
+    latest_manual = manual_actions[0] if manual_actions else None
+    latest_manual_payload = (latest_manual or {}).get("payload") or {}
+    if latest_manual_payload.get("pending_buy"):
+        alerts.append(
+            {
+                "priority": 100,
+                "level": "URGENT",
+                "type": "PENDING_BUY_RECHECK",
+                "title": "Pending buy requires 60-second recheck",
+                "timestamp": latest_manual.get("timestamp"),
+                "source_event_id": latest_manual.get("id"),
+                "status": latest_manual_payload.get("status"),
+                "next_action": "Open /trade/pending-recheck before trusting or replacing any queued buy.",
+                "link": "/trade/pending-recheck",
+            }
+        )
+
+    for event in heartbeats[:limit]:
+        payload = event.get("payload") or {}
+        status = payload.get("status")
+        if status == "HEARTBEAT_MANUAL_REVIEW_READY":
+            alerts.append(
+                {
+                    "priority": 90,
+                    "level": "REVIEW",
+                    "type": "MANUAL_REVIEW_READY",
+                    "title": "Heartbeat found a candidate ready for manual broker inspection",
+                    "timestamp": event.get("timestamp"),
+                    "source_event_id": event.get("id"),
+                    "status": status,
+                    "next_action": payload.get("next_action"),
+                    "link": (payload.get("action_links") or {}).get("manual_trade_desk") or "/trade/manual-desk",
+                }
+            )
+        elif status in {"HEARTBEAT_DATA_BLOCKED", "HEARTBEAT_PENDING_RECHECK_REQUIRED"}:
+            alerts.append(
+                {
+                    "priority": 80 if status == "HEARTBEAT_PENDING_RECHECK_REQUIRED" else 70,
+                    "level": "BLOCKED" if status == "HEARTBEAT_DATA_BLOCKED" else "URGENT",
+                    "type": status,
+                    "title": "Heartbeat cannot safely continue the normal review cadence",
+                    "timestamp": event.get("timestamp"),
+                    "source_event_id": event.get("id"),
+                    "status": status,
+                    "next_action": payload.get("next_action"),
+                    "link": (payload.get("action_links") or {}).get("pending_recheck") or "/ops/day-monitor",
+                }
+            )
+        elif status == "HEARTBEAT_LEARNING_REVIEW_READY":
+            alerts.append(
+                {
+                    "priority": 30,
+                    "level": "LEARNING",
+                    "type": "LEARNING_REVIEW_READY",
+                    "title": "Learning follow-up is ready",
+                    "timestamp": event.get("timestamp"),
+                    "source_event_id": event.get("id"),
+                    "status": status,
+                    "next_action": payload.get("next_action"),
+                    "link": (payload.get("action_links") or {}).get("observer_followup") or "/ops/observer-followup?format=html",
+                }
+            )
+
+    for event in live_cycles[:limit]:
+        payload = event.get("payload") or {}
+        ranked = payload.get("ranked_candidates") or []
+        if ranked:
+            top = ranked[0] if isinstance(ranked[0], dict) else {}
+            alerts.append(
+                {
+                    "priority": 85,
+                    "level": "REVIEW",
+                    "type": "LIVE_CYCLE_CANDIDATE",
+                    "title": f"Live review cycle has ranked candidate {top.get('ticker') or ''}".strip(),
+                    "timestamp": event.get("timestamp"),
+                    "source_event_id": event.get("id"),
+                    "status": payload.get("status"),
+                    "ticker": top.get("ticker"),
+                    "contract_symbol": top.get("selected_contract") or top.get("contract_symbol"),
+                    "next_action": "Use broker-visible fields with /trade/manual-desk before any manual action.",
+                    "link": "/trade/manual-desk",
+                }
+            )
+
+    if not checkpoints:
+        alerts.append(
+            {
+                "priority": 20,
+                "level": "REMINDER",
+                "type": "CHECKPOINT_NOT_EXPORTED",
+                "title": "No recent journal checkpoint export found",
+                "timestamp": None,
+                "source_event_id": None,
+                "status": "CHECKPOINT_SUGGESTED",
+                "next_action": "Export /journal/checkpoint after meaningful scan, review, paper, or learning events.",
+                "link": "/journal/checkpoint?limit=500&format=json",
+            }
+        )
+
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[Any, Any, Any]] = set()
+    for alert in sorted(alerts, key=lambda item: (int(item.get("priority") or 0), str(item.get("timestamp") or "")), reverse=True):
+        key = (alert.get("type"), alert.get("source_event_id"), alert.get("ticker"))
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(alert)
+
+    top_level = "QUIET"
+    if any(alert.get("level") == "URGENT" for alert in deduped):
+        top_level = "URGENT"
+    elif any(alert.get("level") == "REVIEW" for alert in deduped):
+        top_level = "REVIEW"
+    elif any(alert.get("level") == "BLOCKED" for alert in deduped):
+        top_level = "BLOCKED"
+    elif any(alert.get("level") in {"LEARNING", "REMINDER"} for alert in deduped):
+        top_level = "INFO"
+
+    if top_level == "URGENT":
+        status = "ALERTS_REQUIRE_ACTION"
+        next_action = "Handle urgent alert before continuing scans or manual review."
+    elif top_level == "REVIEW":
+        status = "ALERTS_MANUAL_REVIEW_READY"
+        next_action = "Inspect the review alert, then use manual trade desk with broker-visible fields."
+    elif top_level == "BLOCKED":
+        status = "ALERTS_BLOCKED"
+        next_action = "Resolve data/pending-order blockage before continuing."
+    elif top_level == "INFO":
+        status = "ALERTS_INFORMATIONAL"
+        next_action = "Review learning/checkpoint reminders when convenient."
+    else:
+        status = "ALERTS_QUIET"
+        next_action = "Continue day monitor cadence; no attention alert is active."
+
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "mode": "trading_day_alerts",
+        "generated_at": utc_now(),
+        "top_level": top_level,
+        "alert_count": len(deduped),
+        "alerts": deduped[:limit],
+        "latest": {
+            "heartbeat": _compact_event(_latest_payload(service_container, "trading_day_heartbeat")),
+            "live_review_cycle": _compact_event(_latest_payload(service_container, "live_review_cycle")),
+            "manual_broker_action": _compact_event(_latest_payload(service_container, "manual_broker_action")),
+            "journal_checkpoint_export": _compact_event(_latest_payload(service_container, "journal_checkpoint_export")),
+        },
+        "next_action": next_action,
+        "action_links": {
+            "day_monitor": "/ops/day-monitor?format=html",
+            "manual_trade_desk": "/trade/manual-desk",
+            "pending_recheck": "/trade/pending-recheck",
+            "journal_checkpoint": "/journal/checkpoint?limit=500&format=json",
+            "learning_dashboard": "/learning/dashboard",
+        },
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "broker_action": False,
+        "notes": [
+            "Alerts summarize existing review-only journal events; they do not run broker actions.",
+            "Manual review alerts still require broker-visible inspection and manual trade desk preflight.",
+            "Checkpoint reminders preserve learning evidence but are not execution records.",
+        ],
+    }
+    return service_container.events.log("trading_day_alert_summary", payload)
 
 
 def _run_morning_readiness_autopilot(service_container, tickers: list[str] | None, account_value: float, max_candidates: int) -> dict:

@@ -28,6 +28,7 @@ from app.mcp_server import (
     _run_trading_day_heartbeat,
     _run_latest_harvest_followup,
     _run_review_harvest,
+    _summarize_trading_day_alerts,
     _summarize_manual_option_paper_trades,
     container,
 )
@@ -859,6 +860,61 @@ def _trading_day_heartbeat_html(payload: dict[str, Any], auto_refresh: bool = Fa
 {_list(result.get("notes") or [])}
 """
     return _html_page("Trading Day Heartbeat", body, payload, extra_head=extra_head)
+
+
+def _trading_day_alerts_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    alert_rows = []
+    for alert in result.get("alerts") or []:
+        link = str(alert.get("link") or "")
+        alert_rows.append(
+            "<tr>"
+            f"<td>{escape(str(alert.get('level') or ''))}</td>"
+            f"<td>{escape(str(alert.get('type') or ''))}</td>"
+            f"<td>{escape(str(alert.get('title') or ''))}</td>"
+            f"<td>{escape(str(alert.get('timestamp') or ''))}</td>"
+            f"<td>{escape(str(alert.get('next_action') or ''))}</td>"
+            f"<td><a href=\"{escape(link)}\">{escape(link)}</a></td>"
+            "</tr>"
+        )
+    link_rows = []
+    for label, url in (result.get("action_links") or {}).items():
+        link_rows.append(
+            "<tr>"
+            f"<td>{escape(str(label).replace('_', ' ').title())}</td>"
+            f"<td><a href=\"{escape(str(url))}\">{escape(str(url))}</a></td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Trading Day Alerts</h1>
+    <p>Attention queue from recent heartbeat, live-cycle, manual-action, and checkpoint events. Review-only.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Top Level", result.get("top_level")),
+    ("Alert Count", result.get("alert_count")),
+    ("Next Action", result.get("next_action")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Alerts</h2>
+<table>
+  <thead><tr><th>Level</th><th>Type</th><th>Title</th><th>Time</th><th>Next Action</th><th>Link</th></tr></thead>
+  <tbody>{''.join(alert_rows) if alert_rows else '<tr><td colspan="6">No attention alerts.</td></tr>'}</tbody>
+</table>
+<h2>Action Links</h2>
+<table>
+  <thead><tr><th>Action</th><th>Link</th></tr></thead>
+  <tbody>{''.join(link_rows)}</tbody>
+</table>
+<h2>Notes</h2>
+{_list(result.get("notes") or [])}
+"""
+    return _html_page("Trading Day Alerts", body, payload)
 
 
 def _morning_autopilot_html(payload: dict[str, Any]) -> HTMLResponse:
@@ -1775,6 +1831,15 @@ async def fallback_day_monitor(request: Request) -> JSONResponse | HTMLResponse:
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _trading_day_heartbeat_html(payload, auto_refresh=not _truthy(params.get("no_refresh")))
+    return JSONResponse(payload)
+
+
+async def fallback_day_alerts(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _summarize_trading_day_alerts(container, _int_or_default(params.get("limit"), 50))
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _trading_day_alerts_html(payload)
     return JSONResponse(payload)
 
 

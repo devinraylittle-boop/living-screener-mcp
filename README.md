@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.10-day-monitor
+2026.06.10-review-alerts
 ```
 
 ## Render Environment
@@ -96,6 +96,8 @@ Trading day heartbeat is the repeatable market-hours cadence tick. Use `run_trad
 
 Day monitor is the browser tab version of the heartbeat. Open `/ops/day-monitor` during the session and leave it open; it auto-refreshes at the heartbeat's safe interval, records one review-only cadence tick per refresh, and keeps the latest action links visible. Close the tab when you want the cadence to stop. It is still review-only and cannot place, submit, simulate, modify, or cancel broker orders.
 
+Trading day alerts summarize the attention queue. Use `summarize_trading_day_alerts` or `/ops/day-alerts` to see urgent pending-buy rechecks, manual-review-ready heartbeat/live-cycle alerts, data-blocked warnings, learning reminders, and checkpoint reminders. Alerts are summaries of existing review-only journal evidence; they never approve a trade by themselves and cannot place, submit, simulate, modify, or cancel broker orders.
+
 Off-hours research tools keep the system productive when U.S. options liquidity is stale or closed. Use `get_offhours_research_plan` and `run_global_research_scan` for underlying-only studies across crypto and global instruments. These scans do not validate U.S. options chains and must not be treated as broker action. Use them to find patterns worth logging and checking later with the mistake engine.
 
 The off-hours scanner treats unavailable volume as unknown instead of bearish. If high/low range data is unusable, it falls back to close-to-close movement expansion so crypto/global feeds can still be studied without pretending missing RVOL is truly weak.
@@ -116,7 +118,7 @@ These routes call the same review-only services as the MCP tools. They exist so 
 
 ```text
 GET /safety
-GET /health/full?expected_build_version=2026.06.10-day-monitor
+GET /health/full?expected_build_version=2026.06.10-review-alerts
 GET /scan/scalp?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
 GET /scan/market?mode=conservative_review_only&tickers=SPY,QQQ,KO,PG
 GET /ops/trading-day-launch?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25
@@ -124,6 +126,7 @@ GET /ops/trading-day-launch?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=
 GET /ops/day-heartbeat?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25&review_top_n=8&max_contract_price=1.00
 GET /ops/day-heartbeat?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&format=html
 GET /ops/day-monitor?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25&review_top_n=8&max_contract_price=1.00&format=html
+GET /ops/day-alerts?limit=50&format=html
 GET /ops/command-center?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50
 GET /ops/command-center?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&format=html
 GET /ops/morning-autopilot?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25
@@ -180,7 +183,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.10-day-monitor
+GET /debug/scan-schema?expected_build_version=2026.06.10-review-alerts
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -196,6 +199,8 @@ Opening `/ops/trading-day-launch` returns the top-level go/no-go map for tomorro
 Opening `/ops/day-heartbeat` runs one safe cadence step and returns the result, next refresh seconds, next action, action links, and hard no-trade rules. Use it repeatedly during the open session. If it returns `HEARTBEAT_MANUAL_REVIEW_READY`, the next step is broker-visible inspection plus `/trade/manual-desk`, not direct execution.
 
 Opening `/ops/day-monitor` returns the heartbeat page with browser auto-refresh turned on. This is the best page to leave open tomorrow while the market is moving. It stops when the tab is closed, and it never bypasses the manual desk or pending-buy recheck gates.
+
+Opening `/ops/day-alerts` returns the attention queue from recent journal events. Use it beside the monitor tab if you want one page that says whether anything needs action now. `URGENT` means stop and handle the pending recheck; `REVIEW` means inspect manually through `/trade/manual-desk`; `INFO` means learning/checkpoint housekeeping.
 
 Opening `/trade/manual-action` records a user-reported broker-side decision and returns a pending-buy recheck card when needed. Opening `/trade/pending-recheck` runs the review-only stale pending-buy check. Neither route can verify broker state or perform broker actions.
 
@@ -266,7 +271,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.10-day-monitor",
+  "build_version": "2026.06.10-review-alerts",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false

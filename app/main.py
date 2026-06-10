@@ -11,6 +11,7 @@ from app.fallback_endpoints import (
     fallback_build_evidence_packets_from_scan,
     fallback_debug_scan_schema,
     fallback_debug_tool_manifest,
+    fallback_day_alerts,
     fallback_day_monitor,
     fallback_evidence_summary,
     fallback_explain_premove_score,
@@ -76,6 +77,7 @@ def create_app():
     app.add_route("/ops/trading-day-launch", fallback_trading_day_launch, methods=["GET"])
     app.add_route("/ops/day-heartbeat", fallback_trading_day_heartbeat, methods=["GET"])
     app.add_route("/ops/day-monitor", fallback_day_monitor, methods=["GET"])
+    app.add_route("/ops/day-alerts", fallback_day_alerts, methods=["GET"])
     app.add_route("/ops/morning-autopilot", fallback_morning_autopilot, methods=["GET"])
     app.add_route("/ops/live-review-cycle", fallback_live_review_cycle, methods=["GET"])
     app.add_route("/ops/market-open-observer", fallback_market_open_observer, methods=["GET"])

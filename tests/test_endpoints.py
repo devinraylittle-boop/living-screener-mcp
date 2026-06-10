@@ -35,6 +35,7 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("get_ops_command_center", tools.json()["tools"])
         self.assertIn("get_trading_day_launch_checklist", tools.json()["tools"])
         self.assertIn("run_trading_day_heartbeat", tools.json()["tools"])
+        self.assertIn("summarize_trading_day_alerts", tools.json()["tools"])
         self.assertIn("run_morning_readiness_autopilot", tools.json()["tools"])
         self.assertIn("run_live_review_cycle", tools.json()["tools"])
         self.assertIn("run_market_open_observer", tools.json()["tools"])
@@ -428,7 +429,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_trade_desk_endpoint_can_render_human_readable_html(self) -> None:
         fake_trade_desk = {
             "status": "MANUAL_TRADE_DESK_READY",
-            "build_version": "2026.06.10-day-monitor",
+            "build_version": "2026.06.10-review-alerts",
             "ticker": "SOFI",
             "direction": "put",
             "contract_symbol": "SOFI260612P00015000",
@@ -490,7 +491,7 @@ class EndpointTests(unittest.TestCase):
     def test_market_open_observer_endpoint_logs_evidence_without_broker_action(self) -> None:
         fake_observer = {
             "status": "OBSERVER_STOCK_CANDIDATES",
-            "build_version": "2026.06.10-day-monitor",
+            "build_version": "2026.06.10-review-alerts",
             "mode": "market_open_observer",
             "cadence_minutes": 5,
             "candidate_count": 1,
@@ -546,7 +547,7 @@ class EndpointTests(unittest.TestCase):
     def test_observer_followup_endpoint_can_render_missed_move_learning(self) -> None:
         fake_followup = {
             "status": "OBSERVER_FOLLOWUP_LEARNING_NEEDED",
-            "build_version": "2026.06.10-day-monitor",
+            "build_version": "2026.06.10-review-alerts",
             "mode": "observer_followup",
             "source_observation_count": 2,
             "items_checked": 3,
@@ -597,7 +598,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_broker_action_endpoint_records_pending_recheck_card(self) -> None:
         fake_action = {
             "status": "MANUAL_ACTION_PENDING_RECHECK_REQUIRED",
-            "build_version": "2026.06.10-day-monitor",
+            "build_version": "2026.06.10-review-alerts",
             "ticker": "SOFI",
             "contract_symbol": "SOFI260612P00015000",
             "action_type": "pending_buy",
@@ -677,7 +678,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_launch_endpoint_renders_go_no_go_map(self) -> None:
         fake_launch = {
             "status": "LAUNCH_START_HERE",
-            "build_version": "2026.06.10-day-monitor",
+            "build_version": "2026.06.10-review-alerts",
             "mode": "trading_day_launch_checklist",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -693,7 +694,7 @@ class EndpointTests(unittest.TestCase):
                 {
                     "phase": "Build and safety",
                     "go_condition": "Build matches expected version.",
-                    "primary_link": "/health/full?expected_build_version=2026.06.10-day-monitor",
+                    "primary_link": "/health/full?expected_build_version=2026.06.10-review-alerts",
                     "stop_if": "Wrong build.",
                 },
                 {
@@ -726,7 +727,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_heartbeat_endpoint_renders_safe_cadence_tick(self) -> None:
         fake_heartbeat = {
             "status": "HEARTBEAT_NO_TRADE_PLAN",
-            "build_version": "2026.06.10-day-monitor",
+            "build_version": "2026.06.10-review-alerts",
             "mode": "trading_day_heartbeat",
             "phase": {"phase": "active", "forced": True, "now_et": "2026-06-10T11:00:00-04:00"},
             "universe": ["SOFI", "SMCI"],
@@ -759,6 +760,42 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(json_response.status_code, 200)
         self.assertEqual(json_response.json()["result"]["status"], "HEARTBEAT_NO_TRADE_PLAN")
         self.assertFalse(json_response.json()["can_cancel_order_from_this_mcp"])
+
+    def test_trading_day_alerts_endpoint_renders_attention_queue(self) -> None:
+        fake_alerts = {
+            "status": "ALERTS_MANUAL_REVIEW_READY",
+            "build_version": "2026.06.10-review-alerts",
+            "top_level": "REVIEW",
+            "alert_count": 1,
+            "alerts": [
+                {
+                    "level": "REVIEW",
+                    "type": "MANUAL_REVIEW_READY",
+                    "title": "Heartbeat found a candidate ready for manual broker inspection",
+                    "timestamp": "2026-06-10T15:00:00Z",
+                    "next_action": "Use manual trade desk.",
+                    "link": "/trade/manual-desk",
+                }
+            ],
+            "next_action": "Inspect the review alert, then use manual trade desk with broker-visible fields.",
+            "action_links": {"day_monitor": "/ops/day-monitor?format=html", "manual_trade_desk": "/trade/manual-desk"},
+            "notes": ["Alerts summarize existing review-only journal events."],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+            "broker_action": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints._summarize_trading_day_alerts", return_value=fake_alerts):
+            html = client.get("/ops/day-alerts?limit=50", headers={"accept": "text/html"})
+            json_response = client.get("/ops/day-alerts?limit=50")
+
+        self.assertEqual(html.status_code, 200)
+        self.assertIn("Trading Day Alerts", html.text)
+        self.assertIn("MANUAL_REVIEW_READY", html.text)
+        self.assertEqual(json_response.status_code, 200)
+        self.assertEqual(json_response.json()["result"]["status"], "ALERTS_MANUAL_REVIEW_READY")
+        self.assertFalse(json_response.json()["can_place_order_from_this_mcp"])
 
     def test_offhours_and_crypto_fallbacks_are_review_only(self) -> None:
         fake_global_scan = {
@@ -876,10 +913,10 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.10-day-monitor")
+        full = client.get("/health/full?expected_build_version=2026.06.10-review-alerts")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-day-monitor")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-review-alerts")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -895,6 +932,7 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_ops_command_center"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_trading_day_launch_checklist"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_trading_day_heartbeat"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["summarize_trading_day_alerts"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_morning_readiness_autopilot"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_live_review_cycle"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_market_open_observer"])
@@ -933,6 +971,8 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(heartbeat_preview["status"], "HEARTBEAT_NO_TRADE_PLAN")
         monitor_preview = schema.json()["result"]["day_monitor_schema_preview"]
         self.assertEqual(monitor_preview["status"], "DAY_MONITOR_READY")
+        alerts_preview = schema.json()["result"]["trading_day_alerts_schema_preview"]
+        self.assertEqual(alerts_preview["status"], "ALERTS_MANUAL_REVIEW_READY")
         autopilot_preview = schema.json()["result"]["morning_autopilot_schema_preview"]
         self.assertEqual(autopilot_preview["status"], "AUTOPILOT_READY_FOR_HARVEST")
         live_cycle_preview = schema.json()["result"]["live_review_cycle_schema_preview"]
@@ -1040,9 +1080,9 @@ class EndpointTests(unittest.TestCase):
         }
         fake_restore = {
             "status": "CHECKPOINT_RESTORE_READY",
-            "build_version": "2026.06.10-day-monitor",
+            "build_version": "2026.06.10-review-alerts",
             "source_label": "unit_test",
-            "checkpoint_build_version": "2026.06.10-day-monitor",
+            "checkpoint_build_version": "2026.06.10-review-alerts",
             "requested_event_count": 1,
             "restored_count": 1,
             "skipped_duplicate_count": 0,

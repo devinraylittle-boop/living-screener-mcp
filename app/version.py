@@ -1,1 +1,1 @@
-BUILD_VERSION = "2026.06.10-day-monitor"
+BUILD_VERSION = "2026.06.10-review-alerts"
