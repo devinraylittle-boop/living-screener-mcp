@@ -24,6 +24,7 @@ from app.fallback_endpoints import (
     fallback_live_review_cycle,
     fallback_log_review_decision,
     fallback_manual_preflight,
+    fallback_manual_trade_desk,
     fallback_market_scan,
     fallback_market_readiness,
     fallback_health_full,
@@ -69,6 +70,7 @@ def create_app():
     app.add_route("/ops/live-review-cycle", fallback_live_review_cycle, methods=["GET"])
     app.add_route("/review/options", fallback_options_review, methods=["GET"])
     app.add_route("/review/manual-preflight", fallback_manual_preflight, methods=["GET", "POST"])
+    app.add_route("/trade/manual-desk", fallback_manual_trade_desk, methods=["GET", "POST"])
     app.add_route("/review/broker-option-snapshot", fallback_validate_broker_snapshot, methods=["POST"])
     app.add_route("/paper/options/entry", fallback_paper_option_entry, methods=["POST"])
     app.add_route("/paper/options/close", fallback_paper_option_close, methods=["POST"])

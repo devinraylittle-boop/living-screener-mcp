@@ -9,6 +9,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 
 from app.mcp_server import (
+    _build_manual_trade_desk,
     _build_manual_trade_preflight_ticket,
     _close_manual_option_paper_trade,
     _export_journal_checkpoint,
@@ -935,6 +936,71 @@ def _manual_preflight_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Manual Trade Preflight", body, payload)
 
 
+def _manual_trade_desk_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    preflight = result.get("preflight") or {}
+    ticket = preflight.get("manual_ticket") or {}
+    selected = preflight.get("selected_contract") or {}
+    paper_request = result.get("paper_entry_request") or {}
+    paper_payload = paper_request.get("payload") or {}
+    checkpoint = result.get("checkpoint_request") or {}
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Manual Trade Desk</h1>
+    <p>Broker snapshot preflight, paper-entry payload, and checkpoint reminder. Review-only.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Ticker", result.get("ticker")),
+    ("Direction", result.get("direction")),
+    ("Contract", result.get("contract_symbol")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Preflight</h2>
+{_field_grid([
+    ("Preflight Status", preflight.get("status")),
+    ("Options Gate", (preflight.get("option_validation") or {}).get("status")),
+    ("Risk Gate", (preflight.get("risk_check") or {}).get("status")),
+    ("Order Type", ticket.get("order_type")),
+    ("Max Review Ask", ticket.get("max_review_ask")),
+    ("Max Loss", ticket.get("max_loss_dollars")),
+])}
+<h2>Contract Snapshot</h2>
+{_field_grid([
+    ("Bid", selected.get("bid")),
+    ("Ask", selected.get("ask")),
+    ("Spread", selected.get("spread_pct")),
+    ("Volume", selected.get("volume")),
+    ("Open Interest", selected.get("open_interest")),
+    ("DTE", selected.get("days_to_expiration")),
+    ("Strike", selected.get("strike")),
+])}
+<h2>Paper Entry Payload</h2>
+{_field_grid([
+    ("Endpoint", paper_request.get("endpoint")),
+    ("Fill Price", paper_payload.get("fill_price")),
+    ("Quantity", paper_payload.get("quantity")),
+    ("Underlying Ref.", paper_payload.get("underlying_price")),
+])}
+<h2>Checkpoint</h2>
+{_field_grid([
+    ("Endpoint", checkpoint.get("endpoint")),
+    ("When", checkpoint.get("when")),
+])}
+<h2>Blocking Reasons</h2>
+{_list(preflight.get("blocking_reasons") or [])}
+<h2>Warnings</h2>
+{_list(preflight.get("warnings") or [])}
+<h2>Next Steps</h2>
+{_list(result.get("next_steps") or [])}
+"""
+    return _html_page("Manual Trade Desk", body, payload)
+
+
 def _paper_option_summary_html(payload: dict[str, Any]) -> HTMLResponse:
     result = payload.get("result") or {}
     open_rows = []
@@ -1286,6 +1352,42 @@ async def fallback_manual_preflight(request: Request) -> JSONResponse | HTMLResp
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _manual_preflight_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_manual_trade_desk(request: Request) -> JSONResponse | HTMLResponse:
+    if request.method == "POST":
+        body = await request.json()
+    else:
+        params = request.query_params
+        body = {
+            "ticker": params.get("ticker"),
+            "underlying": params.get("underlying"),
+            "underlying_price": _float_or_none(params.get("underlying_price")),
+            "contract_symbol": params.get("contract_symbol"),
+            "direction": params.get("direction"),
+            "bid": _float_or_none(params.get("bid")),
+            "ask": _float_or_none(params.get("ask")),
+            "volume": _int_or_default(params.get("volume"), 0),
+            "open_interest": _int_or_default(params.get("open_interest"), 0),
+            "dte": _int_or_default(params.get("dte"), 0),
+            "strike": _float_or_none(params.get("strike")),
+            "expiration": params.get("expiration"),
+            "account_value": _float_or_none(params.get("account_value")),
+            "max_contract_price": _float_or_none(params.get("max_contract_price")),
+            "notes": params.get("notes"),
+        }
+    snapshot = body.get("snapshot") if isinstance(body.get("snapshot"), dict) else body
+    result = _build_manual_trade_desk(
+        container,
+        snapshot,
+        _float_or_none(str(body.get("account_value"))) if body.get("account_value") is not None else 50.0,
+        _float_or_none(str(body.get("max_contract_price"))) if body.get("max_contract_price") is not None else None,
+        str(body.get("notes") or ""),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _manual_trade_desk_html(payload)
     return JSONResponse(payload)
 
 

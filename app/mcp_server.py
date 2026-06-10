@@ -134,6 +134,11 @@ def build_manual_trade_preflight_ticket(snapshot: dict[str, Any], account_value:
 
 
 @mcp.tool
+def build_manual_trade_desk(snapshot: dict[str, Any], account_value: float = 50.0, max_contract_price: float | None = None, notes: str = "") -> dict:
+    return _build_manual_trade_desk(container, snapshot, account_value, max_contract_price, notes)
+
+
+@mcp.tool
 def log_manual_option_paper_entry(ticket: dict[str, Any], fill_price: float, quantity: int = 1, underlying_price: float | None = None, notes: str = "") -> dict:
     return _log_manual_option_paper_entry(container, ticket, fill_price, quantity, underlying_price, notes)
 
@@ -818,6 +823,60 @@ def _build_manual_trade_preflight_ticket(service_container, snapshot: dict[str, 
         "order_allowed": False,
     }
     return service_container.events.log("manual_preflight_ticket", payload)
+
+
+def _build_manual_trade_desk(service_container, snapshot: dict[str, Any], account_value: float, max_contract_price: float | None, notes: str = "") -> dict:
+    preflight = _build_manual_trade_preflight_ticket(service_container, snapshot, account_value, max_contract_price, notes)
+    selected = preflight.get("selected_contract") or {}
+    manual_ticket = preflight.get("manual_ticket") or {}
+    ready = preflight.get("status") == "MANUAL_PREFLIGHT_READY"
+    contract_symbol = manual_ticket.get("contract_symbol") or selected.get("contract_symbol")
+    reviewed_ask = _float_or_zero(manual_ticket.get("max_review_ask") or selected.get("ask"))
+    underlying_reference = _float_or_zero(snapshot.get("underlying_price") or snapshot.get("price"))
+    paper_payload = {
+        "ticket": preflight,
+        "fill_price": reviewed_ask,
+        "quantity": manual_ticket.get("quantity") or 1,
+        "underlying_price": underlying_reference if underlying_reference > 0 else None,
+        "notes": notes or "manual trade desk paper log",
+    } if ready else None
+    payload = {
+        "status": "MANUAL_TRADE_DESK_READY" if ready else "NO_TRADE_PLAN",
+        "build_version": BUILD_VERSION,
+        "ticker": preflight.get("ticker"),
+        "direction": preflight.get("direction"),
+        "contract_symbol": contract_symbol,
+        "preflight": preflight,
+        "paper_entry_request": {
+            "endpoint": "/paper/options/entry",
+            "payload": paper_payload,
+        } if paper_payload else None,
+        "checkpoint_request": {
+            "endpoint": "/journal/checkpoint?limit=500&format=json",
+            "when": "After any live review cycle, manual broker-side decision, paper entry, or paper close.",
+        },
+        "next_steps": [
+            "Confirm the broker screen still shows this exact contract symbol.",
+            "Confirm bid/ask, volume, open interest, DTE, strike, and max loss still match or improve this ticket.",
+            "Use limit-only discipline; no market orders.",
+            "If you manually act outside this MCP, log the paper/manual fill through /paper/options/entry for learning.",
+            "If a buy remains pending after 60 seconds, re-review it before trusting it.",
+            "Export /journal/checkpoint after the decision so the lesson survives restarts.",
+        ] if ready else [
+            "Do not inspect this as a trade candidate until the blocking reasons clear.",
+            "Rerun live review cycle or manual preflight only after broker-visible fields improve.",
+            "Keep the result as NO_TRADE_PLAN.",
+        ],
+        "review_only": True,
+        "paper_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_placed": False,
+        "order_submitted": False,
+        "broker_action": False,
+        "notes": "Manual trade desk only. It prepares review, paper logging, and checkpoint steps; it cannot execute broker actions.",
+    }
+    return service_container.events.log("manual_trade_desk", payload)
 
 
 def _log_manual_option_paper_entry(service_container, ticket: dict[str, Any], fill_price: float, quantity: int, underlying_price: float | None, notes: str = "") -> dict:
