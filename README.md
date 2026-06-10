@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.09-live-review-cycle
+2026.06.10-journal-checkpoint
 ```
 
 ## Render Environment
@@ -80,6 +80,8 @@ Morning readiness autopilot gives tomorrow's workflow a single starting page. Us
 
 Live review cycle is the market-hours decision page. Use `run_live_review_cycle` or `/ops/live-review-cycle` after the market has usable data. It checks readiness, stops early on bad data, runs review harvest only when data is usable, ranks only candidates that pass both stock setup and `SMALL_ACCOUNT_SCALP_ACCEPTABLE`, summarizes paper ledger state, and returns the next manual action. It cannot place, submit, simulate, modify, or cancel broker orders.
 
+Journal checkpoints protect tomorrow's learning loop from Render restarts. Use `export_journal_checkpoint` or `/journal/checkpoint` after important scan/review/paper events to export recent local journal events, event-type counts, and restore guidance. Save the JSON externally and paste it back into ChatGPT/Codex later for analysis if the hosted local SQLite journal resets. This is evidence export only; it cannot create broker action.
+
 Off-hours research tools keep the system productive when U.S. options liquidity is stale or closed. Use `get_offhours_research_plan` and `run_global_research_scan` for underlying-only studies across crypto and global instruments. These scans do not validate U.S. options chains and must not be treated as broker action. Use them to find patterns worth logging and checking later with the mistake engine.
 
 The off-hours scanner treats unavailable volume as unknown instead of bearish. If high/low range data is unusable, it falls back to close-to-close movement expansion so crypto/global feeds can still be studied without pretending missing RVOL is truly weak.
@@ -100,7 +102,7 @@ These routes call the same review-only services as the MCP tools. They exist so 
 
 ```text
 GET /safety
-GET /health/full?expected_build_version=2026.06.09-live-review-cycle
+GET /health/full?expected_build_version=2026.06.10-journal-checkpoint
 GET /scan/scalp?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
 GET /scan/market?mode=conservative_review_only&tickers=SPY,QQQ,KO,PG
 GET /ops/command-center?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50
@@ -126,6 +128,9 @@ POST /paper/options/entry
 POST /paper/options/close
 GET /paper/options/summary
 GET /paper/options/summary?format=html
+GET /journal/checkpoint?limit=500
+GET /journal/checkpoint?limit=500&format=html
+POST /journal/checkpoint
 POST /review/broker-option-snapshot
 POST /review/log-decision
 GET /review/outcome?ticker=SMCI&direction=put&entry_reference=41.46&review_timestamp=2026-06-09T14:46:19Z
@@ -146,7 +151,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.09-live-review-cycle
+GET /debug/scan-schema?expected_build_version=2026.06.10-journal-checkpoint
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -174,6 +179,8 @@ Opening `/ops/command-center` returns the simplest live operations view: latest 
 Opening `/ops/morning-autopilot` returns the morning checkpoint: build/safety, readiness, paper ledger status, session blocks, manual trade gate, and next action links. Use this as the first page tomorrow before any harvest.
 
 Opening `/ops/live-review-cycle` returns the market-hours checkpoint: data readiness, harvest summary, ranked eligible candidates, watch-only reviews, paper ledger state, and the exact manual preflight gate. It is the page to use when you are deciding whether anything deserves broker-side inspection.
+
+Opening `/journal/checkpoint` returns a saveable local journal export with event counts, recent events, and restore guidance. Use it after meaningful review cycles, paper entries/closes, and learning classifications.
 
 Opening `/debug/scan-schema` returns a static example candidate with `key_signals.evidence_scorecard`, `evidence_packet`, `missing_modules`, `penalty_reasons`, `confidence_band`, `known_blindspots`, and `why_not_ranked`. It does not call market data or create a trade plan.
 
@@ -216,7 +223,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.09-live-review-cycle",
+  "build_version": "2026.06.10-journal-checkpoint",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false

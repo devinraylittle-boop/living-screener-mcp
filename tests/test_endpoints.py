@@ -41,6 +41,7 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("log_manual_option_paper_entry", tools.json()["tools"])
         self.assertIn("close_manual_option_paper_trade", tools.json()["tools"])
         self.assertIn("summarize_manual_option_paper_trades", tools.json()["tools"])
+        self.assertIn("export_journal_checkpoint", tools.json()["tools"])
         self.assertIn("log_review_decision", tools.json()["tools"])
         self.assertIn("check_review_outcome", tools.json()["tools"])
         self.assertIn("summarize_review_outcomes", tools.json()["tools"])
@@ -533,10 +534,10 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.09-live-review-cycle")
+        full = client.get("/health/full?expected_build_version=2026.06.10-journal-checkpoint")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.09-live-review-cycle")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-journal-checkpoint")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -556,6 +557,7 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(manifest.json()["result"]["required_tools"]["log_manual_option_paper_entry"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["close_manual_option_paper_trade"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["summarize_manual_option_paper_trades"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["export_journal_checkpoint"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["summarize_evidence_packets"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["compare_setup_memory"])
         self.assertEqual(schema.status_code, 200)
@@ -584,6 +586,8 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(preflight_preview["status"], "MANUAL_PREFLIGHT_READY")
         ledger_preview = schema.json()["result"]["paper_option_ledger_schema_preview"]
         self.assertEqual(ledger_preview["status"], "PAPER_LEDGER_READY")
+        checkpoint_preview = schema.json()["result"]["journal_checkpoint_schema_preview"]
+        self.assertEqual(checkpoint_preview["status"], "JOURNAL_CHECKPOINT_READY")
         self.assertFalse(schema.json()["can_place_order_from_this_mcp"])
 
     def test_paper_option_ledger_endpoints_are_review_only(self) -> None:
@@ -653,3 +657,30 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(summary.status_code, 200)
         self.assertIn("Paper Option Ledger", summary.text)
         self.assertIn("SOFI260612P00015000", summary.text)
+
+    def test_journal_checkpoint_endpoint_is_review_only(self) -> None:
+        fake_checkpoint = {
+            "status": "JOURNAL_CHECKPOINT_READY",
+            "event_count": 2,
+            "latest_event_id": 44,
+            "checkpoint_event_id": 45,
+            "event_type_counts": {"live_review_cycle": 1, "manual_option_paper_close": 1},
+            "events": [
+                {"id": 44, "timestamp": "2026-06-10T13:30:00Z", "event_type": "live_review_cycle", "payload": {"status": "NO_TRADE_PLAN"}}
+            ],
+            "restore_guidance": ["Save this JSON."],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints._export_journal_checkpoint", return_value=fake_checkpoint):
+            checkpoint_json = client.get("/journal/checkpoint?limit=100")
+            checkpoint_html = client.get("/journal/checkpoint?limit=100", headers={"accept": "text/html"})
+
+        self.assertEqual(checkpoint_json.status_code, 200)
+        self.assertEqual(checkpoint_json.json()["result"]["status"], "JOURNAL_CHECKPOINT_READY")
+        self.assertFalse(checkpoint_json.json()["can_place_order_from_this_mcp"])
+        self.assertEqual(checkpoint_html.status_code, 200)
+        self.assertIn("Journal Checkpoint", checkpoint_html.text)
+        self.assertIn("live_review_cycle", checkpoint_html.text)
