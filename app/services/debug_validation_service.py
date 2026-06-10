@@ -35,6 +35,7 @@ class DebugValidationService:
                 "journal_checkpoint": "journal_checkpoint_v1",
                 "manual_trade_desk": "manual_trade_desk_v1",
                 "market_open_observer": "market_open_observer_v1",
+                "observer_followup": "observer_followup_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -43,6 +44,7 @@ class DebugValidationService:
                 "/ops/morning-autopilot",
                 "/ops/live-review-cycle",
                 "/ops/market-open-observer",
+                "/ops/observer-followup",
                 "/paper/options/summary",
                 "/journal/checkpoint",
                 "/trade/manual-desk",
@@ -64,6 +66,7 @@ class DebugValidationService:
                 "morning_autopilot_route": True,
                 "live_review_cycle_route": True,
                 "market_open_observer_route": True,
+                "observer_followup_route": True,
                 "manual_preflight_route": True,
                 "paper_option_ledger_routes": True,
                 "journal_checkpoint_route": True,
@@ -240,6 +243,7 @@ class DebugValidationService:
             "morning_autopilot_schema_preview": self._morning_autopilot_schema_preview(),
             "live_review_cycle_schema_preview": self._live_review_cycle_schema_preview(),
             "market_open_observer_schema_preview": self._market_open_observer_schema_preview(),
+            "observer_followup_schema_preview": self._observer_followup_schema_preview(),
             "manual_preflight_schema_preview": self._manual_preflight_schema_preview(),
             "manual_trade_desk_schema_preview": self._manual_trade_desk_schema_preview(),
             "paper_option_ledger_schema_preview": self._paper_option_ledger_schema_preview(),
@@ -485,6 +489,36 @@ class DebugValidationService:
             "notes": "Static observer schema preview only. The live tool records scan evidence and cannot options-review, rank contracts, or execute broker actions.",
         }
 
+    def _observer_followup_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "OBSERVER_FOLLOWUP_COMPLETE",
+            "schema_version": "observer_followup_v1",
+            "source_observation_count": 3,
+            "items_checked": 12,
+            "include_passes": True,
+            "missed_move_count": 1,
+            "good_pass_count": 5,
+            "outcomes": [
+                {
+                    "ticker": "EXAMPLE",
+                    "source_bucket": "pass",
+                    "current_return_pct": 0.004,
+                    "max_favorable_excursion": 0.007,
+                    "verdict": "HELPED",
+                }
+            ],
+            "classifications": [
+                {
+                    "ticker": "EXAMPLE",
+                    "classification": "MISSED_MOVE",
+                    "lesson_tags": ["low_relative_volume"],
+                    "reason": "The pass/reject item later had enough favorable excursion to study.",
+                }
+            ],
+            "next_action": "Review missed-move labels and rule proposals before changing any active gate.",
+            "notes": "Static follow-up schema preview only. The live tool grades observer evidence and cannot execute broker actions.",
+        }
+
     def _manual_preflight_schema_preview(self) -> dict[str, Any]:
         return {
             "status": "MANUAL_PREFLIGHT_READY",
@@ -597,6 +631,7 @@ class DebugValidationService:
             "run_morning_readiness_autopilot",
             "run_live_review_cycle",
             "run_market_open_observer",
+            "run_observer_followup",
             "build_manual_trade_preflight_ticket",
             "build_manual_trade_desk",
             "log_manual_option_paper_entry",
@@ -648,6 +683,8 @@ class DebugValidationService:
             return "Review-only morning readiness summary; checks data readiness, ledger state, and next safe action."
         if "cycle" in name:
             return "Review-only live market cycle; runs readiness and harvest gates without broker action."
+        if "followup" in name and "observer" in name:
+            return "Review-only observer follow-up; grades skipped/pass rows for missed-move learning without broker action."
         if "observer" in name:
             return "Review-only market-open observer; records scan evidence and deltas without options review or broker action."
         if "preflight" in name:

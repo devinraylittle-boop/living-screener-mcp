@@ -119,6 +119,11 @@ def run_market_open_observer(tickers: list[str] | None = None, max_candidates: i
 
 
 @mcp.tool
+def run_observer_followup(limit_observations: int = 3, max_items: int = 20, include_passes: bool = True, classify: bool = True) -> dict:
+    return _run_observer_followup(container, limit_observations, max_items, include_passes, classify)
+
+
+@mcp.tool
 def analyze_ticker(ticker: str, mode: str | None = None) -> dict:
     return container.scanner.analyze_ticker(ticker, mode)
 
@@ -834,6 +839,101 @@ def _run_market_open_observer(service_container, tickers: list[str] | None, max_
     return service_container.events.log("market_open_observer", payload)
 
 
+def _run_observer_followup(service_container, limit_observations: int, max_items: int, include_passes: bool, classify: bool) -> dict:
+    limit_observations = max(1, min(int(limit_observations or 3), 20))
+    max_items = max(1, min(int(max_items or 20), 100))
+    observations = service_container.events.recent("market_open_observer", limit_observations)
+    if not observations:
+        return service_container.events.log(
+            "observer_followup",
+            {
+                "status": "NO_OBSERVER_TO_FOLLOW_UP",
+                "reason": "No market_open_observer event has been logged yet.",
+                "outcomes": [],
+                "classifications": [],
+                "review_only": True,
+                "can_place_order_from_this_mcp": False,
+                "can_cancel_order_from_this_mcp": False,
+            },
+        )
+
+    followup_items = _observer_followup_items(observations, max_items, include_passes)
+    outcomes: list[dict[str, Any]] = []
+    classifications: list[dict[str, Any]] = []
+    unavailable = 0
+    for item in followup_items:
+        outcome = service_container.review_outcomes.check_review_outcome(
+            {
+                "review_id": item["review_id"],
+                "ticker": item.get("ticker"),
+                "direction": item.get("direction") or "long",
+                "entry_reference": item.get("entry_reference"),
+                "review_timestamp": item.get("review_timestamp"),
+            },
+            {"15m": 3, "30m": 6, "60m": 12},
+        )
+        outcome["source_observer_event_id"] = item.get("source_observer_event_id")
+        outcome["source_bucket"] = item.get("source_bucket")
+        outcomes.append(outcome)
+        if outcome.get("status") == "OUTCOME_UNAVAILABLE":
+            unavailable += 1
+        elif classify:
+            classifications.append(service_container.learning.classify_review_outcome(item.get("snapshot") or item, outcome))
+
+    learning_summary = service_container.learning.summarize_learning(classifications, max_items) if classifications else None
+    proposals = service_container.learning.generate_rule_proposals(classifications, min_samples=3, limit=max_items) if classifications else None
+    missed = [item for item in classifications if item.get("classification") in {"MISSED_MOVE", "BAD_CONTRACT_OR_TOO_STRICT"}]
+    good_passes = [item for item in classifications if item.get("classification") in {"GOOD_PASS", "GOOD_BLOCK", "GOOD_CAUTION"}]
+    if not outcomes:
+        status = "OBSERVER_FOLLOWUP_EMPTY"
+        next_action = "Run market-open observer first, then follow up once enough candles have elapsed."
+    elif unavailable == len(outcomes):
+        status = "OBSERVER_FOLLOWUP_OUTCOMES_UNAVAILABLE"
+        next_action = "Market data could not grade the observer rows yet. Try again after more candles or provider recovery."
+    elif missed:
+        status = "OBSERVER_FOLLOWUP_LEARNING_NEEDED"
+        next_action = "Review missed-move labels and rule proposals before changing any active gate."
+    else:
+        status = "OBSERVER_FOLLOWUP_COMPLETE"
+        next_action = "Keep current gates; continue observing and checkpoint the journal after meaningful sessions."
+
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "mode": "observer_followup",
+        "generated_at": utc_now(),
+        "source_observation_count": len(observations),
+        "items_checked": len(followup_items),
+        "include_passes": bool(include_passes),
+        "classify": bool(classify),
+        "outcome_unavailable_count": unavailable,
+        "missed_move_count": len(missed),
+        "good_pass_count": len(good_passes),
+        "outcomes": outcomes,
+        "classifications": classifications,
+        "learning_summary": learning_summary,
+        "rule_proposals": proposals,
+        "next_action": next_action,
+        "action_links": {
+            "market_open_observer": "/ops/market-open-observer",
+            "learning_dashboard": "/learning/dashboard",
+            "learning_proposals": "/learning/proposals",
+            "journal_checkpoint": "/journal/checkpoint?limit=500&format=json",
+        },
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_allowed": False,
+        "broker_action": False,
+        "notes": [
+            "Observer follow-up grades previously observed candidates and pass rows.",
+            "MISSED_MOVE labels are research signals only; rule changes still require backtesting.",
+            "This tool cannot place, submit, simulate, modify, or cancel broker orders.",
+        ],
+    }
+    return service_container.events.log("observer_followup", payload)
+
+
 def _build_manual_trade_preflight_ticket(service_container, snapshot: dict[str, Any], account_value: float, max_contract_price: float | None, notes: str = "") -> dict:
     account_value = _float_or_zero(account_value) or 50.0
     effective_max_contract_price = max_contract_price
@@ -1358,6 +1458,7 @@ def _scan_summary(scan: dict[str, Any]) -> dict[str, Any]:
 
 def _observer_row_summary(row: dict[str, Any]) -> dict[str, Any]:
     signals = row.get("key_signals") or {}
+    quote = row.get("quote_summary") or {}
     evidence = row.get("evidence_packet") or {}
     confidence = evidence.get("data_confidence") or {}
     scorecard = signals.get("evidence_scorecard") or {}
@@ -1368,6 +1469,10 @@ def _observer_row_summary(row: dict[str, Any]) -> dict[str, Any]:
         "confidence": row.get("confidence"),
         "direction": row.get("direction"),
         "data_status": row.get("data_status"),
+        "entry_reference": quote.get("price"),
+        "review_timestamp": quote.get("timestamp"),
+        "quote_provider": quote.get("provider"),
+        "quote_freshness_status": quote.get("freshness_status"),
         "relative_volume": signals.get("relative_volume"),
         "relative_volume_status": signals.get("relative_volume_status"),
         "vwap_state": "above" if signals.get("above_vwap") else "below" if signals.get("below_vwap") else "unknown",
@@ -1426,6 +1531,86 @@ def _observer_delta(service_container, current_candidates: list[dict[str, Any]])
         "persistent_candidate_tickers": sorted(prior_set & current_set),
         "score_changes": score_changes,
     }
+
+
+def _observer_followup_items(observations: list[dict[str, Any]], max_items: int, include_passes: bool) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for event in observations:
+        payload = event.get("payload") or {}
+        buckets = [("candidate", payload.get("candidate_observations") or [])]
+        if include_passes:
+            buckets.append(("pass", payload.get("pass_observations") or []))
+        for bucket, rows in buckets:
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                ticker = str(row.get("ticker") or "").upper()
+                entry = row.get("entry_reference")
+                timestamp = row.get("review_timestamp")
+                direction = _observer_followup_direction(row)
+                if not ticker or not entry or not timestamp:
+                    continue
+                key = (ticker, str(entry), str(timestamp))
+                if key in seen:
+                    continue
+                seen.add(key)
+                status = row.get("status") or ("PASS" if bucket == "pass" else "CANDIDATE")
+                snapshot = {
+                    "ticker": ticker,
+                    "status": status,
+                    "direction": direction,
+                    "score": row.get("score"),
+                    "confidence": row.get("confidence"),
+                    "reasons": row.get("reasons") or ([row.get("primary_reason")] if row.get("primary_reason") else []),
+                    "key_signals": {
+                        "relative_volume": row.get("relative_volume"),
+                        "relative_volume_status": row.get("relative_volume_status"),
+                    },
+                    "quote_summary": {
+                        "price": entry,
+                        "timestamp": timestamp,
+                        "provider": row.get("quote_provider"),
+                        "freshness_status": row.get("quote_freshness_status"),
+                    },
+                    "evidence_packet": {
+                        "data_flags": row.get("data_flags") or [],
+                        "missing_or_planned_modules": row.get("missing_modules") or [],
+                        "data_confidence": {"status": row.get("data_confidence"), "score": row.get("data_confidence_score")},
+                    },
+                    "quality_gates": {
+                        "stock_setup_quality": "VALID_CANDIDATE" if bucket == "candidate" else "PASS",
+                        "options_chain_quality": "NOT_VALIDATED",
+                    },
+                }
+                items.append(
+                    {
+                        "review_id": f"observer-{event.get('id')}-{bucket}-{ticker}-{entry}",
+                        "ticker": ticker,
+                        "direction": direction,
+                        "entry_reference": entry,
+                        "review_timestamp": timestamp,
+                        "source_observer_event_id": event.get("id"),
+                        "source_observer_timestamp": event.get("timestamp"),
+                        "source_bucket": bucket,
+                        "snapshot": snapshot,
+                    }
+                )
+                if len(items) >= max_items:
+                    return items
+    return items
+
+
+def _observer_followup_direction(row: dict[str, Any]) -> str:
+    raw = str(row.get("direction") or "").lower()
+    if raw in {"short", "put", "puts", "bearish"}:
+        return "short"
+    if raw in {"long", "call", "calls", "bullish"}:
+        return "long"
+    vwap_state = str(row.get("vwap_state") or "").lower()
+    if vwap_state == "below":
+        return "short"
+    return "long"
 
 
 def _stock_summary(row: dict[str, Any]) -> dict[str, Any]:

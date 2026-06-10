@@ -21,6 +21,7 @@ from app.mcp_server import (
     _run_live_review_cycle,
     _run_market_open_observer,
     _run_morning_readiness_autopilot,
+    _run_observer_followup,
     _run_latest_harvest_followup,
     _run_review_harvest,
     _summarize_manual_option_paper_trades,
@@ -974,6 +975,79 @@ def _market_open_observer_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Market Open Observer", body, payload)
 
 
+def _observer_followup_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    outcome_rows = []
+    for item in result.get("outcomes") or []:
+        outcome_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('source_bucket') or ''))}</td>"
+            f"<td>{escape(str(item.get('direction') or ''))}</td>"
+            f"<td>{escape(str(item.get('current_return_pct') or ''))}</td>"
+            f"<td>{escape(str(item.get('max_favorable_excursion') or ''))}</td>"
+            f"<td>{escape(str(item.get('max_adverse_excursion') or ''))}</td>"
+            f"<td>{escape(str(item.get('verdict') or item.get('status') or ''))}</td>"
+            "</tr>"
+        )
+    class_rows = []
+    for item in result.get("classifications") or []:
+        class_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('classification') or ''))}</td>"
+            f"<td>{escape(str(item.get('direction') or ''))}</td>"
+            f"<td>{escape(', '.join(str(tag) for tag in item.get('lesson_tags', [])))}</td>"
+            f"<td>{escape(str(item.get('reason') or ''))}</td>"
+            "</tr>"
+        )
+    action_rows = []
+    for label, url in (result.get("action_links") or {}).items():
+        action_rows.append(
+            "<tr>"
+            f"<td>{escape(str(label).replace('_', ' ').title())}</td>"
+            f"<td><a href=\"{escape(str(url))}\">{escape(str(url))}</a></td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Observer Follow-Up</h1>
+    <p>Grades previous observer candidates and pass rows to find missed moves, good passes, and rule-learning evidence.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Next Action", result.get("next_action")),
+    ("Items Checked", result.get("items_checked")),
+    ("Missed Moves", result.get("missed_move_count")),
+    ("Good Passes", result.get("good_pass_count")),
+    ("Unavailable", result.get("outcome_unavailable_count")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Outcomes</h2>
+<table>
+  <thead><tr><th>Ticker</th><th>Source</th><th>Direction</th><th>Current Return</th><th>MFE</th><th>MAE</th><th>Verdict</th></tr></thead>
+  <tbody>{''.join(outcome_rows) if outcome_rows else '<tr><td colspan="7">No observer outcomes available yet.</td></tr>'}</tbody>
+</table>
+<h2>Learning Labels</h2>
+<table>
+  <thead><tr><th>Ticker</th><th>Classification</th><th>Direction</th><th>Tags</th><th>Reason</th></tr></thead>
+  <tbody>{''.join(class_rows) if class_rows else '<tr><td colspan="5">No learning labels generated yet.</td></tr>'}</tbody>
+</table>
+<h2>Notes</h2>
+{_list(result.get("notes") or [])}
+<h2>Action Links</h2>
+<table>
+  <thead><tr><th>Action</th><th>Link</th></tr></thead>
+  <tbody>{''.join(action_rows)}</tbody>
+</table>
+"""
+    return _html_page("Observer Follow-Up", body, payload)
+
+
 def _manual_preflight_html(payload: dict[str, Any]) -> HTMLResponse:
     result = payload.get("result") or {}
     ticket = result.get("manual_ticket") or {}
@@ -1425,6 +1499,23 @@ async def fallback_market_open_observer(request: Request) -> JSONResponse | HTML
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _market_open_observer_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_observer_followup(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    include_passes = (params.get("include_passes") or "true").strip().lower() not in {"0", "false", "no"}
+    classify = (params.get("classify") or "true").strip().lower() not in {"0", "false", "no"}
+    result = _run_observer_followup(
+        container,
+        _int_or_default(params.get("limit_observations"), 3),
+        _int_or_default(params.get("max_items"), 20),
+        include_passes,
+        classify,
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _observer_followup_html(payload)
     return JSONResponse(payload)
 
 
