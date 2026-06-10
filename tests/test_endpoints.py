@@ -33,6 +33,7 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("get_market_session_playbook", tools.json()["tools"])
         self.assertIn("run_latest_harvest_followup", tools.json()["tools"])
         self.assertIn("get_ops_command_center", tools.json()["tools"])
+        self.assertIn("get_trading_day_launch_checklist", tools.json()["tools"])
         self.assertIn("run_morning_readiness_autopilot", tools.json()["tools"])
         self.assertIn("run_live_review_cycle", tools.json()["tools"])
         self.assertIn("run_market_open_observer", tools.json()["tools"])
@@ -425,7 +426,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_trade_desk_endpoint_can_render_human_readable_html(self) -> None:
         fake_trade_desk = {
             "status": "MANUAL_TRADE_DESK_READY",
-            "build_version": "2026.06.10-manual-action-journal",
+            "build_version": "2026.06.10-trading-day-launch",
             "ticker": "SOFI",
             "direction": "put",
             "contract_symbol": "SOFI260612P00015000",
@@ -487,7 +488,7 @@ class EndpointTests(unittest.TestCase):
     def test_market_open_observer_endpoint_logs_evidence_without_broker_action(self) -> None:
         fake_observer = {
             "status": "OBSERVER_STOCK_CANDIDATES",
-            "build_version": "2026.06.10-manual-action-journal",
+            "build_version": "2026.06.10-trading-day-launch",
             "mode": "market_open_observer",
             "cadence_minutes": 5,
             "candidate_count": 1,
@@ -543,7 +544,7 @@ class EndpointTests(unittest.TestCase):
     def test_observer_followup_endpoint_can_render_missed_move_learning(self) -> None:
         fake_followup = {
             "status": "OBSERVER_FOLLOWUP_LEARNING_NEEDED",
-            "build_version": "2026.06.10-manual-action-journal",
+            "build_version": "2026.06.10-trading-day-launch",
             "mode": "observer_followup",
             "source_observation_count": 2,
             "items_checked": 3,
@@ -594,7 +595,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_broker_action_endpoint_records_pending_recheck_card(self) -> None:
         fake_action = {
             "status": "MANUAL_ACTION_PENDING_RECHECK_REQUIRED",
-            "build_version": "2026.06.10-manual-action-journal",
+            "build_version": "2026.06.10-trading-day-launch",
             "ticker": "SOFI",
             "contract_symbol": "SOFI260612P00015000",
             "action_type": "pending_buy",
@@ -670,6 +671,55 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(recheck_html.status_code, 200)
         self.assertIn("Pending Buy Recheck", recheck_html.text)
         self.assertIn("RECONSIDER_PENDING_BUY", recheck_html.text)
+
+    def test_trading_day_launch_endpoint_renders_go_no_go_map(self) -> None:
+        fake_launch = {
+            "status": "LAUNCH_START_HERE",
+            "build_version": "2026.06.10-trading-day-launch",
+            "mode": "trading_day_launch_checklist",
+            "universe": ["SOFI", "SMCI"],
+            "account_value_reference": 50,
+            "next_action": "Start with health/build checks, then market readiness and market-open observer.",
+            "latest": {
+                "market_readiness": None,
+                "market_open_observer": None,
+                "live_review_cycle": None,
+                "manual_broker_action": None,
+                "journal_checkpoint": None,
+            },
+            "launch_sequence": [
+                {
+                    "phase": "Build and safety",
+                    "go_condition": "Build matches expected version.",
+                    "primary_link": "/health/full?expected_build_version=2026.06.10-trading-day-launch",
+                    "stop_if": "Wrong build.",
+                },
+                {
+                    "phase": "Manual action journal",
+                    "go_condition": "User-reported broker action is logged.",
+                    "primary_link": "/trade/manual-action",
+                    "stop_if": "Pending buy older than 60 seconds without recheck.",
+                },
+            ],
+            "absolute_no_trade_rules": ["No market orders.", "No broker action from this MCP."],
+            "action_links": {"health_full": "/health/full", "journal_checkpoint": "/journal/checkpoint?limit=500&format=json"},
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+            "broker_action": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints._get_trading_day_launch_checklist", return_value=fake_launch):
+            html = client.get("/ops/trading-day-launch?tickers=SOFI,SMCI", headers={"accept": "text/html"})
+            json_response = client.get("/ops/trading-day-launch?tickers=SOFI,SMCI")
+
+        self.assertEqual(html.status_code, 200)
+        self.assertIn("Trading Day Launch", html.text)
+        self.assertIn("Build and safety", html.text)
+        self.assertIn("No market orders.", html.text)
+        self.assertEqual(json_response.status_code, 200)
+        self.assertEqual(json_response.json()["result"]["status"], "LAUNCH_START_HERE")
+        self.assertFalse(json_response.json()["can_place_order_from_this_mcp"])
 
     def test_offhours_and_crypto_fallbacks_are_review_only(self) -> None:
         fake_global_scan = {
@@ -787,10 +837,10 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.10-manual-action-journal")
+        full = client.get("/health/full?expected_build_version=2026.06.10-trading-day-launch")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-manual-action-journal")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-trading-day-launch")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -804,6 +854,7 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_market_session_playbook"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_latest_harvest_followup"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_ops_command_center"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["get_trading_day_launch_checklist"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_morning_readiness_autopilot"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_live_review_cycle"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_market_open_observer"])
@@ -835,6 +886,8 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(followup_preview["status"], "HARVEST_FOLLOWUP_COMPLETE")
         command_center_preview = schema.json()["result"]["ops_command_center_schema_preview"]
         self.assertEqual(command_center_preview["status"], "READY_FOR_HARVEST")
+        launch_preview = schema.json()["result"]["trading_day_launch_schema_preview"]
+        self.assertEqual(launch_preview["status"], "LAUNCH_START_HERE")
         autopilot_preview = schema.json()["result"]["morning_autopilot_schema_preview"]
         self.assertEqual(autopilot_preview["status"], "AUTOPILOT_READY_FOR_HARVEST")
         live_cycle_preview = schema.json()["result"]["live_review_cycle_schema_preview"]

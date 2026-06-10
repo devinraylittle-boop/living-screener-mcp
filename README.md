@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.10-manual-action-journal
+2026.06.10-trading-day-launch
 ```
 
 ## Render Environment
@@ -90,6 +90,8 @@ Journal checkpoints protect tomorrow's learning loop from Render restarts. Use `
 
 Manual trade desk is the final human checkpoint page. Use `build_manual_trade_desk` or `/trade/manual-desk` with broker-visible option fields after a live review cycle identifies a candidate. It runs manual preflight, shows blocking reasons/warnings, prepares a paper-entry payload, and reminds you to export a journal checkpoint after the decision. It still cannot place, submit, simulate, modify, or cancel broker orders.
 
+Trading day launch checklist is the first page to open tomorrow. Use `get_trading_day_launch_checklist` or `/ops/trading-day-launch` to see build/safety checks, latest logged state, go/no-go phases, absolute no-trade rules, and the next safest link. It does not run scans or create broker actions; it maps the safe workflow so the session starts with discipline instead of guesswork.
+
 Off-hours research tools keep the system productive when U.S. options liquidity is stale or closed. Use `get_offhours_research_plan` and `run_global_research_scan` for underlying-only studies across crypto and global instruments. These scans do not validate U.S. options chains and must not be treated as broker action. Use them to find patterns worth logging and checking later with the mistake engine.
 
 The off-hours scanner treats unavailable volume as unknown instead of bearish. If high/low range data is unusable, it falls back to close-to-close movement expansion so crypto/global feeds can still be studied without pretending missing RVOL is truly weak.
@@ -110,9 +112,11 @@ These routes call the same review-only services as the MCP tools. They exist so 
 
 ```text
 GET /safety
-GET /health/full?expected_build_version=2026.06.10-manual-action-journal
+GET /health/full?expected_build_version=2026.06.10-trading-day-launch
 GET /scan/scalp?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
 GET /scan/market?mode=conservative_review_only&tickers=SPY,QQQ,KO,PG
+GET /ops/trading-day-launch?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25
+GET /ops/trading-day-launch?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25&format=html
 GET /ops/command-center?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50
 GET /ops/command-center?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&format=html
 GET /ops/morning-autopilot?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25
@@ -169,7 +173,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.10-manual-action-journal
+GET /debug/scan-schema?expected_build_version=2026.06.10-trading-day-launch
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -179,6 +183,8 @@ Opening `/review/options` in a normal browser returns a cleaner HTML view with s
 Opening `/review/manual-preflight` with broker-visible contract fields returns a manual ticket view with options gate, risk gate, blocking reasons, warnings, and a checklist. It is the last review-only check before any separate manual broker action.
 
 Opening `/trade/manual-desk` with broker-visible contract fields returns one human-readable desk: preflight status, selected contract, paper-entry payload, checkpoint reminder, blocking reasons, warnings, and next steps.
+
+Opening `/ops/trading-day-launch` returns the top-level go/no-go map for tomorrow: build checks, latest state, launch phases, action links, no-trade rules, and the next safest step. It is the safest starting page before opening observer, live review cycle, manual desk, or journal tools.
 
 Opening `/trade/manual-action` records a user-reported broker-side decision and returns a pending-buy recheck card when needed. Opening `/trade/pending-recheck` runs the review-only stale pending-buy check. Neither route can verify broker state or perform broker actions.
 
@@ -249,7 +255,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.10-manual-action-journal",
+  "build_version": "2026.06.10-trading-day-launch",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false
