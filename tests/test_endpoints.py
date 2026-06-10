@@ -41,6 +41,7 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("validate_broker_option_snapshot", tools.json()["tools"])
         self.assertIn("build_manual_trade_preflight_ticket", tools.json()["tools"])
         self.assertIn("build_manual_trade_desk", tools.json()["tools"])
+        self.assertIn("log_manual_broker_action", tools.json()["tools"])
         self.assertIn("log_manual_option_paper_entry", tools.json()["tools"])
         self.assertIn("close_manual_option_paper_trade", tools.json()["tools"])
         self.assertIn("summarize_manual_option_paper_trades", tools.json()["tools"])
@@ -424,7 +425,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_trade_desk_endpoint_can_render_human_readable_html(self) -> None:
         fake_trade_desk = {
             "status": "MANUAL_TRADE_DESK_READY",
-            "build_version": "2026.06.10-observer-followup",
+            "build_version": "2026.06.10-manual-action-journal",
             "ticker": "SOFI",
             "direction": "put",
             "contract_symbol": "SOFI260612P00015000",
@@ -486,7 +487,7 @@ class EndpointTests(unittest.TestCase):
     def test_market_open_observer_endpoint_logs_evidence_without_broker_action(self) -> None:
         fake_observer = {
             "status": "OBSERVER_STOCK_CANDIDATES",
-            "build_version": "2026.06.10-observer-followup",
+            "build_version": "2026.06.10-manual-action-journal",
             "mode": "market_open_observer",
             "cadence_minutes": 5,
             "candidate_count": 1,
@@ -542,7 +543,7 @@ class EndpointTests(unittest.TestCase):
     def test_observer_followup_endpoint_can_render_missed_move_learning(self) -> None:
         fake_followup = {
             "status": "OBSERVER_FOLLOWUP_LEARNING_NEEDED",
-            "build_version": "2026.06.10-observer-followup",
+            "build_version": "2026.06.10-manual-action-journal",
             "mode": "observer_followup",
             "source_observation_count": 2,
             "items_checked": 3,
@@ -589,6 +590,86 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(json_response.status_code, 200)
         self.assertEqual(json_response.json()["result"]["status"], "OBSERVER_FOLLOWUP_LEARNING_NEEDED")
         self.assertFalse(json_response.json()["can_place_order_from_this_mcp"])
+
+    def test_manual_broker_action_endpoint_records_pending_recheck_card(self) -> None:
+        fake_action = {
+            "status": "MANUAL_ACTION_PENDING_RECHECK_REQUIRED",
+            "build_version": "2026.06.10-manual-action-journal",
+            "ticker": "SOFI",
+            "contract_symbol": "SOFI260612P00015000",
+            "action_type": "pending_buy",
+            "order_status": "queued",
+            "side": "buy",
+            "direction": "put",
+            "quantity": 1,
+            "limit_price": 0.08,
+            "submitted_at": "2026-06-10T14:30:00+00:00",
+            "pending_buy": True,
+            "pending_buy_recheck_seconds": 60,
+            "recheck_after": "2026-06-10T14:31:00+00:00",
+            "recheck_request": {
+                "tool": "review_pending_buy_order",
+                "endpoint": "/trade/pending-recheck",
+                "payload": {
+                    "ticker": "SOFI",
+                    "submitted_at": "2026-06-10T14:30:00+00:00",
+                    "limit_price": 0.08,
+                    "is_options_order": True,
+                    "direction": "put",
+                    "mode": "scalp_review",
+                },
+            },
+            "journal_checkpoint_request": {"endpoint": "/journal/checkpoint?limit=500&format=json"},
+            "next_steps": ["Run the pending-buy recheck before leaving, canceling, or replacing the order manually."],
+            "broker_action_was_user_reported": True,
+            "mcp_broker_action": False,
+            "order_placed_by_mcp": False,
+            "order_submitted_by_mcp": False,
+            "order_canceled_by_mcp": False,
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        fake_recheck = {
+            "ticker": "SOFI",
+            "status": "RECONSIDER_PENDING_BUY",
+            "age_seconds": 75,
+            "limit_price": 0.08,
+            "current_price": 16.4,
+            "price_drift_pct": None,
+            "pending_buy_recheck_seconds": 60,
+            "reasons": ["Pending buy is older than the configured recheck window."],
+            "warnings": [],
+            "next_action": "Recheck with broker/order system before leaving, canceling, or replacing any pending order.",
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints._log_manual_broker_action", return_value=fake_action), patch(
+            "app.fallback_endpoints.container.pending_orders.review_pending_buy", return_value=fake_recheck
+        ):
+            html = client.get(
+                "/trade/manual-action?ticker=SOFI&contract_symbol=SOFI260612P00015000&action_type=pending_buy&order_status=queued&side=buy&direction=put&limit_price=0.08&quantity=1&is_options_order=true",
+                headers={"accept": "text/html"},
+            )
+            action_json = client.get(
+                "/trade/manual-action?ticker=SOFI&contract_symbol=SOFI260612P00015000&action_type=pending_buy&order_status=queued&side=buy&direction=put&limit_price=0.08&quantity=1&is_options_order=true"
+            )
+            recheck_html = client.get(
+                "/trade/pending-recheck?ticker=SOFI&submitted_at=2026-06-10T14:30:00+00:00&limit_price=0.08&is_options_order=true&direction=put",
+                headers={"accept": "text/html"},
+            )
+
+        self.assertEqual(html.status_code, 200)
+        self.assertIn("Manual Broker Action Journal", html.text)
+        self.assertIn("review_pending_buy_order", html.text)
+        self.assertEqual(action_json.status_code, 200)
+        self.assertEqual(action_json.json()["result"]["status"], "MANUAL_ACTION_PENDING_RECHECK_REQUIRED")
+        self.assertFalse(action_json.json()["result"]["mcp_broker_action"])
+        self.assertEqual(recheck_html.status_code, 200)
+        self.assertIn("Pending Buy Recheck", recheck_html.text)
+        self.assertIn("RECONSIDER_PENDING_BUY", recheck_html.text)
 
     def test_offhours_and_crypto_fallbacks_are_review_only(self) -> None:
         fake_global_scan = {
@@ -706,10 +787,10 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.10-observer-followup")
+        full = client.get("/health/full?expected_build_version=2026.06.10-manual-action-journal")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-observer-followup")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-manual-action-journal")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -729,6 +810,7 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_observer_followup"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["build_manual_trade_preflight_ticket"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["build_manual_trade_desk"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["log_manual_broker_action"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["log_manual_option_paper_entry"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["close_manual_option_paper_trade"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["summarize_manual_option_paper_trades"])
@@ -765,6 +847,8 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(preflight_preview["status"], "MANUAL_PREFLIGHT_READY")
         desk_preview = schema.json()["result"]["manual_trade_desk_schema_preview"]
         self.assertEqual(desk_preview["status"], "MANUAL_TRADE_DESK_READY")
+        manual_action_preview = schema.json()["result"]["manual_broker_action_schema_preview"]
+        self.assertEqual(manual_action_preview["status"], "MANUAL_ACTION_PENDING_RECHECK_REQUIRED")
         ledger_preview = schema.json()["result"]["paper_option_ledger_schema_preview"]
         self.assertEqual(ledger_preview["status"], "PAPER_LEDGER_READY")
         checkpoint_preview = schema.json()["result"]["journal_checkpoint_schema_preview"]

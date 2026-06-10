@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.10-observer-followup
+2026.06.10-manual-action-journal
 ```
 
 ## Render Environment
@@ -84,6 +84,8 @@ Market open observer is the first 15-30 minute evidence capture loop. Use `run_m
 
 Observer follow-up closes the learning loop for skipped rows. Use `run_observer_followup` or `/ops/observer-followup` after enough candles have passed to grade recent observer candidates and PASS rows, classify missed moves, good passes, blocked candidates, and false positives, and generate rule-change hypotheses for later backtesting. It cannot execute broker actions and does not auto-apply learning.
 
+Manual broker action journal records what you report doing in Robinhood or another broker outside this MCP. Use `log_manual_broker_action` or `/trade/manual-action` after a manual pass, manual pending buy, manual fill, or manual cancellation. If the record is a pending buy, it returns a 60-second recheck card for `review_pending_buy_order` and `/trade/pending-recheck`. This is a journal and safety reminder only; it cannot verify the broker state or place/cancel/modify orders.
+
 Journal checkpoints protect tomorrow's learning loop from Render restarts. Use `export_journal_checkpoint` or `/journal/checkpoint` after important scan/review/paper events to export recent local journal events, event-type counts, and restore guidance. Save the JSON externally and paste it back into ChatGPT/Codex later for analysis if the hosted local SQLite journal resets. This is evidence export only; it cannot create broker action.
 
 Manual trade desk is the final human checkpoint page. Use `build_manual_trade_desk` or `/trade/manual-desk` with broker-visible option fields after a live review cycle identifies a candidate. It runs manual preflight, shows blocking reasons/warnings, prepares a paper-entry payload, and reminds you to export a journal checkpoint after the decision. It still cannot place, submit, simulate, modify, or cancel broker orders.
@@ -108,7 +110,7 @@ These routes call the same review-only services as the MCP tools. They exist so 
 
 ```text
 GET /safety
-GET /health/full?expected_build_version=2026.06.10-observer-followup
+GET /health/full?expected_build_version=2026.06.10-manual-action-journal
 GET /scan/scalp?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
 GET /scan/market?mode=conservative_review_only&tickers=SPY,QQQ,KO,PG
 GET /ops/command-center?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50
@@ -136,6 +138,10 @@ GET /review/manual-preflight?ticker=SOFI&contract_symbol=SOFI260612P00015000&dir
 POST /review/manual-preflight
 GET /trade/manual-desk?ticker=SOFI&contract_symbol=SOFI260612P00015000&direction=put&bid=0.04&ask=0.045&volume=500&open_interest=2000&dte=3&strike=15&account_value=50&format=html
 POST /trade/manual-desk
+GET /trade/manual-action?ticker=SOFI&contract_symbol=SOFI260612P00015000&action_type=pending_buy&order_status=queued&side=buy&direction=put&limit_price=0.08&quantity=1&is_options_order=true&format=html
+POST /trade/manual-action
+GET /trade/pending-recheck?ticker=SOFI&submitted_at=2026-06-10T14:30:00Z&limit_price=0.08&is_options_order=true&direction=put&mode=scalp_review&format=html
+POST /trade/pending-recheck
 POST /paper/options/entry
 POST /paper/options/close
 GET /paper/options/summary
@@ -163,7 +169,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.10-observer-followup
+GET /debug/scan-schema?expected_build_version=2026.06.10-manual-action-journal
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -173,6 +179,8 @@ Opening `/review/options` in a normal browser returns a cleaner HTML view with s
 Opening `/review/manual-preflight` with broker-visible contract fields returns a manual ticket view with options gate, risk gate, blocking reasons, warnings, and a checklist. It is the last review-only check before any separate manual broker action.
 
 Opening `/trade/manual-desk` with broker-visible contract fields returns one human-readable desk: preflight status, selected contract, paper-entry payload, checkpoint reminder, blocking reasons, warnings, and next steps.
+
+Opening `/trade/manual-action` records a user-reported broker-side decision and returns a pending-buy recheck card when needed. Opening `/trade/pending-recheck` runs the review-only stale pending-buy check. Neither route can verify broker state or perform broker actions.
 
 Opening `/paper/options/summary` shows the paper option ledger: open paper entries, recent closes, paper P/L, and learning labels. Use it to study what would have happened after a manual/paper idea without creating a broker action.
 
@@ -241,7 +249,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.10-observer-followup",
+  "build_version": "2026.06.10-manual-action-journal",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false
