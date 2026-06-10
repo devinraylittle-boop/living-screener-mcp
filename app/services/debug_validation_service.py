@@ -27,11 +27,15 @@ class DebugValidationService:
                 "setup_memory": "setup_fingerprint_v1",
                 "market_harvest": "review_harvest_v1",
                 "session_loop": "session_loop_v1",
+                "ops_command_center": "command_center_v1",
+                "manual_preflight_ticket": "manual_preflight_v1",
+                "paper_option_ledger": "paper_option_ledger_v1",
             },
             "debug_routes": [
                 "/health/full",
                 "/debug/tool-manifest",
                 "/debug/scan-schema",
+                "/paper/options/summary",
             ],
             "readiness": {
                 "version_endpoint": True,
@@ -46,6 +50,9 @@ class DebugValidationService:
                 "review_harvest_route": True,
                 "session_playbook_route": True,
                 "harvest_followup_route": True,
+                "ops_command_center_route": True,
+                "manual_preflight_route": True,
+                "paper_option_ledger_routes": True,
             },
             "safety": self._safety(),
         }
@@ -214,6 +221,9 @@ class DebugValidationService:
             "review_harvest_schema_preview": self._review_harvest_schema_preview(),
             "session_playbook_schema_preview": self._session_playbook_schema_preview(),
             "harvest_followup_schema_preview": self._harvest_followup_schema_preview(),
+            "ops_command_center_schema_preview": self._ops_command_center_schema_preview(),
+            "manual_preflight_schema_preview": self._manual_preflight_schema_preview(),
+            "paper_option_ledger_schema_preview": self._paper_option_ledger_schema_preview(),
             "safety": self._safety(),
         }
 
@@ -345,6 +355,84 @@ class DebugValidationService:
             "notes": "Static follow-up schema preview only. It does not run market data or apply rule changes.",
         }
 
+    def _ops_command_center_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "READY_FOR_HARVEST",
+            "schema_version": "command_center_v1",
+            "latest": {
+                "market_readiness": {"status": "MARKET_REVIEW_READY"},
+                "review_harvest": None,
+                "harvest_followup": None,
+                "learning_summary": None,
+            },
+            "next_action": {
+                "label": "Run review harvest.",
+                "endpoint": "/ops/review-harvest",
+            },
+            "action_links": {
+                "market_readiness": "/ops/market-readiness",
+                "review_harvest": "/ops/review-harvest",
+                "harvest_followup": "/ops/harvest-followup",
+                "learning_dashboard": "/learning/dashboard",
+            },
+            "notes": "Static command-center schema preview only. It reads loop state and does not run scans.",
+        }
+
+    def _manual_preflight_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "MANUAL_PREFLIGHT_READY",
+            "schema_version": "manual_preflight_v1",
+            "selected_contract": {
+                "contract_symbol": "EXAMPLE260612P00100000",
+                "bid": 0.4,
+                "ask": 0.42,
+                "spread_pct": 0.0488,
+                "volume": 1000,
+                "open_interest": 2500,
+                "days_to_expiration": 3,
+                "max_loss_dollars": 42.0,
+            },
+            "manual_ticket": {
+                "order_type": "limit_only",
+                "max_review_ask": 0.42,
+                "quantity": 1,
+                "mcp_can_execute": False,
+            },
+            "notes": "Static preflight schema preview only. It validates broker-visible snapshots and cannot execute.",
+        }
+
+    def _paper_option_ledger_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "PAPER_LEDGER_READY",
+            "schema_version": "paper_option_ledger_v1",
+            "entry": {
+                "status": "PAPER_OPTION_ENTRY_OPEN",
+                "entry_event_id": 123,
+                "ticker": "EXAMPLE",
+                "direction": "put",
+                "contract_symbol": "EXAMPLE260612P00100000",
+                "entry_price": 0.42,
+                "quantity": 1,
+                "entry_debit_dollars": 42.0,
+                "paper_only": True,
+            },
+            "close": {
+                "status": "PAPER_OPTION_CLOSED",
+                "entry_event_id": 123,
+                "exit_price": 0.55,
+                "pnl_dollars": 13.0,
+                "return_pct": 0.30952,
+                "learning_classification": {"classification": "GOOD_SIGNAL"},
+            },
+            "summary": {
+                "open_count": 0,
+                "closed_count": 1,
+                "win_rate": 1.0,
+                "total_pnl_dollars": 13.0,
+            },
+            "notes": "Static paper-ledger schema preview only. It logs manual/paper ideas and outcomes, never broker orders.",
+        }
+
     def _required_tool_status(self, tools: list[str]) -> dict[str, bool]:
         required = [
             "get_version",
@@ -353,6 +441,11 @@ class DebugValidationService:
             "run_review_harvest",
             "get_market_session_playbook",
             "run_latest_harvest_followup",
+            "get_ops_command_center",
+            "build_manual_trade_preflight_ticket",
+            "log_manual_option_paper_entry",
+            "close_manual_option_paper_trade",
+            "summarize_manual_option_paper_trades",
             "get_trading_monster_blueprint",
             "get_feature_registry",
             "get_scoring_model",
@@ -367,7 +460,7 @@ class DebugValidationService:
         return {name: name in available for name in required}
 
     def _category(self, name: str) -> str:
-        if "harvest" in name or "readiness" in name or "playbook" in name:
+        if "harvest" in name or "readiness" in name or "playbook" in name or "command_center" in name or "preflight" in name or "paper" in name:
             return "market_operations"
         if "evidence" in name or "blueprint" in name or "feature" in name or "scoring" in name:
             return "research_validation"
@@ -392,6 +485,12 @@ class DebugValidationService:
             return "Review-only market readiness check; no trade plan or broker action."
         if "playbook" in name:
             return "Review-only market session operating checklist."
+        if "command_center" in name:
+            return "Review-only command center summary; reads logs and suggests the next safe action."
+        if "preflight" in name:
+            return "Review-only broker snapshot, risk, and manual ticket preflight."
+        if "paper" in name:
+            return "Paper/manual ledger for tracking hypothetical option entries and exits; no broker contact."
         if "scan" in name:
             return "Review-only scan; no execution path."
         return "Review-only tool."

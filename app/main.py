@@ -4,6 +4,7 @@ from app.auth import BearerAuthMiddleware
 from app.config import get_settings
 from app.fallback_endpoints import (
     fallback_check_review_outcome,
+    fallback_command_center,
     fallback_crypto_backtest,
     fallback_crypto_rules,
     fallback_build_evidence_packet,
@@ -20,11 +21,15 @@ from app.fallback_endpoints import (
     fallback_learning_proposals,
     fallback_setup_memory,
     fallback_log_review_decision,
+    fallback_manual_preflight,
     fallback_market_scan,
     fallback_market_readiness,
     fallback_health_full,
     fallback_offhours_plan,
     fallback_options_review,
+    fallback_paper_option_close,
+    fallback_paper_option_entry,
+    fallback_paper_option_summary,
     fallback_review_harvest,
     fallback_premove_blueprint,
     fallback_session_playbook,
@@ -56,8 +61,13 @@ def create_app():
     app.add_route("/ops/review-harvest", fallback_review_harvest, methods=["GET"])
     app.add_route("/ops/session-playbook", fallback_session_playbook, methods=["GET"])
     app.add_route("/ops/harvest-followup", fallback_harvest_followup, methods=["GET"])
+    app.add_route("/ops/command-center", fallback_command_center, methods=["GET"])
     app.add_route("/review/options", fallback_options_review, methods=["GET"])
+    app.add_route("/review/manual-preflight", fallback_manual_preflight, methods=["GET", "POST"])
     app.add_route("/review/broker-option-snapshot", fallback_validate_broker_snapshot, methods=["POST"])
+    app.add_route("/paper/options/entry", fallback_paper_option_entry, methods=["POST"])
+    app.add_route("/paper/options/close", fallback_paper_option_close, methods=["POST"])
+    app.add_route("/paper/options/summary", fallback_paper_option_summary, methods=["GET"])
     app.add_route("/review/log-decision", fallback_log_review_decision, methods=["POST"])
     app.add_route("/review/outcome", fallback_check_review_outcome, methods=["GET", "POST"])
     app.add_route("/learning/classify", fallback_learning_classify, methods=["POST"])

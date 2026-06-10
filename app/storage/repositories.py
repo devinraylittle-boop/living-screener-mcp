@@ -15,11 +15,12 @@ class EventRepository:
     def log(self, event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         timestamp = utc_now()
         with self.database.connect() as connection:
-            connection.execute(
+            cursor = connection.execute(
                 "INSERT INTO events (timestamp, event_type, payload_json) VALUES (?, ?, ?)",
                 (timestamp, event_type, json.dumps(payload, sort_keys=True, default=str)),
             )
-        return {"logged": True, "timestamp": timestamp, "event_type": event_type, **payload}
+            event_id = cursor.lastrowid
+        return {"logged": True, "id": event_id, "timestamp": timestamp, "event_type": event_type, **payload}
 
     def count(self, event_type: str | None = None) -> int:
         sql = "SELECT COUNT(*) AS count FROM events"

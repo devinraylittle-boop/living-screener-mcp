@@ -26,7 +26,8 @@ mcp = FastMCP(
         "false positives, missed moves, good passes, and rule-change hypotheses; never auto-apply learning proposals. "
         "When U.S. options liquidity is closed or stale, use off-hours/global research tools for underlying-only study. "
         "For pre-move research, use the blueprint tools to inspect evidence modules, penalties, missing data, and "
-        "options-structure mapping before changing live gates."
+        "options-structure mapping before changing live gates. For manual or paper option fills, use the paper ledger "
+        "tools to log entries, closes, P/L, and learning labels without broker contact."
     ),
 )
 
@@ -90,6 +91,11 @@ def run_latest_harvest_followup(limit: int = 5, classify: bool = True) -> dict:
 
 
 @mcp.tool
+def get_ops_command_center(tickers: list[str] | None = None, account_value: float = 50.0) -> dict:
+    return _get_ops_command_center(container, tickers, account_value)
+
+
+@mcp.tool
 def analyze_ticker(ticker: str, mode: str | None = None) -> dict:
     return container.scanner.analyze_ticker(ticker, mode)
 
@@ -102,6 +108,26 @@ def validate_options_chain(ticker: str, direction: str = "call", max_contract_pr
 @mcp.tool
 def validate_broker_option_snapshot(snapshot: dict[str, Any], max_contract_price: float | None = None) -> dict:
     return container.options.validate_broker_snapshot(snapshot, max_contract_price)
+
+
+@mcp.tool
+def build_manual_trade_preflight_ticket(snapshot: dict[str, Any], account_value: float = 50.0, max_contract_price: float | None = None, notes: str = "") -> dict:
+    return _build_manual_trade_preflight_ticket(container, snapshot, account_value, max_contract_price, notes)
+
+
+@mcp.tool
+def log_manual_option_paper_entry(ticket: dict[str, Any], fill_price: float, quantity: int = 1, underlying_price: float | None = None, notes: str = "") -> dict:
+    return _log_manual_option_paper_entry(container, ticket, fill_price, quantity, underlying_price, notes)
+
+
+@mcp.tool
+def close_manual_option_paper_trade(entry_id: int | None = None, contract_symbol: str | None = None, exit_price: float = 0.0, exit_reason: str = "manual_close", notes: str = "") -> dict:
+    return _close_manual_option_paper_trade(container, entry_id, contract_symbol, exit_price, exit_reason, notes)
+
+
+@mcp.tool
+def summarize_manual_option_paper_trades(limit: int = 100) -> dict:
+    return _summarize_manual_option_paper_trades(container, limit)
 
 
 @mcp.tool
@@ -281,8 +307,8 @@ def _get_market_session_playbook(service_container, tickers: list[str] | None, a
                 "intent": "Confirm deployment, safety, data provider, and watchlist before options liquidity matters.",
                 "actions": [
                     "/version",
-                    "/health/full?expected_build_version=2026.06.09-session-loop",
-                    "/debug/scan-schema?expected_build_version=2026.06.09-session-loop",
+                    f"/health/full?expected_build_version={BUILD_VERSION}",
+                    f"/debug/scan-schema?expected_build_version={BUILD_VERSION}",
                     f"/ops/market-readiness?tickers={ticker_query}&max_candidates=25",
                 ],
                 "pass_condition": "Build matches, safety is review-only, and readiness is not MARKET_DATA_BLOCKED.",
@@ -430,6 +456,457 @@ def _run_latest_harvest_followup(service_container, limit: int, classify: bool) 
         ],
     }
     return service_container.events.log("harvest_followup", payload)
+
+
+def _get_ops_command_center(service_container, tickers: list[str] | None, account_value: float) -> dict:
+    universe = tickers or list(service_container.settings.scalp_watchlist)
+    ticker_query = ",".join(universe)
+    latest_readiness = _latest_payload(service_container, "market_readiness")
+    latest_harvest = _latest_payload(service_container, "review_harvest")
+    latest_followup = _latest_payload(service_container, "harvest_followup")
+    latest_learning = _latest_payload(service_container, "learning_summary")
+    recent_classifications = [
+        event.get("payload") or {}
+        for event in service_container.events.recent("learning_outcome_classification", 25)
+    ]
+    status, next_action = _command_center_status(latest_readiness, latest_harvest, latest_followup)
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "generated_at": utc_now(),
+        "mode": "review_only_command_center",
+        "universe": universe,
+        "account_value_reference": _float_or_zero(account_value) or 50.0,
+        "safety": {
+            "review_only": True,
+            "place_orders": False,
+            "market_orders_allowed": False,
+            "manual_approval_required": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        },
+        "latest": {
+            "market_readiness": _compact_event(latest_readiness),
+            "review_harvest": _compact_event(latest_harvest),
+            "harvest_followup": _compact_event(latest_followup),
+            "learning_summary": _compact_event(latest_learning),
+        },
+        "counts": {
+            "market_readiness": service_container.events.count("market_readiness"),
+            "review_harvest": service_container.events.count("review_harvest"),
+            "harvest_followup": service_container.events.count("harvest_followup"),
+            "learning_classifications": service_container.events.count("learning_outcome_classification"),
+            "review_outcomes": service_container.events.count("review_outcome"),
+        },
+        "latest_learning_labels": [
+            {
+                "ticker": item.get("ticker"),
+                "classification": item.get("classification"),
+                "lesson_tags": item.get("lesson_tags") or [],
+                "reason": item.get("reason"),
+            }
+            for item in recent_classifications[:10]
+        ],
+        "next_action": next_action,
+        "action_links": {
+            "session_playbook": f"/ops/session-playbook?tickers={ticker_query}&account_value={_float_or_zero(account_value) or 50.0}",
+            "market_readiness": f"/ops/market-readiness?tickers={ticker_query}&max_candidates=25",
+            "review_harvest": f"/ops/review-harvest?tickers={ticker_query}&max_candidates=25&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}",
+            "harvest_followup": "/ops/harvest-followup?limit=5&classify=true",
+            "learning_dashboard": "/learning/dashboard",
+            "paper_option_summary": "/paper/options/summary",
+            "debug_health": f"/health/full?expected_build_version={BUILD_VERSION}",
+            "debug_schema": f"/debug/scan-schema?expected_build_version={BUILD_VERSION}",
+        },
+        "manual_trade_gate": [
+            "Command center build and safety are confirmed.",
+            "Market readiness is not blocked.",
+            "Harvest candidate is REVIEW_ONLY_OPTIONS_READY.",
+            "Small-account gate is SMALL_ACCOUNT_SCALP_ACCEPTABLE.",
+            "Friction and setup memory are acceptable.",
+            "Broker-visible option snapshot validates the contract.",
+            "Risk limit check passes.",
+            "No market orders; broker action remains manual and outside this MCP.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "notes": [
+            "Command center reads recent logs; it does not run scans by itself.",
+            "Use the action links to advance the loop deliberately.",
+            "PASS remains the default whenever data, options quality, friction, memory, or risk is unclear.",
+        ],
+    }
+    return service_container.events.log("ops_command_center", payload)
+
+
+def _build_manual_trade_preflight_ticket(service_container, snapshot: dict[str, Any], account_value: float, max_contract_price: float | None, notes: str = "") -> dict:
+    account_value = _float_or_zero(account_value) or 50.0
+    effective_max_contract_price = max_contract_price
+    if effective_max_contract_price is None:
+        effective_max_contract_price = service_container.settings.scalp_max_contract_price
+    option_validation = service_container.options.validate_broker_snapshot(snapshot, effective_max_contract_price)
+    accepted_contracts = option_validation.get("accepted_contracts") or []
+    selected = accepted_contracts[0] if accepted_contracts else None
+    ticker = str(option_validation.get("ticker") or snapshot.get("ticker") or snapshot.get("underlying") or "").upper()
+    direction = str(option_validation.get("direction") or snapshot.get("direction") or "call").lower()
+    normalized_direction = Direction.SHORT if direction in {"put", "puts", "short"} else Direction.LONG
+    proposed_risk = _float_or_zero((selected or {}).get("max_loss_dollars"))
+    risk_plan = TradePlan(
+        ticker=ticker or "UNKNOWN",
+        direction=normalized_direction,
+        setup_type="manual_options_preflight",
+        account_value=account_value,
+        proposed_risk_dollars=proposed_risk,
+        order_type=OrderType.LIMIT,
+        is_options_trade=True,
+        is_zero_dte=bool(selected and int(selected.get("days_to_expiration") or 0) <= 0),
+        requested_execution=False,
+        approval_text=None,
+    )
+    risk_check = service_container.risk.check(risk_plan)
+    blocking_reasons: list[str] = []
+    warnings: list[str] = []
+    if option_validation.get("status") != "OPTIONS_CHAIN_ACCEPTABLE":
+        blocking_reasons.append("Broker-visible option snapshot failed options quality validation.")
+    if not selected:
+        blocking_reasons.append("No accepted contract is available from the broker snapshot.")
+    if risk_check.get("status") != "APPROVE_FOR_REVIEW":
+        blocking_reasons.extend(risk_check.get("reasons") or ["Risk check blocked this review."])
+    if selected and selected.get("spread_pct") is not None and float(selected.get("spread_pct") or 0) > 0.08:
+        warnings.append("Spread is wider than preferred; use limit-only discipline and do not chase.")
+    if selected and int(selected.get("days_to_expiration") or 0) <= 1:
+        warnings.append("1DTE or less has elevated decay/whipsaw risk.")
+    status = "MANUAL_PREFLIGHT_READY" if not blocking_reasons else "NO_TRADE_PLAN"
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "ticker": ticker,
+        "direction": "put" if normalized_direction == Direction.SHORT else "call",
+        "account_value_reference": account_value,
+        "max_contract_price_used": effective_max_contract_price,
+        "selected_contract": selected,
+        "option_validation": option_validation,
+        "risk_check": risk_check,
+        "blocking_reasons": blocking_reasons,
+        "warnings": warnings,
+        "manual_ticket": {
+            "contract_symbol": (selected or {}).get("contract_symbol"),
+            "order_type": "limit_only",
+            "max_review_ask": (selected or {}).get("ask"),
+            "max_loss_dollars": (selected or {}).get("max_loss_dollars"),
+            "quantity": 1 if selected else 0,
+            "broker_action_required": True if status == "MANUAL_PREFLIGHT_READY" else False,
+            "mcp_can_execute": False,
+            "approval_phrase_required_outside_mcp": service_container.settings.approval_phrase,
+        },
+        "checklist": [
+            "Confirm the broker screen still matches this contract symbol.",
+            "Confirm bid/ask, volume, open interest, DTE, and max loss still pass.",
+            "Use limit-only review; no market orders.",
+            "Do not chase if spread widens or underlying setup weakens.",
+            "If placed manually outside this MCP, recheck any pending buy after 60 seconds.",
+        ],
+        "notes": notes,
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_allowed": False,
+    }
+    return service_container.events.log("manual_preflight_ticket", payload)
+
+
+def _log_manual_option_paper_entry(service_container, ticket: dict[str, Any], fill_price: float, quantity: int, underlying_price: float | None, notes: str = "") -> dict:
+    fill = _float_or_zero(fill_price)
+    quantity = max(1, int(quantity or 1))
+    if fill <= 0:
+        return service_container.events.log(
+            "manual_option_paper_entry",
+            {
+                "status": "PAPER_ENTRY_REJECTED",
+                "reason": "Positive fill_price is required.",
+                "review_only": True,
+                "can_place_order_from_this_mcp": False,
+                "can_cancel_order_from_this_mcp": False,
+            },
+        )
+    selected = ticket.get("selected_contract") or {}
+    manual_ticket = ticket.get("manual_ticket") or {}
+    contract_symbol = str(
+        manual_ticket.get("contract_symbol")
+        or selected.get("contract_symbol")
+        or ticket.get("contract_symbol")
+        or ""
+    )
+    ticker = str(ticket.get("ticker") or selected.get("ticker") or "").upper()
+    direction = str(ticket.get("direction") or selected.get("direction") or "").lower()
+    max_loss = round(fill * 100 * quantity, 2)
+    payload = {
+        "status": "PAPER_OPTION_ENTRY_OPEN",
+        "build_version": BUILD_VERSION,
+        "ticker": ticker,
+        "direction": direction,
+        "contract_symbol": contract_symbol,
+        "entry_price": fill,
+        "quantity": quantity,
+        "entry_debit_dollars": max_loss,
+        "underlying_entry_price": underlying_price,
+        "entry_timestamp": utc_now(),
+        "source_ticket_status": ticket.get("status"),
+        "source_preflight": ticket,
+        "notes": notes,
+        "paper_only": True,
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_placed": False,
+        "order_submitted": False,
+        "broker_action": False,
+    }
+    if ticket.get("status") not in {"MANUAL_PREFLIGHT_READY", "REVIEW_ONLY_OPTIONS_READY"}:
+        payload["status"] = "PAPER_ENTRY_LOGGED_FROM_UNREADY_TICKET"
+        payload["warning"] = "Source ticket was not ready; entry is logged for study only."
+    return service_container.events.log("manual_option_paper_entry", payload)
+
+
+def _close_manual_option_paper_trade(service_container, entry_id: int | None, contract_symbol: str | None, exit_price: float, exit_reason: str, notes: str = "") -> dict:
+    exit_value = _float_or_zero(exit_price)
+    if exit_value < 0:
+        return service_container.events.log(
+            "manual_option_paper_close",
+            {
+                "status": "PAPER_CLOSE_REJECTED",
+                "reason": "exit_price cannot be negative.",
+                "review_only": True,
+                "can_place_order_from_this_mcp": False,
+                "can_cancel_order_from_this_mcp": False,
+            },
+        )
+    entry_event = _find_open_paper_entry(service_container, entry_id, contract_symbol)
+    if not entry_event:
+        return service_container.events.log(
+            "manual_option_paper_close",
+            {
+                "status": "PAPER_ENTRY_NOT_FOUND",
+                "reason": "No matching open paper option entry was found.",
+                "entry_id": entry_id,
+                "contract_symbol": contract_symbol,
+                "review_only": True,
+                "can_place_order_from_this_mcp": False,
+                "can_cancel_order_from_this_mcp": False,
+            },
+        )
+    entry = entry_event.get("payload") or {}
+    entry_price = _float_or_zero(entry.get("entry_price"))
+    quantity = max(1, int(entry.get("quantity") or 1))
+    pnl = round((exit_value - entry_price) * 100 * quantity, 2)
+    return_pct = round((exit_value - entry_price) / entry_price, 5) if entry_price > 0 else None
+    outcome = {
+        "verdict": "HELPED" if pnl > 0 else "HURT" if pnl < 0 else "FLAT",
+        "current_return_pct": return_pct,
+        "max_favorable_excursion": return_pct if return_pct and return_pct > 0 else None,
+        "max_adverse_excursion": return_pct if return_pct and return_pct < 0 else None,
+        "outcome_window_status": "PAPER_OPTION_CLOSE",
+    }
+    snapshot = entry.get("source_preflight") or entry
+    classification = service_container.learning.classify_review_outcome(snapshot, outcome)
+    payload = {
+        "status": "PAPER_OPTION_CLOSED",
+        "build_version": BUILD_VERSION,
+        "entry_event_id": entry_event.get("id"),
+        "ticker": entry.get("ticker"),
+        "direction": entry.get("direction"),
+        "contract_symbol": entry.get("contract_symbol"),
+        "entry_price": entry_price,
+        "exit_price": exit_value,
+        "quantity": quantity,
+        "pnl_dollars": pnl,
+        "return_pct": return_pct,
+        "exit_reason": exit_reason,
+        "exit_timestamp": utc_now(),
+        "outcome": outcome,
+        "learning_classification": classification,
+        "notes": notes,
+        "paper_only": True,
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_placed": False,
+        "order_submitted": False,
+        "broker_action": False,
+    }
+    service_container.journal.log_trade_result(payload)
+    return service_container.events.log("manual_option_paper_close", payload)
+
+
+def _summarize_manual_option_paper_trades(service_container, limit: int = 100) -> dict:
+    limit = max(1, min(int(limit or 100), 500))
+    entries = [
+        event
+        for event in service_container.events.recent("manual_option_paper_entry", limit)
+        if (event.get("payload") or {}).get("status") in {"PAPER_OPTION_ENTRY_OPEN", "PAPER_ENTRY_LOGGED_FROM_UNREADY_TICKET"}
+    ]
+    closes = [
+        event
+        for event in service_container.events.recent("manual_option_paper_close", limit)
+        if (event.get("payload") or {}).get("status") == "PAPER_OPTION_CLOSED"
+    ]
+    closed_entry_ids = {
+        (event.get("payload") or {}).get("entry_event_id")
+        for event in closes
+    }
+    open_entries = [event for event in entries if event.get("id") not in closed_entry_ids]
+    pnls = [_float_or_zero((event.get("payload") or {}).get("pnl_dollars")) for event in closes]
+    wins = [value for value in pnls if value > 0]
+    payload = {
+        "status": "PAPER_LEDGER_READY",
+        "build_version": BUILD_VERSION,
+        "entry_count": len(entries),
+        "closed_count": len(closes),
+        "open_count": len(open_entries),
+        "win_rate": round(len(wins) / len(pnls), 4) if pnls else 0.0,
+        "total_pnl_dollars": round(sum(pnls), 2),
+        "average_pnl_dollars": round(sum(pnls) / len(pnls), 2) if pnls else 0.0,
+        "open_entries": [
+            {
+                "entry_event_id": event.get("id"),
+                "timestamp": event.get("timestamp"),
+                "ticker": (event.get("payload") or {}).get("ticker"),
+                "contract_symbol": (event.get("payload") or {}).get("contract_symbol"),
+                "entry_price": (event.get("payload") or {}).get("entry_price"),
+                "quantity": (event.get("payload") or {}).get("quantity"),
+            }
+            for event in open_entries[:20]
+        ],
+        "recent_closes": [
+            {
+                "entry_event_id": (event.get("payload") or {}).get("entry_event_id"),
+                "timestamp": event.get("timestamp"),
+                "ticker": (event.get("payload") or {}).get("ticker"),
+                "contract_symbol": (event.get("payload") or {}).get("contract_symbol"),
+                "pnl_dollars": (event.get("payload") or {}).get("pnl_dollars"),
+                "return_pct": (event.get("payload") or {}).get("return_pct"),
+                "classification": ((event.get("payload") or {}).get("learning_classification") or {}).get("classification"),
+            }
+            for event in closes[:20]
+        ],
+        "paper_only": True,
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "notes": "Paper/manual ledger only. It never contacts a broker and never proves an order existed.",
+    }
+    return service_container.events.log("manual_option_paper_summary", payload)
+
+
+def _find_open_paper_entry(service_container, entry_id: int | None, contract_symbol: str | None) -> dict[str, Any] | None:
+    entries = service_container.events.recent("manual_option_paper_entry", 500)
+    closes = service_container.events.recent("manual_option_paper_close", 500)
+    closed_ids = {
+        (event.get("payload") or {}).get("entry_event_id")
+        for event in closes
+        if (event.get("payload") or {}).get("status") == "PAPER_OPTION_CLOSED"
+    }
+    normalized_contract = str(contract_symbol or "").upper()
+    for event in entries:
+        payload = event.get("payload") or {}
+        if event.get("id") in closed_ids:
+            continue
+        if payload.get("status") not in {"PAPER_OPTION_ENTRY_OPEN", "PAPER_ENTRY_LOGGED_FROM_UNREADY_TICKET"}:
+            continue
+        if entry_id is not None and int(event.get("id") or 0) == int(entry_id):
+            return event
+        if normalized_contract and str(payload.get("contract_symbol") or "").upper() == normalized_contract:
+            return event
+    return None
+
+
+def _latest_payload(service_container, event_type: str) -> dict[str, Any] | None:
+    rows = service_container.events.recent(event_type, 1)
+    if not rows:
+        return None
+    row = rows[0]
+    payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+    return {
+        "id": row.get("id"),
+        "timestamp": row.get("timestamp"),
+        **payload,
+    }
+
+
+def _compact_event(event: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not event:
+        return None
+    return {
+        "id": event.get("id"),
+        "timestamp": event.get("timestamp"),
+        "status": event.get("status"),
+        "mode": event.get("mode"),
+        "candidate_count": event.get("candidate_count"),
+        "eligible_count": event.get("eligible_count"),
+        "reviewed_count": event.get("reviewed_count"),
+        "checks_completed": event.get("checks_completed"),
+        "sample_size": event.get("sample_size"),
+        "next_step": event.get("next_step"),
+    }
+
+
+def _command_center_status(readiness: dict[str, Any] | None, harvest: dict[str, Any] | None, followup: dict[str, Any] | None) -> tuple[str, dict[str, Any]]:
+    if not readiness:
+        return (
+            "NEEDS_MARKET_READINESS",
+            {
+                "label": "Run market readiness.",
+                "reason": "No market_readiness event is logged yet.",
+                "endpoint": "/ops/market-readiness",
+            },
+        )
+    readiness_status = readiness.get("status")
+    if readiness_status == "MARKET_DATA_BLOCKED":
+        return (
+            "DATA_BLOCKED",
+            {
+                "label": "Fix or wait for data.",
+                "reason": "Latest readiness says market data is blocked.",
+                "endpoint": "/ops/market-readiness",
+            },
+        )
+    if not harvest:
+        return (
+            "READY_FOR_HARVEST",
+            {
+                "label": "Run review harvest.",
+                "reason": "Readiness exists, but no review_harvest event is logged yet.",
+                "endpoint": "/ops/review-harvest",
+            },
+        )
+    eligible = int(harvest.get("eligible_count") or 0)
+    if eligible <= 0:
+        return (
+            "NO_TRADE_PLAN_KEEP_SCANNING",
+            {
+                "label": "Keep scanning and learning.",
+                "reason": "Latest harvest produced no eligible small-account candidates.",
+                "endpoint": "/ops/market-readiness",
+            },
+        )
+    if not followup or followup.get("harvest_event_id") != harvest.get("id"):
+        return (
+            "HARVEST_READY_NEEDS_FOLLOWUP",
+            {
+                "label": "Review ranked candidates and schedule follow-up.",
+                "reason": "Latest harvest has eligible candidates; follow-up is not yet tied to that harvest.",
+                "endpoint": "/ops/harvest-followup",
+            },
+        )
+    return (
+        "LEARNING_LOOP_ACTIVE",
+        {
+            "label": "Review learning dashboard and rerun readiness when conditions change.",
+            "reason": "Latest harvest has follow-up outcomes and learning labels.",
+            "endpoint": "/learning/dashboard",
+        },
+    )
 
 
 def _scan_summary(scan: dict[str, Any]) -> dict[str, Any]:

@@ -9,11 +9,16 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 
 from app.mcp_server import (
+    _build_manual_trade_preflight_ticket,
+    _close_manual_option_paper_trade,
+    _get_ops_command_center,
     _get_market_session_playbook,
+    _log_manual_option_paper_entry,
     _market_readiness_check,
     _review_candidate_for_options,
     _run_latest_harvest_followup,
     _run_review_harvest,
+    _summarize_manual_option_paper_trades,
     container,
 )
 from app.version import BUILD_VERSION
@@ -636,6 +641,191 @@ def _harvest_followup_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Harvest Follow-Up", body, payload)
 
 
+def _command_center_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    latest = result.get("latest") or {}
+    action_links = result.get("action_links") or {}
+    latest_rows = []
+    for label, item in latest.items():
+        latest_rows.append(
+            "<tr>"
+            f"<td>{escape(str(label))}</td>"
+            f"<td>{escape(str((item or {}).get('status') if item else 'none'))}</td>"
+            f"<td>{escape(str((item or {}).get('timestamp') if item else ''))}</td>"
+            f"<td>{escape(str((item or {}).get('eligible_count') if item else ''))}</td>"
+            f"<td>{escape(str((item or {}).get('next_step') if item else ''))}</td>"
+            "</tr>"
+        )
+    link_rows = []
+    for label, href in action_links.items():
+        link_rows.append(
+            "<tr>"
+            f"<td>{escape(str(label))}</td>"
+            f"<td><a href=\"{escape(str(href))}\">{escape(str(href))}</a></td>"
+            "</tr>"
+        )
+    labels = []
+    for item in result.get("latest_learning_labels") or []:
+        labels.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('classification') or ''))}</td>"
+            f"<td>{escape(', '.join(str(tag) for tag in item.get('lesson_tags', [])))}</td>"
+            f"<td>{escape(str(item.get('reason') or ''))}</td>"
+            "</tr>"
+        )
+    next_action = result.get("next_action") or {}
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Ops Command Center</h1>
+    <p>One-page review-only state summary for readiness, harvest, follow-up, and learning.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Universe", ', '.join(result.get("universe") or [])),
+    ("Next Action", next_action.get("label")),
+    ("Reason", next_action.get("reason")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+    ("Can Cancel Orders", payload.get("can_cancel_order_from_this_mcp")),
+])}
+<h2>Latest Loop State</h2>
+<table>
+  <thead>
+    <tr><th>Area</th><th>Status</th><th>Timestamp</th><th>Eligible</th><th>Next Step</th></tr>
+  </thead>
+  <tbody>{''.join(latest_rows) if latest_rows else '<tr><td colspan="5">No loop state logged yet.</td></tr>'}</tbody>
+</table>
+<h2>Action Links</h2>
+<table>
+  <thead><tr><th>Action</th><th>URL</th></tr></thead>
+  <tbody>{''.join(link_rows)}</tbody>
+</table>
+<h2>Latest Learning Labels</h2>
+<table>
+  <thead><tr><th>Ticker</th><th>Classification</th><th>Tags</th><th>Reason</th></tr></thead>
+  <tbody>{''.join(labels) if labels else '<tr><td colspan="4">No learning labels logged yet.</td></tr>'}</tbody>
+</table>
+<h2>Manual Trade Gate</h2>
+{_list(result.get("manual_trade_gate") or [])}
+"""
+    return _html_page("Ops Command Center", body, payload)
+
+
+def _manual_preflight_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    ticket = result.get("manual_ticket") or {}
+    selected = result.get("selected_contract") or {}
+    option_validation = result.get("option_validation") or {}
+    risk = result.get("risk_check") or {}
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Manual Trade Preflight</h1>
+    <p>Broker-visible option snapshot validation, risk check, and manual review ticket.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Ticker", result.get("ticker")),
+    ("Direction", result.get("direction")),
+    ("Account Ref.", result.get("account_value_reference")),
+    ("Options Gate", option_validation.get("status")),
+    ("Risk Gate", risk.get("status")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Ticket</h2>
+{_field_grid([
+    ("Contract", ticket.get("contract_symbol")),
+    ("Order Type", ticket.get("order_type")),
+    ("Max Review Ask", ticket.get("max_review_ask")),
+    ("Max Loss", ticket.get("max_loss_dollars")),
+    ("Quantity", ticket.get("quantity")),
+    ("Broker Action Required", ticket.get("broker_action_required")),
+    ("MCP Can Execute", ticket.get("mcp_can_execute")),
+])}
+<h2>Contract Snapshot</h2>
+{_field_grid([
+    ("Bid", selected.get("bid")),
+    ("Ask", selected.get("ask")),
+    ("Spread", selected.get("spread_pct")),
+    ("Volume", selected.get("volume")),
+    ("Open Interest", selected.get("open_interest")),
+    ("DTE", selected.get("days_to_expiration")),
+    ("Strike", selected.get("strike")),
+])}
+<h2>Blocking Reasons</h2>
+{_list(result.get("blocking_reasons") or [])}
+<h2>Warnings</h2>
+{_list(result.get("warnings") or [])}
+<h2>Checklist</h2>
+{_list(result.get("checklist") or [])}
+"""
+    return _html_page("Manual Trade Preflight", body, payload)
+
+
+def _paper_option_summary_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    open_rows = []
+    for item in result.get("open_entries") or []:
+        open_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('entry_event_id') or ''))}</td>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('contract_symbol') or ''))}</td>"
+            f"<td>{escape(str(item.get('entry_price') or ''))}</td>"
+            f"<td>{escape(str(item.get('quantity') or ''))}</td>"
+            f"<td>{escape(str(item.get('timestamp') or ''))}</td>"
+            "</tr>"
+        )
+    close_rows = []
+    for item in result.get("recent_closes") or []:
+        close_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('entry_event_id') or ''))}</td>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('contract_symbol') or ''))}</td>"
+            f"<td>{escape(str(item.get('pnl_dollars') or ''))}</td>"
+            f"<td>{escape(str(item.get('return_pct') or ''))}</td>"
+            f"<td>{escape(str(item.get('classification') or ''))}</td>"
+            f"<td>{escape(str(item.get('timestamp') or ''))}</td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Paper Option Ledger</h1>
+    <p>Manual/paper option entries, closes, P/L, and learning labels. No broker contact.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Entries", result.get("entry_count")),
+    ("Open", result.get("open_count")),
+    ("Closed", result.get("closed_count")),
+    ("Win Rate", result.get("win_rate")),
+    ("Total P/L", result.get("total_pnl_dollars")),
+    ("Avg P/L", result.get("average_pnl_dollars")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Open Paper Entries</h2>
+<table>
+  <thead><tr><th>ID</th><th>Ticker</th><th>Contract</th><th>Entry</th><th>Qty</th><th>Logged</th></tr></thead>
+  <tbody>{''.join(open_rows) if open_rows else '<tr><td colspan="6">No open paper option entries.</td></tr>'}</tbody>
+</table>
+<h2>Recent Closes</h2>
+<table>
+  <thead><tr><th>Entry ID</th><th>Ticker</th><th>Contract</th><th>P/L</th><th>Return</th><th>Learning</th><th>Closed</th></tr></thead>
+  <tbody>{''.join(close_rows) if close_rows else '<tr><td colspan="7">No closed paper option trades yet.</td></tr>'}</tbody>
+</table>
+"""
+    return _html_page("Paper Option Ledger", body, payload)
+
+
 def _blueprint_html(payload: dict[str, Any], title: str) -> HTMLResponse:
     result = payload.get("result") or {}
     sections = []
@@ -799,6 +989,91 @@ async def fallback_harvest_followup(request: Request) -> JSONResponse | HTMLResp
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _harvest_followup_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_command_center(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _get_ops_command_center(
+        container,
+        _tickers(params.get("tickers")),
+        _float_or_none(params.get("account_value")) or 50.0,
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _command_center_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_manual_preflight(request: Request) -> JSONResponse | HTMLResponse:
+    if request.method == "POST":
+        body = await request.json()
+    else:
+        params = request.query_params
+        body = {
+            "ticker": params.get("ticker"),
+            "underlying": params.get("underlying"),
+            "contract_symbol": params.get("contract_symbol"),
+            "direction": params.get("direction"),
+            "bid": _float_or_none(params.get("bid")),
+            "ask": _float_or_none(params.get("ask")),
+            "volume": _int_or_default(params.get("volume"), 0),
+            "open_interest": _int_or_default(params.get("open_interest"), 0),
+            "dte": _int_or_default(params.get("dte"), 0),
+            "strike": _float_or_none(params.get("strike")),
+            "expiration": params.get("expiration"),
+        }
+    snapshot = body.get("snapshot") if isinstance(body.get("snapshot"), dict) else body
+    result = _build_manual_trade_preflight_ticket(
+        container,
+        snapshot,
+        _float_or_none(str(body.get("account_value"))) if body.get("account_value") is not None else 50.0,
+        _float_or_none(str(body.get("max_contract_price"))) if body.get("max_contract_price") is not None else None,
+        str(body.get("notes") or ""),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _manual_preflight_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_paper_option_entry(request: Request) -> JSONResponse:
+    body = await request.json()
+    ticket = body.get("ticket") if isinstance(body.get("ticket"), dict) else body.get("source_preflight")
+    if not isinstance(ticket, dict):
+        ticket = {}
+    result = _log_manual_option_paper_entry(
+        container,
+        ticket,
+        _float_or_none(str(body.get("fill_price"))) if body.get("fill_price") is not None else 0.0,
+        _int_or_default(str(body.get("quantity")) if body.get("quantity") is not None else None, 1),
+        _float_or_none(str(body.get("underlying_price"))) if body.get("underlying_price") is not None else None,
+        str(body.get("notes") or ""),
+    )
+    return JSONResponse(_review_only_envelope({"result": result}))
+
+
+async def fallback_paper_option_close(request: Request) -> JSONResponse:
+    body = await request.json()
+    entry_id_raw = body.get("entry_id")
+    entry_id = _int_or_default(str(entry_id_raw), 0) if entry_id_raw is not None else None
+    result = _close_manual_option_paper_trade(
+        container,
+        entry_id if entry_id else None,
+        str(body.get("contract_symbol") or "") or None,
+        _float_or_none(str(body.get("exit_price"))) if body.get("exit_price") is not None else 0.0,
+        str(body.get("exit_reason") or "manual_close"),
+        str(body.get("notes") or ""),
+    )
+    return JSONResponse(_review_only_envelope({"result": result}))
+
+
+async def fallback_paper_option_summary(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _summarize_manual_option_paper_trades(container, _int_or_default(params.get("limit"), 100))
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _paper_option_summary_html(payload)
     return JSONResponse(payload)
 
 
