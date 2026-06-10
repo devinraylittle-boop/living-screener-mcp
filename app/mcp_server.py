@@ -98,6 +98,11 @@ def get_ops_command_center(tickers: list[str] | None = None, account_value: floa
 
 
 @mcp.tool
+def get_trading_day_launch_checklist(tickers: list[str] | None = None, account_value: float = 50.0, max_candidates: int = 25) -> dict:
+    return _get_trading_day_launch_checklist(container, tickers, account_value, max_candidates)
+
+
+@mcp.tool
 def run_morning_readiness_autopilot(tickers: list[str] | None = None, account_value: float = 50.0, max_candidates: int = 25) -> dict:
     return _run_morning_readiness_autopilot(container, tickers, account_value, max_candidates)
 
@@ -582,6 +587,140 @@ def _get_ops_command_center(service_container, tickers: list[str] | None, accoun
         ],
     }
     return service_container.events.log("ops_command_center", payload)
+
+
+def _get_trading_day_launch_checklist(service_container, tickers: list[str] | None, account_value: float, max_candidates: int) -> dict:
+    max_candidates = max(1, min(int(max_candidates or 25), 50))
+    universe = [str(ticker).upper().strip() for ticker in (tickers or service_container.settings.default_tickers) if str(ticker).strip()]
+    ticker_query = ",".join(universe)
+    latest_readiness = _latest_payload(service_container, "market_readiness")
+    latest_observer = _latest_payload(service_container, "market_open_observer")
+    latest_live_cycle = _latest_payload(service_container, "live_review_cycle")
+    latest_manual_action = _latest_payload(service_container, "manual_broker_action")
+    latest_checkpoint = _latest_payload(service_container, "journal_checkpoint")
+    pending_recheck_required = bool(latest_manual_action and latest_manual_action.get("pending_buy"))
+    live_candidates = bool((latest_live_cycle or {}).get("ranked_candidates"))
+    if pending_recheck_required:
+        status = "LAUNCH_PENDING_RECHECK_REQUIRED"
+        next_action = "Run the pending-buy recheck before trusting any manually queued buy."
+    elif live_candidates:
+        status = "LAUNCH_MANUAL_INSPECTION_READY"
+        next_action = "Inspect the top live-cycle candidate in broker, then use manual trade desk with broker-visible fields."
+    elif latest_observer and int(latest_observer.get("candidate_count") or 0) > 0:
+        status = "LAUNCH_READY_FOR_LIVE_CYCLE"
+        next_action = "Run live review cycle; only continue if stock setup and SMALL_ACCOUNT_SCALP_ACCEPTABLE both pass."
+    elif latest_readiness:
+        status = "LAUNCH_READY_FOR_OBSERVER"
+        next_action = "Run market-open observer while spreads stabilize and save evidence."
+    else:
+        status = "LAUNCH_START_HERE"
+        next_action = "Start with health/build checks, then market readiness and market-open observer."
+
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "mode": "trading_day_launch_checklist",
+        "generated_at": utc_now(),
+        "universe": universe,
+        "account_value_reference": _float_or_zero(account_value) or 50.0,
+        "max_candidates": max_candidates,
+        "next_action": next_action,
+        "latest": {
+            "market_readiness": _compact_event(latest_readiness),
+            "market_open_observer": _compact_event(latest_observer),
+            "live_review_cycle": _compact_event(latest_live_cycle),
+            "manual_broker_action": _compact_event(latest_manual_action),
+            "journal_checkpoint": _compact_event(latest_checkpoint),
+        },
+        "counts": {
+            "market_readiness": service_container.events.count("market_readiness"),
+            "market_open_observer": service_container.events.count("market_open_observer"),
+            "observer_followup": service_container.events.count("observer_followup"),
+            "live_review_cycle": service_container.events.count("live_review_cycle"),
+            "manual_broker_action": service_container.events.count("manual_broker_action"),
+            "manual_option_paper_entry": service_container.events.count("manual_option_paper_entry"),
+            "manual_option_paper_close": service_container.events.count("manual_option_paper_close"),
+            "journal_checkpoint": service_container.events.count("journal_checkpoint"),
+        },
+        "launch_sequence": [
+            {
+                "phase": "Build and safety",
+                "go_condition": "Build matches expected version, safety is review-only, and order/cancel capabilities are false.",
+                "primary_link": f"/health/full?expected_build_version={BUILD_VERSION}",
+                "stop_if": "Wrong build, missing required tools, or any execution capability appears enabled.",
+            },
+            {
+                "phase": "Opening observation",
+                "go_condition": "Market data rows are available and evidence confidence is not LOW across the board.",
+                "primary_link": f"/ops/market-open-observer?tickers={ticker_query}&max_candidates={max_candidates}&cadence_minutes=5&format=html",
+                "stop_if": "Quote/candle data is blocked, stale during regular market, or no valid rows appear.",
+            },
+            {
+                "phase": "Live review cycle",
+                "go_condition": "A candidate passes stock setup, options quality, small-account suitability, friction, and memory checks.",
+                "primary_link": f"/ops/live-review-cycle?tickers={ticker_query}&account_value={_float_or_zero(account_value) or 50.0}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}&format=html",
+                "stop_if": "Result is NO_TRADE_PLAN, data blocked, no eligible candidate, high friction, stale options, or unclear direction.",
+            },
+            {
+                "phase": "Manual broker inspection",
+                "go_condition": "Broker-visible contract symbol, bid/ask, volume, OI, DTE, strike, and max loss still match or improve.",
+                "primary_link": "/trade/manual-desk",
+                "stop_if": "Spread widens, liquidity dries up, setup weakens, or manual preflight is not MANUAL_PREFLIGHT_READY.",
+            },
+            {
+                "phase": "Manual action journal",
+                "go_condition": "Any broker-side manual action is logged as user-reported evidence.",
+                "primary_link": "/trade/manual-action",
+                "stop_if": "A pending buy exists older than 60 seconds without recheck.",
+            },
+            {
+                "phase": "Learning and checkpoint",
+                "go_condition": "Observer follow-up, paper ledger, and journal checkpoint are saved after meaningful decisions.",
+                "primary_link": "/journal/checkpoint?limit=500&format=json",
+                "stop_if": "Do not change rules from a single outcome or without backtesting.",
+            },
+        ],
+        "absolute_no_trade_rules": [
+            "No market orders.",
+            "No trade from stock setup alone.",
+            "No trade from OPTIONS_CHAIN_ACCEPTABLE alone; small-account gate must also pass.",
+            "No broker action from this MCP.",
+            "No stale pending buy trusted after 60 seconds without recheck.",
+            "No rule changes auto-applied from learning labels.",
+        ],
+        "action_links": {
+            "health_full": f"/health/full?expected_build_version={BUILD_VERSION}",
+            "tool_manifest": "/debug/tool-manifest",
+            "scan_schema": f"/debug/scan-schema?expected_build_version={BUILD_VERSION}",
+            "market_readiness": f"/ops/market-readiness?tickers={ticker_query}&max_candidates={max_candidates}",
+            "market_open_observer": f"/ops/market-open-observer?tickers={ticker_query}&max_candidates={max_candidates}&cadence_minutes=5&format=html",
+            "live_review_cycle": f"/ops/live-review-cycle?tickers={ticker_query}&account_value={_float_or_zero(account_value) or 50.0}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}&format=html",
+            "manual_trade_desk": "/trade/manual-desk",
+            "manual_action_journal": "/trade/manual-action",
+            "pending_recheck": "/trade/pending-recheck",
+            "observer_followup": "/ops/observer-followup?limit_observations=3&max_items=20&include_passes=true&classify=true&format=html",
+            "paper_ledger": "/paper/options/summary?format=html",
+            "journal_checkpoint": "/journal/checkpoint?limit=500&format=json",
+        },
+        "safety": {
+            "review_only": True,
+            "place_orders": False,
+            "market_orders_allowed": False,
+            "manual_approval_required": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        },
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "broker_action": False,
+        "notes": [
+            "This checklist is an operating map, not a trade recommendation.",
+            "Use it as the first page tomorrow, then follow links one gate at a time.",
+            "PASS remains the default when any data, options, risk, friction, or broker-visible field is unclear.",
+        ],
+    }
+    return service_container.events.log("trading_day_launch_checklist", payload)
 
 
 def _run_morning_readiness_autopilot(service_container, tickers: list[str] | None, account_value: float, max_candidates: int) -> dict:

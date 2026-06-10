@@ -15,6 +15,7 @@ from app.mcp_server import (
     _export_journal_checkpoint,
     _get_ops_command_center,
     _get_market_session_playbook,
+    _get_trading_day_launch_checklist,
     _log_manual_option_paper_entry,
     _log_manual_broker_action,
     _market_readiness_check,
@@ -719,6 +720,74 @@ def _command_center_html(payload: dict[str, Any]) -> HTMLResponse:
 {_list(result.get("manual_trade_gate") or [])}
 """
     return _html_page("Ops Command Center", body, payload)
+
+
+def _trading_day_launch_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    latest = result.get("latest") or {}
+    sequence_rows = []
+    for item in result.get("launch_sequence") or []:
+        sequence_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('phase') or ''))}</td>"
+            f"<td>{escape(str(item.get('go_condition') or ''))}</td>"
+            f"<td><a href=\"{escape(str(item.get('primary_link') or ''))}\">{escape(str(item.get('primary_link') or ''))}</a></td>"
+            f"<td>{escape(str(item.get('stop_if') or ''))}</td>"
+            "</tr>"
+        )
+    latest_rows = []
+    for label, item in latest.items():
+        latest_rows.append(
+            "<tr>"
+            f"<td>{escape(str(label).replace('_', ' ').title())}</td>"
+            f"<td>{escape(str((item or {}).get('status') if isinstance(item, dict) else ''))}</td>"
+            f"<td>{escape(str((item or {}).get('timestamp') if isinstance(item, dict) else ''))}</td>"
+            f"<td>{escape(str((item or {}).get('next_step') or (item or {}).get('next_action') if isinstance(item, dict) else ''))}</td>"
+            "</tr>"
+        )
+    action_rows = []
+    for label, url in (result.get("action_links") or {}).items():
+        action_rows.append(
+            "<tr>"
+            f"<td>{escape(str(label).replace('_', ' ').title())}</td>"
+            f"<td><a href=\"{escape(str(url))}\">{escape(str(url))}</a></td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Trading Day Launch</h1>
+    <p>Tomorrow's go/no-go operating map. Follow gates one at a time; PASS is the default when anything is unclear.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Next Action", result.get("next_action")),
+    ("Universe", result.get("universe")),
+    ("Account Ref.", result.get("account_value_reference")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Latest Logged State</h2>
+<table>
+  <thead><tr><th>Event</th><th>Status</th><th>Timestamp</th><th>Next</th></tr></thead>
+  <tbody>{''.join(latest_rows) if latest_rows else '<tr><td colspan="4">No launch state logged yet.</td></tr>'}</tbody>
+</table>
+<h2>Launch Sequence</h2>
+<table>
+  <thead><tr><th>Phase</th><th>Go Condition</th><th>Link</th><th>Stop If</th></tr></thead>
+  <tbody>{''.join(sequence_rows)}</tbody>
+</table>
+<h2>Absolute No-Trade Rules</h2>
+{_list(result.get("absolute_no_trade_rules") or [])}
+<h2>Action Links</h2>
+<table>
+  <thead><tr><th>Action</th><th>Link</th></tr></thead>
+  <tbody>{''.join(action_rows)}</tbody>
+</table>
+"""
+    return _html_page("Trading Day Launch", body, payload)
 
 
 def _morning_autopilot_html(payload: dict[str, Any]) -> HTMLResponse:
@@ -1532,6 +1601,20 @@ async def fallback_command_center(request: Request) -> JSONResponse | HTMLRespon
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _command_center_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_trading_day_launch(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _get_trading_day_launch_checklist(
+        container,
+        _tickers(params.get("tickers")),
+        _float_or_none(params.get("account_value")) or 50.0,
+        _int_or_default(params.get("max_candidates"), 25),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _trading_day_launch_html(payload)
     return JSONResponse(payload)
 
 

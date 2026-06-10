@@ -37,6 +37,7 @@ class DebugValidationService:
                 "market_open_observer": "market_open_observer_v1",
                 "observer_followup": "observer_followup_v1",
                 "manual_broker_action": "manual_broker_action_v1",
+                "trading_day_launch": "trading_day_launch_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -46,6 +47,7 @@ class DebugValidationService:
                 "/ops/live-review-cycle",
                 "/ops/market-open-observer",
                 "/ops/observer-followup",
+                "/ops/trading-day-launch",
                 "/paper/options/summary",
                 "/journal/checkpoint",
                 "/trade/manual-desk",
@@ -70,6 +72,7 @@ class DebugValidationService:
                 "live_review_cycle_route": True,
                 "market_open_observer_route": True,
                 "observer_followup_route": True,
+                "trading_day_launch_route": True,
                 "manual_preflight_route": True,
                 "paper_option_ledger_routes": True,
                 "journal_checkpoint_route": True,
@@ -245,6 +248,7 @@ class DebugValidationService:
             "session_playbook_schema_preview": self._session_playbook_schema_preview(),
             "harvest_followup_schema_preview": self._harvest_followup_schema_preview(),
             "ops_command_center_schema_preview": self._ops_command_center_schema_preview(),
+            "trading_day_launch_schema_preview": self._trading_day_launch_schema_preview(),
             "morning_autopilot_schema_preview": self._morning_autopilot_schema_preview(),
             "live_review_cycle_schema_preview": self._live_review_cycle_schema_preview(),
             "market_open_observer_schema_preview": self._market_open_observer_schema_preview(),
@@ -406,6 +410,28 @@ class DebugValidationService:
                 "learning_dashboard": "/learning/dashboard",
             },
             "notes": "Static command-center schema preview only. It reads loop state and does not run scans.",
+        }
+
+    def _trading_day_launch_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "LAUNCH_START_HERE",
+            "schema_version": "trading_day_launch_v1",
+            "next_action": "Start with health/build checks, then market readiness and market-open observer.",
+            "launch_sequence": [
+                {"phase": "Build and safety", "primary_link": "/health/full"},
+                {"phase": "Opening observation", "primary_link": "/ops/market-open-observer"},
+                {"phase": "Live review cycle", "primary_link": "/ops/live-review-cycle"},
+                {"phase": "Manual broker inspection", "primary_link": "/trade/manual-desk"},
+                {"phase": "Manual action journal", "primary_link": "/trade/manual-action"},
+                {"phase": "Learning and checkpoint", "primary_link": "/journal/checkpoint"},
+            ],
+            "absolute_no_trade_rules": [
+                "No market orders.",
+                "No stock-setup-only trades.",
+                "No stale pending buy trusted after 60 seconds without recheck.",
+                "No broker action from this MCP.",
+            ],
+            "notes": "Static launch checklist preview only. The live tool maps safe next actions and cannot execute broker actions.",
         }
 
     def _morning_autopilot_schema_preview(self) -> dict[str, Any]:
@@ -663,6 +689,7 @@ class DebugValidationService:
             "get_market_session_playbook",
             "run_latest_harvest_followup",
             "get_ops_command_center",
+            "get_trading_day_launch_checklist",
             "run_morning_readiness_autopilot",
             "run_live_review_cycle",
             "run_market_open_observer",
@@ -688,7 +715,7 @@ class DebugValidationService:
         return {name: name in available for name in required}
 
     def _category(self, name: str) -> str:
-        if "harvest" in name or "readiness" in name or "observer" in name or "playbook" in name or "command_center" in name or "autopilot" in name or "cycle" in name or "preflight" in name or "desk" in name or "manual_broker" in name or "paper" in name or "journal" in name or "checkpoint" in name:
+        if "harvest" in name or "readiness" in name or "observer" in name or "playbook" in name or "command_center" in name or "launch" in name or "autopilot" in name or "cycle" in name or "preflight" in name or "desk" in name or "manual_broker" in name or "paper" in name or "journal" in name or "checkpoint" in name:
             return "market_operations"
         if "evidence" in name or "blueprint" in name or "feature" in name or "scoring" in name:
             return "research_validation"
@@ -715,6 +742,8 @@ class DebugValidationService:
             return "Review-only market session operating checklist."
         if "command_center" in name:
             return "Review-only command center summary; reads logs and suggests the next safe action."
+        if "launch" in name:
+            return "Review-only trading-day launch checklist; maps go/no-go gates and next safe actions."
         if "autopilot" in name:
             return "Review-only morning readiness summary; checks data readiness, ledger state, and next safe action."
         if "cycle" in name:
