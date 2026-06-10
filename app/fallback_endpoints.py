@@ -235,6 +235,10 @@ def _options_review_html(payload: dict[str, Any]) -> HTMLResponse:
     selected = small.get("selected_contract") or {}
     friction = small.get("friction_adjusted_review") or {}
     friction_components = friction.get("components") or {}
+    setup_memory = result.get("setup_memory") or {}
+    fingerprint = setup_memory.get("fingerprint") or {}
+    lesson_summary = setup_memory.get("similar_lesson_summary") or {}
+    review_summary = setup_memory.get("similar_review_summary") or {}
     status = result.get("status")
     small_status = small.get("status")
     option_status = options.get("status")
@@ -295,6 +299,15 @@ def _options_review_html(payload: dict[str, Any]) -> HTMLResponse:
     ("Open Interest", friction_components.get("open_interest")),
 ])}
 {_list([f"{item.get('name')}: {item.get('reason')}" for item in (friction.get("penalties") or [])])}
+<h2>Setup Memory</h2>
+{_field_grid([
+    ("Memory Signal", setup_memory.get("memory_signal")),
+    ("Similar Reviews", review_summary.get("sample_size")),
+    ("Similar Lessons", lesson_summary.get("sample_size")),
+    ("Avg Similar Return", lesson_summary.get("average_directional_return")),
+    ("Setup Key", fingerprint.get("setup_key")),
+])}
+{_list(fingerprint.get("tags") or [])}
 <h2>Warnings</h2>
 {_list(result.get("warnings") or small.get("warnings") or [])}
 {_contract_table(options.get("best_rejected_contracts") or [], "Best Rejected Contracts")}
@@ -635,6 +648,19 @@ async def fallback_learning_proposals(request: Request) -> JSONResponse:
     min_samples = _int_or_default(str(body.get("min_samples")) if body.get("min_samples") is not None else None, 3)
     limit = _int_or_default(str(body.get("limit")) if body.get("limit") is not None else None, 100)
     result = container.learning.generate_rule_proposals(classifications, min_samples, limit)
+    return JSONResponse(_review_only_envelope({"result": result}))
+
+
+async def fallback_setup_memory(request: Request) -> JSONResponse:
+    body = await request.json()
+    snapshot = body.get("snapshot") if isinstance(body, dict) else None
+    if not isinstance(snapshot, dict):
+        return JSONResponse(
+            _review_only_envelope({"result": {"status": "SETUP_MEMORY_UNAVAILABLE", "reason": "snapshot object is required."}}),
+            status_code=400,
+        )
+    limit = _int_or_default(str(body.get("limit")) if body.get("limit") is not None else None, 100)
+    result = container.setup_memory.compare_snapshot(snapshot, limit)
     return JSONResponse(_review_only_envelope({"result": result}))
 
 

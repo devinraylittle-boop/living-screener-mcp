@@ -17,6 +17,7 @@ from app.fallback_endpoints import (
     fallback_learning_classify,
     fallback_learning_dashboard,
     fallback_learning_proposals,
+    fallback_setup_memory,
     fallback_log_review_decision,
     fallback_market_scan,
     fallback_health_full,
@@ -53,6 +54,7 @@ def create_app():
     app.add_route("/review/outcome", fallback_check_review_outcome, methods=["GET", "POST"])
     app.add_route("/learning/classify", fallback_learning_classify, methods=["POST"])
     app.add_route("/learning/proposals", fallback_learning_proposals, methods=["POST"])
+    app.add_route("/learning/setup-memory", fallback_setup_memory, methods=["POST"])
     app.add_route("/learning/dashboard", fallback_learning_dashboard, methods=["GET"])
     app.add_route("/research/offhours", fallback_offhours_plan, methods=["GET"])
     app.add_route("/research/global-scan", fallback_global_research_scan, methods=["GET"])

@@ -93,6 +93,16 @@ def review_candidate_for_options(ticker: str, direction: str = "call", mode: str
     return _review_candidate_for_options(container, ticker, direction, mode, max_contract_price)
 
 
+@mcp.tool
+def build_setup_fingerprint(snapshot: dict[str, Any]) -> dict:
+    return container.setup_memory.build_fingerprint(snapshot)
+
+
+@mcp.tool
+def compare_setup_memory(snapshot: dict[str, Any], limit: int = 100) -> dict:
+    return container.setup_memory.compare_snapshot(snapshot, limit)
+
+
 def _review_candidate_for_options(service_container, ticker: str, direction: str, mode: str, max_contract_price: float | None) -> dict:
     symbol = ticker.upper()
     is_scalp = "scalp" in mode.lower()
@@ -139,23 +149,22 @@ def _review_candidate_for_options(service_container, ticker: str, direction: str
     else:
         status = "REVIEW_ONLY_OPTIONS_READY"
         reason = "Stock setup and options-chain quality both passed review gates. Broker review still required."
-    return service_container.events.log(
-        "candidate_options_review",
-        {
-            "ticker": symbol,
-            "status": status,
-            "reason": reason,
-            "stock_setup": stock_item,
-            "options_chain_validation": options_gate,
-            "warnings": warnings,
-            "max_contract_price_used": effective_max_contract_price,
-            "small_account_review": small_account_review,
-            "review_only": True,
-            "can_place_order_from_this_mcp": False,
-            "requires_broker_review": True,
-            "order_allowed": False,
-        },
-    )
+    payload = {
+        "ticker": symbol,
+        "status": status,
+        "reason": reason,
+        "stock_setup": stock_item,
+        "options_chain_validation": options_gate,
+        "warnings": warnings,
+        "max_contract_price_used": effective_max_contract_price,
+        "small_account_review": small_account_review,
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "requires_broker_review": True,
+        "order_allowed": False,
+    }
+    payload["setup_memory"] = service_container.setup_memory.compare_snapshot(payload, 100)
+    return service_container.events.log("candidate_options_review", payload)
 
 
 def _small_account_scalp_review(stock_item: dict, options_gate: dict, mode: str) -> dict:

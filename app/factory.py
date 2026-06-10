@@ -17,6 +17,7 @@ from app.services.prompt_service import PromptService
 from app.services.review_outcome_service import ReviewOutcomeService
 from app.services.risk_service import RiskService
 from app.services.scanner_service import ScannerService
+from app.services.setup_memory_service import SetupMemoryService
 from app.storage.database import Database
 from app.storage.repositories import EventRepository, RecommendationRepository
 
@@ -42,6 +43,7 @@ class ServiceContainer:
         self.prompt = PromptService(self.events)
         self.premove_blueprint = PreMoveBlueprintService(self.events)
         self.evidence_packets = EvidencePacketService(self.events)
+        self.setup_memory = SetupMemoryService(self.events)
         self.debug_validation = DebugValidationService(self)
 
 

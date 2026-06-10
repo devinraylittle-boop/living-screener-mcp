@@ -24,6 +24,7 @@ class DebugValidationService:
                 "scan_schema": "debug_static_v1",
                 "scorecard_model": "research_report_v1_preview",
                 "small_account_friction": "friction_adjusted_v1",
+                "setup_memory": "setup_fingerprint_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -38,6 +39,7 @@ class DebugValidationService:
                 "scan_rows_include_evidence_packet": True,
                 "scan_rows_include_evidence_scorecard": True,
                 "options_review_includes_friction_score": True,
+                "options_review_includes_setup_memory": True,
             },
             "safety": self._safety(),
         }
@@ -202,6 +204,7 @@ class DebugValidationService:
             "schema_version": "debug_static_v1",
             "example_candidate": example,
             "options_review_schema_preview": self._options_review_schema_preview(),
+            "setup_memory_schema_preview": self._setup_memory_schema_preview(),
             "safety": self._safety(),
         }
 
@@ -237,6 +240,30 @@ class DebugValidationService:
             "notes": "Static schema preview only. It does not run an options review or create a trade plan.",
         }
 
+    def _setup_memory_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "SETUP_MEMORY_READY",
+            "memory_signal": "NO_MEMORY_YET",
+            "fingerprint": {
+                "setup_key": "setup_type:scalp_review|direction:short|vwap_state:below|relative_strength_label:mixed_vs_spy|rvol_bucket:soft|friction_band:MANAGEABLE_FRICTION|dte_bucket:2_3dte|spread_bucket:wide|max_loss_bucket:small",
+                "dimensions": {
+                    "setup_type": "scalp_review",
+                    "direction": "short",
+                    "vwap_state": "below",
+                    "relative_strength_label": "mixed_vs_spy",
+                    "rvol_bucket": "soft",
+                    "friction_band": "MANAGEABLE_FRICTION",
+                    "dte_bucket": "2_3dte",
+                    "spread_bucket": "wide",
+                    "max_loss_bucket": "small",
+                },
+                "tags": ["rvol_soft", "wide_spread"],
+            },
+            "similar_review_summary": {"sample_size": 0},
+            "similar_lesson_summary": {"sample_size": 0},
+            "notes": "Static setup-memory schema preview only. It does not run a scan or create a trade plan.",
+        }
+
     def _required_tool_status(self, tools: list[str]) -> dict[str, bool]:
         required = [
             "get_version",
@@ -248,6 +275,8 @@ class DebugValidationService:
             "build_evidence_packet",
             "build_evidence_packets_from_scan",
             "summarize_evidence_packets",
+            "build_setup_fingerprint",
+            "compare_setup_memory",
         ]
         available = set(tools)
         return {name: name in available for name in required}
