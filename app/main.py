@@ -39,10 +39,12 @@ from app.fallback_endpoints import (
     fallback_paper_option_close,
     fallback_paper_option_entry,
     fallback_paper_option_summary,
+    fallback_paper_option_watch,
     fallback_pending_recheck,
     fallback_review_harvest,
     fallback_premove_blueprint,
     fallback_session_playbook,
+    fallback_session_risk_guard,
     fallback_safety,
     fallback_scalp_scan,
     fallback_scoring_model,
@@ -87,9 +89,11 @@ def create_app():
     app.add_route("/trade/manual-desk", fallback_manual_trade_desk, methods=["GET", "POST"])
     app.add_route("/trade/manual-action", fallback_manual_broker_action, methods=["GET", "POST"])
     app.add_route("/trade/pending-recheck", fallback_pending_recheck, methods=["GET", "POST"])
+    app.add_route("/risk/session", fallback_session_risk_guard, methods=["GET"])
     app.add_route("/review/broker-option-snapshot", fallback_validate_broker_snapshot, methods=["POST"])
     app.add_route("/paper/options/entry", fallback_paper_option_entry, methods=["POST"])
     app.add_route("/paper/options/close", fallback_paper_option_close, methods=["POST"])
+    app.add_route("/paper/options/watch", fallback_paper_option_watch, methods=["GET", "POST"])
     app.add_route("/paper/options/summary", fallback_paper_option_summary, methods=["GET"])
     app.add_route("/journal/checkpoint", fallback_journal_checkpoint, methods=["GET", "POST"])
     app.add_route("/review/log-decision", fallback_log_review_decision, methods=["POST"])

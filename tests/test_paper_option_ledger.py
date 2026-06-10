@@ -7,6 +7,7 @@ from app.mcp_server import (
     _close_manual_option_paper_trade,
     _log_manual_option_paper_entry,
     _summarize_manual_option_paper_trades,
+    _watch_manual_option_position,
 )
 from tests.helpers import TempContainer
 
@@ -81,6 +82,59 @@ class PaperOptionLedgerTests(unittest.TestCase):
         self.assertEqual(close["status"], "PAPER_ENTRY_NOT_FOUND")
         self.assertFalse(close["can_place_order_from_this_mcp"])
         self.assertFalse(close["can_cancel_order_from_this_mcp"])
+
+    def test_position_watch_flags_profit_and_stop_without_broker_action(self) -> None:
+        with TempContainer() as container:
+            ticket = self._ready_ticket(container)
+            entry = _log_manual_option_paper_entry(container, ticket, fill_price=0.08, quantity=1, underlying_price=16.2)
+            profit = _watch_manual_option_position(
+                container,
+                entry_id=entry["id"],
+                contract_symbol=None,
+                current_bid=0.11,
+                current_ask=0.13,
+                current_mark=None,
+                underlying_price=16.0,
+                underlying_vwap=16.4,
+                notes="profit watch",
+            )
+            stop = _watch_manual_option_position(
+                container,
+                entry_id=entry["id"],
+                contract_symbol=None,
+                current_bid=0.04,
+                current_ask=0.05,
+                current_mark=None,
+                underlying_price=16.6,
+                underlying_vwap=16.4,
+                notes="stop watch",
+            )
+
+        self.assertEqual(profit["status"], "POSITION_PROFIT_REVIEW")
+        self.assertEqual(profit["return_pct"], 0.5)
+        self.assertEqual(profit["close_request"]["endpoint"], "/paper/options/close")
+        self.assertFalse(profit["broker_action"])
+        self.assertEqual(stop["status"], "POSITION_STOP_REVIEW")
+        self.assertIn("underlying_reclaimed_vwap", stop["close_request"]["exit_reason"])
+        self.assertFalse(stop["can_cancel_order_from_this_mcp"])
+
+    def test_position_watch_requires_live_quote(self) -> None:
+        with TempContainer() as container:
+            ticket = self._ready_ticket(container)
+            entry = _log_manual_option_paper_entry(container, ticket, fill_price=0.08, quantity=1, underlying_price=16.2)
+            result = _watch_manual_option_position(
+                container,
+                entry_id=entry["id"],
+                contract_symbol=None,
+                current_bid=None,
+                current_ask=None,
+                current_mark=None,
+                underlying_price=None,
+                underlying_vwap=None,
+            )
+
+        self.assertEqual(result["status"], "POSITION_WATCH_NEEDS_LIVE_QUOTE")
+        self.assertFalse(result["can_place_order_from_this_mcp"])
 
 
 if __name__ == "__main__":

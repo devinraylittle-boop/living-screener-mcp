@@ -148,6 +148,11 @@ class MarketHarvestTests(unittest.TestCase):
                 scalp_min_relative_volume=1.15,
                 scalp_max_contract_price=1.0,
                 scalp_watchlist=("SOFI", "SMCI"),
+                default_tickers=("SOFI", "SMCI"),
+                max_trade_risk_pct=0.10,
+                warn_daily_drawdown_pct=0.10,
+                soft_stop_daily_drawdown_pct=0.20,
+                hard_lockout_daily_drawdown_pct=0.30,
             ),
         )
 
@@ -177,6 +182,7 @@ class MarketHarvestTests(unittest.TestCase):
         self.assertEqual(result["status"], "SESSION_PLAYBOOK_READY")
         self.assertIn("/ops/review-harvest", result["session_blocks"][2]["actions"][0])
         self.assertIn("Build and safety confirmed.", result["manual_trade_gate"])
+        self.assertIn("Session risk guard is not SESSION_RISK_BLOCKED.", result["manual_trade_gate"])
         self.assertFalse(result["can_place_order_from_this_mcp"])
 
     def test_latest_harvest_followup_closes_learning_loop(self) -> None:
@@ -215,14 +221,16 @@ class MarketHarvestTests(unittest.TestCase):
         third = _get_ops_command_center(container, ["SOFI"], 50)
         self.assertEqual(third["status"], "HARVEST_READY_NEEDS_FOLLOWUP")
         self.assertEqual(third["next_action"]["endpoint"], "/ops/harvest-followup")
+        self.assertEqual(third["latest"]["session_risk_guard"]["status"], "SESSION_RISK_CLEAR")
         self.assertFalse(third["can_place_order_from_this_mcp"])
 
     def test_morning_autopilot_summarizes_readiness_without_execution(self) -> None:
         result = _run_morning_readiness_autopilot(self.container(), ["SOFI"], 50, 5)
 
         self.assertEqual(result["event_type"], "morning_readiness_autopilot")
-        self.assertIn(result["status"], {"AUTOPILOT_READY_FOR_HARVEST", "AUTOPILOT_KEEP_SCANNING", "AUTOPILOT_DATA_BLOCKED", "AUTOPILOT_STANDBY"})
+        self.assertIn(result["status"], {"AUTOPILOT_READY_FOR_HARVEST", "AUTOPILOT_KEEP_SCANNING", "AUTOPILOT_DATA_BLOCKED", "AUTOPILOT_STANDBY", "AUTOPILOT_SESSION_RISK_BLOCKED"})
         self.assertIn("readiness", result)
+        self.assertIn("session_risk_guard", result)
         self.assertIn("paper_ledger", result)
         self.assertIn("review_harvest", result["action_links"])
         self.assertFalse(result["can_place_order_from_this_mcp"])
@@ -232,12 +240,33 @@ class MarketHarvestTests(unittest.TestCase):
         result = _run_live_review_cycle(self.container(), ["SOFI"], 50, 5, 3, None, False)
 
         self.assertEqual(result["event_type"], "live_review_cycle")
-        self.assertIn(result["status"], {"LIVE_CYCLE_CANDIDATES_READY", "NO_TRADE_PLAN", "LIVE_CYCLE_DATA_BLOCKED", "LIVE_CYCLE_STANDBY"})
+        self.assertIn(result["status"], {"LIVE_CYCLE_CANDIDATES_READY", "NO_TRADE_PLAN", "LIVE_CYCLE_DATA_BLOCKED", "LIVE_CYCLE_STANDBY", "LIVE_CYCLE_SESSION_RISK_BLOCKED"})
         self.assertIn("readiness", result)
+        self.assertIn("session_risk_guard", result)
         self.assertIn("paper_ledger", result)
         self.assertIn("manual_preflight", result["action_links"])
         self.assertFalse(result["can_place_order_from_this_mcp"])
         self.assertFalse(result["can_cancel_order_from_this_mcp"])
+
+    def test_live_review_cycle_blocks_manual_preflight_when_session_risk_is_full(self) -> None:
+        container = self.container()
+        for _ in range(2):
+            container.events.log(
+                "manual_option_paper_entry",
+                {
+                    "status": "PAPER_OPTION_ENTRY_OPEN",
+                    "ticker": "SOFI",
+                    "contract_symbol": "SOFI260612P00015000",
+                    "entry_debit_dollars": 8.0,
+                },
+            )
+
+        result = _run_live_review_cycle(container, ["SOFI"], 50, 5, 3, None, False)
+
+        self.assertEqual(result["status"], "LIVE_CYCLE_SESSION_RISK_BLOCKED")
+        self.assertEqual(result["session_risk_guard"]["status"], "SESSION_RISK_BLOCKED")
+        self.assertFalse(result["manual_preflight_required"])
+        self.assertIn("Session risk guard is not SESSION_RISK_BLOCKED.", result["manual_trade_gate"])
 
 
 if __name__ == "__main__":

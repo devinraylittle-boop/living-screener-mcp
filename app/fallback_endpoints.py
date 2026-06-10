@@ -15,6 +15,7 @@ from app.mcp_server import (
     _export_journal_checkpoint,
     _get_ops_command_center,
     _get_market_session_playbook,
+    _get_session_risk_guard,
     _get_trading_day_launch_checklist,
     _log_manual_option_paper_entry,
     _log_manual_broker_action,
@@ -30,6 +31,7 @@ from app.mcp_server import (
     _run_review_harvest,
     _summarize_trading_day_alerts,
     _summarize_manual_option_paper_trades,
+    _watch_manual_option_position,
     container,
 )
 from app.version import BUILD_VERSION
@@ -733,6 +735,7 @@ def _command_center_html(payload: dict[str, Any]) -> HTMLResponse:
 def _trading_day_launch_html(payload: dict[str, Any]) -> HTMLResponse:
     result = payload.get("result") or {}
     latest = result.get("latest") or {}
+    session_risk = (latest.get("session_risk_guard") or {}) if isinstance(latest, dict) else {}
     sequence_rows = []
     for item in result.get("launch_sequence") or []:
         sequence_rows.append(
@@ -773,6 +776,7 @@ def _trading_day_launch_html(payload: dict[str, Any]) -> HTMLResponse:
     ("Build", payload.get("build_version")),
     ("Status", result.get("status")),
     ("Next Action", result.get("next_action")),
+    ("Session Risk", session_risk.get("status")),
     ("Universe", result.get("universe")),
     ("Account Ref.", result.get("account_value_reference")),
     ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
@@ -921,6 +925,7 @@ def _morning_autopilot_html(payload: dict[str, Any]) -> HTMLResponse:
     result = payload.get("result") or {}
     readiness = result.get("readiness") or {}
     ledger = result.get("paper_ledger") or {}
+    session_risk = result.get("session_risk_guard") or {}
     action_links = result.get("action_links") or {}
     link_rows = []
     for label, url in action_links.items():
@@ -971,6 +976,14 @@ def _morning_autopilot_html(payload: dict[str, Any]) -> HTMLResponse:
     ("Win Rate", ledger.get("win_rate")),
     ("Total P/L", ledger.get("total_pnl_dollars")),
 ])}
+<h2>Session Risk Guard</h2>
+{_field_grid([
+    ("Session Risk Status", session_risk.get("status")),
+    ("Open Positions", session_risk.get("open_position_count")),
+    ("Open Risk", session_risk.get("open_risk_dollars")),
+    ("Closed P/L", session_risk.get("closed_pnl_dollars")),
+    ("Next Action", session_risk.get("next_action")),
+])}
 <h2>Action Links</h2>
 <table>
   <thead><tr><th>Action</th><th>Link</th></tr></thead>
@@ -992,6 +1005,7 @@ def _live_review_cycle_html(payload: dict[str, Any]) -> HTMLResponse:
     readiness = result.get("readiness") or {}
     harvest = result.get("harvest") or {}
     ledger = result.get("paper_ledger") or {}
+    session_risk = result.get("session_risk_guard") or {}
     candidate_rows = []
     for item in result.get("ranked_candidates") or []:
         selected = item.get("selected_contract") or {}
@@ -1070,6 +1084,15 @@ def _live_review_cycle_html(payload: dict[str, Any]) -> HTMLResponse:
     ("Closed", ledger.get("closed_count")),
     ("Win Rate", ledger.get("win_rate")),
     ("Total P/L", ledger.get("total_pnl_dollars")),
+])}
+<h2>Session Risk Guard</h2>
+{_field_grid([
+    ("Session Risk Status", session_risk.get("status")),
+    ("Open Positions", session_risk.get("open_position_count")),
+    ("Open Risk", session_risk.get("open_risk_dollars")),
+    ("Proposed Risk", session_risk.get("proposed_risk_dollars")),
+    ("Projected Open Risk", session_risk.get("projected_open_risk_dollars")),
+    ("Next Action", session_risk.get("next_action")),
 ])}
 <h2>Manual Trade Gate</h2>
 {_list(result.get("manual_trade_gate") or [])}
@@ -1301,6 +1324,7 @@ def _manual_preflight_html(payload: dict[str, Any]) -> HTMLResponse:
 def _manual_trade_desk_html(payload: dict[str, Any]) -> HTMLResponse:
     result = payload.get("result") or {}
     preflight = result.get("preflight") or {}
+    session_risk = result.get("session_risk_guard") or {}
     ticket = preflight.get("manual_ticket") or {}
     selected = preflight.get("selected_contract") or {}
     paper_request = result.get("paper_entry_request") or {}
@@ -1331,6 +1355,16 @@ def _manual_trade_desk_html(payload: dict[str, Any]) -> HTMLResponse:
     ("Max Review Ask", ticket.get("max_review_ask")),
     ("Max Loss", ticket.get("max_loss_dollars")),
 ])}
+<h2>Session Risk Guard</h2>
+{_field_grid([
+    ("Session Risk Status", session_risk.get("status")),
+    ("Open Positions", f"{session_risk.get('open_position_count')} / {session_risk.get('max_open_positions')}"),
+    ("Open Risk", session_risk.get("open_risk_dollars")),
+    ("Proposed Risk", session_risk.get("proposed_risk_dollars")),
+    ("Projected Open Risk", session_risk.get("projected_open_risk_dollars")),
+    ("Closed P/L", session_risk.get("closed_pnl_dollars")),
+    ("Next Action", session_risk.get("next_action")),
+])}
 <h2>Contract Snapshot</h2>
 {_field_grid([
     ("Bid", selected.get("bid")),
@@ -1354,9 +1388,9 @@ def _manual_trade_desk_html(payload: dict[str, Any]) -> HTMLResponse:
     ("When", checkpoint.get("when")),
 ])}
 <h2>Blocking Reasons</h2>
-{_list(preflight.get("blocking_reasons") or [])}
+{_list(result.get("blocking_reasons") or preflight.get("blocking_reasons") or [])}
 <h2>Warnings</h2>
-{_list(preflight.get("warnings") or [])}
+{_list(result.get("warnings") or preflight.get("warnings") or [])}
 <h2>Next Steps</h2>
 {_list(result.get("next_steps") or [])}
 """
@@ -1498,6 +1532,108 @@ def _paper_option_summary_html(payload: dict[str, Any]) -> HTMLResponse:
 </table>
 """
     return _html_page("Paper Option Ledger", body, payload)
+
+
+def _paper_option_position_watch_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    close_request = result.get("close_request") or {}
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Option Position Watch</h1>
+    <p>Review-only management card for an open manual/paper option. It cannot close or modify broker orders.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Ticker", result.get("ticker")),
+    ("Direction", result.get("direction")),
+    ("Contract", result.get("contract_symbol")),
+    ("Entry", result.get("entry_price")),
+    ("Current Mark", result.get("current_mark")),
+    ("Return", result.get("return_pct")),
+    ("P/L", result.get("pnl_dollars")),
+    ("Spread", result.get("spread_pct")),
+    ("Next Action", result.get("next_action")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Warnings</h2>
+{_list(result.get("warnings") or [])}
+<h2>Prepared Close Ledger Payload</h2>
+{_field_grid([
+    ("Endpoint", close_request.get("endpoint")),
+    ("Entry ID", close_request.get("entry_id")),
+    ("Contract", close_request.get("contract_symbol")),
+    ("Exit Price", close_request.get("exit_price")),
+    ("Exit Reason", close_request.get("exit_reason")),
+])}
+<h2>Management Rules</h2>
+{_list(result.get("management_rules") or [])}
+"""
+    return _html_page("Option Position Watch", body, payload)
+
+
+def _session_risk_guard_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    open_rows = []
+    for item in result.get("open_entries") or []:
+        open_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('entry_event_id') or ''))}</td>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('contract_symbol') or ''))}</td>"
+            f"<td>{escape(str(item.get('direction') or ''))}</td>"
+            f"<td>{escape(str(item.get('entry_debit_dollars') or ''))}</td>"
+            "</tr>"
+        )
+    link_rows = []
+    for label, url in (result.get("action_links") or {}).items():
+        link_rows.append(
+            "<tr>"
+            f"<td>{escape(str(label).replace('_', ' ').title())}</td>"
+            f"<td><a href=\"{escape(str(url))}\">{escape(str(url))}</a></td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Session Risk Guard</h1>
+    <p>Journal-based risk view for open manual/paper option exposure. Review-only; broker balances are not verified.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Account Ref.", result.get("account_value_reference")),
+    ("Per-Trade Cap", result.get("per_trade_cap_dollars")),
+    ("Open Risk", result.get("open_risk_dollars")),
+    ("Projected Open Risk", result.get("projected_open_risk_dollars")),
+    ("Closed P/L", result.get("closed_pnl_dollars")),
+    ("Open Positions", f"{result.get('open_position_count')} / {result.get('max_open_positions')}"),
+    ("Next Action", result.get("next_action")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Blocking Reasons</h2>
+{_list(result.get("blocking_reasons") or [])}
+<h2>Warnings</h2>
+{_list(result.get("warnings") or [])}
+<h2>Open Entries</h2>
+<table>
+  <thead><tr><th>ID</th><th>Ticker</th><th>Contract</th><th>Direction</th><th>Open Risk</th></tr></thead>
+  <tbody>{''.join(open_rows) if open_rows else '<tr><td colspan="5">No open journaled option entries.</td></tr>'}</tbody>
+</table>
+<h2>Action Links</h2>
+<table>
+  <thead><tr><th>Action</th><th>Link</th></tr></thead>
+  <tbody>{''.join(link_rows)}</tbody>
+</table>
+<h2>Rules</h2>
+{_list(result.get("rules") or [])}
+"""
+    return _html_page("Session Risk Guard", body, payload)
 
 
 def _journal_checkpoint_html(payload: dict[str, Any]) -> HTMLResponse:
@@ -1958,6 +2094,7 @@ async def fallback_manual_trade_desk(request: Request) -> JSONResponse | HTMLRes
             "expiration": params.get("expiration"),
             "account_value": _float_or_none(params.get("account_value")),
             "max_contract_price": _float_or_none(params.get("max_contract_price")),
+            "max_open_positions": _int_or_default(params.get("max_open_positions"), 2),
             "notes": params.get("notes"),
         }
     snapshot = body.get("snapshot") if isinstance(body.get("snapshot"), dict) else body
@@ -1967,6 +2104,7 @@ async def fallback_manual_trade_desk(request: Request) -> JSONResponse | HTMLRes
         _float_or_none(str(body.get("account_value"))) if body.get("account_value") is not None else 50.0,
         _float_or_none(str(body.get("max_contract_price"))) if body.get("max_contract_price") is not None else None,
         str(body.get("notes") or ""),
+        _int_or_default(str(body.get("max_open_positions")), 2) if body.get("max_open_positions") is not None else 2,
     )
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
@@ -2058,12 +2196,63 @@ async def fallback_paper_option_close(request: Request) -> JSONResponse:
     return JSONResponse(_review_only_envelope({"result": result}))
 
 
+async def fallback_paper_option_watch(request: Request) -> JSONResponse | HTMLResponse:
+    if request.method == "POST":
+        body = await request.json()
+        entry_id_raw = body.get("entry_id")
+        entry_id = _int_or_default(str(entry_id_raw), 0) if entry_id_raw is not None else None
+        result = _watch_manual_option_position(
+            container,
+            entry_id if entry_id else None,
+            str(body.get("contract_symbol") or "") or None,
+            _float_or_none(str(body.get("current_bid"))) if body.get("current_bid") is not None else None,
+            _float_or_none(str(body.get("current_ask"))) if body.get("current_ask") is not None else None,
+            _float_or_none(str(body.get("current_mark"))) if body.get("current_mark") is not None else None,
+            _float_or_none(str(body.get("underlying_price"))) if body.get("underlying_price") is not None else None,
+            _float_or_none(str(body.get("underlying_vwap"))) if body.get("underlying_vwap") is not None else None,
+            str(body.get("notes") or ""),
+        )
+    else:
+        params = request.query_params
+        entry_id_raw = params.get("entry_id")
+        entry_id = _int_or_default(entry_id_raw, 0) if entry_id_raw is not None else None
+        result = _watch_manual_option_position(
+            container,
+            entry_id if entry_id else None,
+            params.get("contract_symbol") or None,
+            _float_or_none(params.get("current_bid")),
+            _float_or_none(params.get("current_ask")),
+            _float_or_none(params.get("current_mark")),
+            _float_or_none(params.get("underlying_price")),
+            _float_or_none(params.get("underlying_vwap")),
+            params.get("notes") or "",
+        )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _paper_option_position_watch_html(payload)
+    return JSONResponse(payload)
+
+
 async def fallback_paper_option_summary(request: Request) -> JSONResponse | HTMLResponse:
     params = request.query_params
     result = _summarize_manual_option_paper_trades(container, _int_or_default(params.get("limit"), 100))
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _paper_option_summary_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_session_risk_guard(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _get_session_risk_guard(
+        container,
+        _float_or_none(params.get("account_value")) or 50.0,
+        _float_or_none(params.get("proposed_risk_dollars")),
+        _int_or_default(params.get("max_open_positions"), 2),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _session_risk_guard_html(payload)
     return JSONResponse(payload)
 
 

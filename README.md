@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.10-review-alerts
+2026.06.10-tomorrow-control
 ```
 
 ## Render Environment
@@ -76,6 +76,12 @@ Manual preflight tickets combine broker-visible option snapshots with the existi
 
 Paper option ledger tools let you study manual or hypothetical option decisions without touching a broker. Use `log_manual_option_paper_entry` after a paper/manual fill reference, then `close_manual_option_paper_trade` when you want to record the exit. The ledger calculates P/L, records the close, and sends the outcome into the mistake engine for learning labels. Use `summarize_manual_option_paper_trades` or `/paper/options/summary` to view open entries, recent closes, win rate, and paper P/L. These records do not prove a broker order existed and cannot place, submit, modify, simulate, or cancel orders.
 
+Manual option position watch helps manage an open manual/paper option after entry. Use `watch_manual_option_position` or `/paper/options/watch` with the open entry ID or contract symbol plus current broker-visible bid/ask/mark. It returns `POSITION_HOLD_REVIEW`, `POSITION_PROFIT_WATCH`, `POSITION_PROFIT_REVIEW`, `POSITION_STOP_REVIEW`, or `POSITION_WATCH_NEEDS_LIVE_QUOTE`, prepares a `/paper/options/close` payload, and keeps all broker action outside the MCP.
+
+Session risk guard checks the journal before adding another manual idea. Use `get_session_risk_guard` or `/risk/session` with account value, proposed risk, and max open positions. It summarizes journaled open entries, closed paper/manual P/L, per-trade cap, total open-risk cap, and warning/soft/hard references. This is journal evidence only; it does not verify broker balances or broker positions and cannot execute broker actions.
+
+Tomorrow control pages are session-risk aware. The command center, launch checklist, morning autopilot, live review cycle, and heartbeat now surface session risk before manual review. If session risk is blocked, the live cycle and heartbeat do not treat ranked candidates as manual-ready, even when stock/options gates are otherwise clean.
+
 Morning readiness autopilot gives tomorrow's workflow a single starting page. Use `run_morning_readiness_autopilot` or `/ops/morning-autopilot` before and during the session to confirm build/safety, run market readiness, summarize the session playbook, check the paper ledger, and return the next safe action. It does not run a full review harvest automatically and cannot create broker action.
 
 Live review cycle is the market-hours decision page. Use `run_live_review_cycle` or `/ops/live-review-cycle` after the market has usable data. It checks readiness, stops early on bad data, runs review harvest only when data is usable, ranks only candidates that pass both stock setup and `SMALL_ACCOUNT_SCALP_ACCEPTABLE`, summarizes paper ledger state, and returns the next manual action. It cannot place, submit, simulate, modify, or cancel broker orders.
@@ -88,7 +94,7 @@ Manual broker action journal records what you report doing in Robinhood or anoth
 
 Journal checkpoints protect tomorrow's learning loop from Render restarts. Use `export_journal_checkpoint` or `/journal/checkpoint` after important scan/review/paper events to export recent local journal events, event-type counts, and restore guidance. If Render loses the local SQLite journal, use `restore_journal_checkpoint` or `POST /journal/checkpoint` with the saved checkpoint JSON to rehydrate local MCP evidence. Restored events are deduped, marked with restore metadata, and remain evidence only; they cannot create broker action.
 
-Manual trade desk is the final human checkpoint page. Use `build_manual_trade_desk` or `/trade/manual-desk` with broker-visible option fields after a live review cycle identifies a candidate. It runs manual preflight, shows blocking reasons/warnings, prepares a paper-entry payload, and reminds you to export a journal checkpoint after the decision. It still cannot place, submit, simulate, modify, or cancel broker orders.
+Manual trade desk is the final human checkpoint page. Use `build_manual_trade_desk` or `/trade/manual-desk` with broker-visible option fields after a live review cycle identifies a candidate. It runs manual preflight, checks the session risk guard, shows blocking reasons/warnings, prepares a paper-entry payload only when both gates clear, and reminds you to export a journal checkpoint after the decision. It still cannot place, submit, simulate, modify, or cancel broker orders.
 
 Trading day launch checklist is the first page to open tomorrow. Use `get_trading_day_launch_checklist` or `/ops/trading-day-launch` to see build/safety checks, latest logged state, go/no-go phases, absolute no-trade rules, and the next safest link. It does not run scans or create broker actions; it maps the safe workflow so the session starts with discipline instead of guesswork.
 
@@ -118,7 +124,7 @@ These routes call the same review-only services as the MCP tools. They exist so 
 
 ```text
 GET /safety
-GET /health/full?expected_build_version=2026.06.10-review-alerts
+GET /health/full?expected_build_version=2026.06.10-tomorrow-control
 GET /scan/scalp?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
 GET /scan/market?mode=conservative_review_only&tickers=SPY,QQQ,KO,PG
 GET /ops/trading-day-launch?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25
@@ -150,14 +156,17 @@ GET /review/options?ticker=SMCI&direction=put&mode=scalp_review&format=html
 GET /review/options?ticker=SMCI&direction=put&mode=scalp_review&format=json
 GET /review/manual-preflight?ticker=SOFI&contract_symbol=SOFI260612P00015000&direction=put&bid=0.04&ask=0.045&volume=500&open_interest=2000&dte=3&strike=15&account_value=50
 POST /review/manual-preflight
-GET /trade/manual-desk?ticker=SOFI&contract_symbol=SOFI260612P00015000&direction=put&bid=0.04&ask=0.045&volume=500&open_interest=2000&dte=3&strike=15&account_value=50&format=html
+GET /trade/manual-desk?ticker=SOFI&contract_symbol=SOFI260612P00015000&direction=put&bid=0.04&ask=0.045&volume=500&open_interest=2000&dte=3&strike=15&account_value=50&max_open_positions=2&format=html
 POST /trade/manual-desk
 GET /trade/manual-action?ticker=SOFI&contract_symbol=SOFI260612P00015000&action_type=pending_buy&order_status=queued&side=buy&direction=put&limit_price=0.08&quantity=1&is_options_order=true&format=html
 POST /trade/manual-action
 GET /trade/pending-recheck?ticker=SOFI&submitted_at=2026-06-10T14:30:00Z&limit_price=0.08&is_options_order=true&direction=put&mode=scalp_review&format=html
 POST /trade/pending-recheck
+GET /risk/session?account_value=50&proposed_risk_dollars=5&max_open_positions=2&format=html
 POST /paper/options/entry
 POST /paper/options/close
+GET /paper/options/watch?contract_symbol=SOFI260612P00015000&current_bid=0.10&current_ask=0.12&underlying_price=16.10&underlying_vwap=16.30&format=html
+POST /paper/options/watch
 GET /paper/options/summary
 GET /paper/options/summary?format=html
 GET /journal/checkpoint?limit=500
@@ -183,7 +192,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.10-review-alerts
+GET /debug/scan-schema?expected_build_version=2026.06.10-tomorrow-control
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -192,11 +201,11 @@ Opening `/review/options` in a normal browser returns a cleaner HTML view with s
 
 Opening `/review/manual-preflight` with broker-visible contract fields returns a manual ticket view with options gate, risk gate, blocking reasons, warnings, and a checklist. It is the last review-only check before any separate manual broker action.
 
-Opening `/trade/manual-desk` with broker-visible contract fields returns one human-readable desk: preflight status, selected contract, paper-entry payload, checkpoint reminder, blocking reasons, warnings, and next steps.
+Opening `/trade/manual-desk` with broker-visible contract fields returns one human-readable desk: preflight status, session risk guard, selected contract, paper-entry payload, checkpoint reminder, blocking reasons, warnings, and next steps.
 
 Opening `/ops/trading-day-launch` returns the top-level go/no-go map for tomorrow: build checks, latest state, launch phases, action links, no-trade rules, and the next safest step. It is the safest starting page before opening observer, live review cycle, manual desk, or journal tools.
 
-Opening `/ops/day-heartbeat` runs one safe cadence step and returns the result, next refresh seconds, next action, action links, and hard no-trade rules. Use it repeatedly during the open session. If it returns `HEARTBEAT_MANUAL_REVIEW_READY`, the next step is broker-visible inspection plus `/trade/manual-desk`, not direct execution.
+Opening `/ops/day-heartbeat` runs one safe cadence step and returns the result, next refresh seconds, next action, action links, and hard no-trade rules. Use it repeatedly during the open session. If it returns `HEARTBEAT_MANUAL_REVIEW_READY`, the next step is broker-visible inspection plus `/trade/manual-desk`, not direct execution. If it returns `HEARTBEAT_SESSION_RISK_BLOCKED`, manage or log existing exposure before considering any new idea.
 
 Opening `/ops/day-monitor` returns the heartbeat page with browser auto-refresh turned on. This is the best page to leave open tomorrow while the market is moving. It stops when the tab is closed, and it never bypasses the manual desk or pending-buy recheck gates.
 
@@ -204,7 +213,11 @@ Opening `/ops/day-alerts` returns the attention queue from recent journal events
 
 Opening `/trade/manual-action` records a user-reported broker-side decision and returns a pending-buy recheck card when needed. Opening `/trade/pending-recheck` runs the review-only stale pending-buy check. Neither route can verify broker state or perform broker actions.
 
+Opening `/risk/session` returns the session risk guard: current journaled open option risk, closed paper/manual P/L, proposed-risk check, max-open-position check, blocking reasons, warnings, and next action links. Use it before adding another manual idea.
+
 Opening `/paper/options/summary` shows the paper option ledger: open paper entries, recent closes, paper P/L, and learning labels. Use it to study what would have happened after a manual/paper idea without creating a broker action.
+
+Opening `/paper/options/watch` shows a management card for an open manual/paper option. It calculates option return, paper P/L, spread warning, VWAP thesis warning, stop/profit review status, and a prepared close-ledger payload. It does not close a broker position; it only helps you decide and log what happened.
 
 Opening `/learning/dashboard` in a normal browser shows recent learning labels, recurring mistake tags, and any rule proposals with enough evidence. It is a research dashboard only.
 
@@ -220,9 +233,9 @@ Opening `/ops/session-playbook` returns a timed review-only operating checklist 
 
 Opening `/ops/command-center` returns the simplest live operations view: latest readiness, latest harvest, latest follow-up, latest learning labels, links for the next step, and the manual trade gate. It is meant to stay open during the trading window.
 
-Opening `/ops/morning-autopilot` returns the morning checkpoint: build/safety, readiness, paper ledger status, session blocks, manual trade gate, and next action links. Use this as the first page tomorrow before any harvest.
+Opening `/ops/morning-autopilot` returns the morning checkpoint: build/safety, readiness, session risk, paper ledger status, session blocks, manual trade gate, and next action links. Use this as the first page tomorrow before any harvest.
 
-Opening `/ops/live-review-cycle` returns the market-hours checkpoint: data readiness, harvest summary, ranked eligible candidates, watch-only reviews, paper ledger state, and the exact manual preflight gate. It is the page to use when you are deciding whether anything deserves broker-side inspection.
+Opening `/ops/live-review-cycle` returns the market-hours checkpoint: data readiness, harvest summary, ranked eligible candidates, watch-only reviews, session risk, paper ledger state, and the exact manual preflight gate. It is the page to use when you are deciding whether anything deserves broker-side inspection.
 
 Opening `/ops/market-open-observer` returns the opening-window evidence recorder: candidate/pass observations, evidence confidence, data flags, deltas versus the previous refresh, and the next safe action. It is designed for repeated refreshes while spreads stabilize.
 
@@ -271,7 +284,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.10-review-alerts",
+  "build_version": "2026.06.10-tomorrow-control",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false

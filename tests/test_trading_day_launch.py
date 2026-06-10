@@ -14,8 +14,10 @@ class TradingDayLaunchTests(unittest.TestCase):
         self.assertEqual(result["event_type"], "trading_day_launch_checklist")
         self.assertEqual(result["status"], "LAUNCH_START_HERE")
         self.assertIn("health_full", result["action_links"])
+        self.assertIn("session_risk", result["action_links"])
         self.assertIn("market_open_observer", result["action_links"])
         self.assertIn("No market orders.", result["absolute_no_trade_rules"])
+        self.assertEqual(result["latest"]["session_risk_guard"]["status"], "SESSION_RISK_CLEAR")
         self.assertFalse(result["can_place_order_from_this_mcp"])
         self.assertFalse(result["broker_action"])
 
@@ -36,6 +38,24 @@ class TradingDayLaunchTests(unittest.TestCase):
         self.assertEqual(result["status"], "LAUNCH_PENDING_RECHECK_REQUIRED")
         self.assertIn("pending-buy recheck", result["next_action"].lower())
         self.assertEqual(result["latest"]["manual_broker_action"]["status"], "MANUAL_ACTION_PENDING_RECHECK_REQUIRED")
+
+    def test_launch_blocks_new_ideas_when_session_risk_is_full(self) -> None:
+        with TempContainer() as container:
+            for _ in range(2):
+                container.events.log(
+                    "manual_option_paper_entry",
+                    {
+                        "status": "PAPER_OPTION_ENTRY_OPEN",
+                        "ticker": "SOFI",
+                        "contract_symbol": "SOFI260612P00015000",
+                        "entry_debit_dollars": 8.0,
+                    },
+                )
+            result = _get_trading_day_launch_checklist(container, ["SOFI"], account_value=50, max_candidates=25)
+
+        self.assertEqual(result["status"], "LAUNCH_SESSION_RISK_BLOCKED")
+        self.assertEqual(result["latest"]["session_risk_guard"]["status"], "SESSION_RISK_BLOCKED")
+        self.assertIn("No new manual idea while session risk is SESSION_RISK_BLOCKED.", result["absolute_no_trade_rules"])
 
 
 if __name__ == "__main__":

@@ -47,7 +47,9 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("log_manual_broker_action", tools.json()["tools"])
         self.assertIn("log_manual_option_paper_entry", tools.json()["tools"])
         self.assertIn("close_manual_option_paper_trade", tools.json()["tools"])
+        self.assertIn("watch_manual_option_position", tools.json()["tools"])
         self.assertIn("summarize_manual_option_paper_trades", tools.json()["tools"])
+        self.assertIn("get_session_risk_guard", tools.json()["tools"])
         self.assertIn("export_journal_checkpoint", tools.json()["tools"])
         self.assertIn("restore_journal_checkpoint", tools.json()["tools"])
         self.assertIn("log_review_decision", tools.json()["tools"])
@@ -429,7 +431,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_trade_desk_endpoint_can_render_human_readable_html(self) -> None:
         fake_trade_desk = {
             "status": "MANUAL_TRADE_DESK_READY",
-            "build_version": "2026.06.10-review-alerts",
+            "build_version": "2026.06.10-tomorrow-control",
             "ticker": "SOFI",
             "direction": "put",
             "contract_symbol": "SOFI260612P00015000",
@@ -458,6 +460,18 @@ class EndpointTests(unittest.TestCase):
                 "blocking_reasons": [],
                 "warnings": ["Spread is wider than preferred."],
             },
+            "session_risk_guard": {
+                "status": "SESSION_RISK_CLEAR",
+                "open_position_count": 0,
+                "max_open_positions": 2,
+                "open_risk_dollars": 0,
+                "proposed_risk_dollars": 4.5,
+                "projected_open_risk_dollars": 4.5,
+                "closed_pnl_dollars": 0,
+                "next_action": "Risk journal is clear for review.",
+            },
+            "blocking_reasons": [],
+            "warnings": ["Spread is wider than preferred."],
             "paper_entry_request": {
                 "endpoint": "/paper/options/entry",
                 "payload": {"fill_price": 0.045, "quantity": 1, "underlying_price": 16.5},
@@ -481,6 +495,8 @@ class EndpointTests(unittest.TestCase):
 
         self.assertEqual(html.status_code, 200)
         self.assertIn("Manual Trade Desk", html.text)
+        self.assertIn("Session Risk Guard", html.text)
+        self.assertIn("SESSION_RISK_CLEAR", html.text)
         self.assertIn("SOFI260612P00015000", html.text)
         self.assertIn("/paper/options/entry", html.text)
         self.assertIn("/journal/checkpoint", html.text)
@@ -491,7 +507,7 @@ class EndpointTests(unittest.TestCase):
     def test_market_open_observer_endpoint_logs_evidence_without_broker_action(self) -> None:
         fake_observer = {
             "status": "OBSERVER_STOCK_CANDIDATES",
-            "build_version": "2026.06.10-review-alerts",
+            "build_version": "2026.06.10-tomorrow-control",
             "mode": "market_open_observer",
             "cadence_minutes": 5,
             "candidate_count": 1,
@@ -547,7 +563,7 @@ class EndpointTests(unittest.TestCase):
     def test_observer_followup_endpoint_can_render_missed_move_learning(self) -> None:
         fake_followup = {
             "status": "OBSERVER_FOLLOWUP_LEARNING_NEEDED",
-            "build_version": "2026.06.10-review-alerts",
+            "build_version": "2026.06.10-tomorrow-control",
             "mode": "observer_followup",
             "source_observation_count": 2,
             "items_checked": 3,
@@ -598,7 +614,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_broker_action_endpoint_records_pending_recheck_card(self) -> None:
         fake_action = {
             "status": "MANUAL_ACTION_PENDING_RECHECK_REQUIRED",
-            "build_version": "2026.06.10-review-alerts",
+            "build_version": "2026.06.10-tomorrow-control",
             "ticker": "SOFI",
             "contract_symbol": "SOFI260612P00015000",
             "action_type": "pending_buy",
@@ -678,7 +694,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_launch_endpoint_renders_go_no_go_map(self) -> None:
         fake_launch = {
             "status": "LAUNCH_START_HERE",
-            "build_version": "2026.06.10-review-alerts",
+            "build_version": "2026.06.10-tomorrow-control",
             "mode": "trading_day_launch_checklist",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -694,7 +710,7 @@ class EndpointTests(unittest.TestCase):
                 {
                     "phase": "Build and safety",
                     "go_condition": "Build matches expected version.",
-                    "primary_link": "/health/full?expected_build_version=2026.06.10-review-alerts",
+                    "primary_link": "/health/full?expected_build_version=2026.06.10-tomorrow-control",
                     "stop_if": "Wrong build.",
                 },
                 {
@@ -727,7 +743,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_heartbeat_endpoint_renders_safe_cadence_tick(self) -> None:
         fake_heartbeat = {
             "status": "HEARTBEAT_NO_TRADE_PLAN",
-            "build_version": "2026.06.10-review-alerts",
+            "build_version": "2026.06.10-tomorrow-control",
             "mode": "trading_day_heartbeat",
             "phase": {"phase": "active", "forced": True, "now_et": "2026-06-10T11:00:00-04:00"},
             "universe": ["SOFI", "SMCI"],
@@ -764,7 +780,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_alerts_endpoint_renders_attention_queue(self) -> None:
         fake_alerts = {
             "status": "ALERTS_MANUAL_REVIEW_READY",
-            "build_version": "2026.06.10-review-alerts",
+            "build_version": "2026.06.10-tomorrow-control",
             "top_level": "REVIEW",
             "alert_count": 1,
             "alerts": [
@@ -913,10 +929,10 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.10-review-alerts")
+        full = client.get("/health/full?expected_build_version=2026.06.10-tomorrow-control")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-review-alerts")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-tomorrow-control")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -942,7 +958,9 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(manifest.json()["result"]["required_tools"]["log_manual_broker_action"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["log_manual_option_paper_entry"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["close_manual_option_paper_trade"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["watch_manual_option_position"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["summarize_manual_option_paper_trades"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["get_session_risk_guard"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["export_journal_checkpoint"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["restore_journal_checkpoint"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["summarize_evidence_packets"])
@@ -965,8 +983,11 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(followup_preview["status"], "HARVEST_FOLLOWUP_COMPLETE")
         command_center_preview = schema.json()["result"]["ops_command_center_schema_preview"]
         self.assertEqual(command_center_preview["status"], "READY_FOR_HARVEST")
+        self.assertEqual(command_center_preview["schema_version"], "command_center_v2")
+        self.assertEqual(command_center_preview["latest"]["session_risk_guard"]["status"], "SESSION_RISK_CLEAR")
         launch_preview = schema.json()["result"]["trading_day_launch_schema_preview"]
         self.assertEqual(launch_preview["status"], "LAUNCH_START_HERE")
+        self.assertEqual(launch_preview["schema_version"], "trading_day_launch_v2")
         heartbeat_preview = schema.json()["result"]["trading_day_heartbeat_schema_preview"]
         self.assertEqual(heartbeat_preview["status"], "HEARTBEAT_NO_TRADE_PLAN")
         monitor_preview = schema.json()["result"]["day_monitor_schema_preview"]
@@ -975,8 +996,12 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(alerts_preview["status"], "ALERTS_MANUAL_REVIEW_READY")
         autopilot_preview = schema.json()["result"]["morning_autopilot_schema_preview"]
         self.assertEqual(autopilot_preview["status"], "AUTOPILOT_READY_FOR_HARVEST")
+        self.assertEqual(autopilot_preview["schema_version"], "morning_autopilot_v2")
+        self.assertEqual(autopilot_preview["session_risk_guard"]["status"], "SESSION_RISK_CLEAR")
         live_cycle_preview = schema.json()["result"]["live_review_cycle_schema_preview"]
         self.assertEqual(live_cycle_preview["status"], "LIVE_CYCLE_CANDIDATES_READY")
+        self.assertEqual(live_cycle_preview["schema_version"], "live_review_cycle_v2")
+        self.assertEqual(live_cycle_preview["session_risk_guard"]["status"], "SESSION_RISK_CLEAR")
         observer_preview = schema.json()["result"]["market_open_observer_schema_preview"]
         self.assertEqual(observer_preview["status"], "OBSERVER_STOCK_CANDIDATES")
         observer_followup_preview = schema.json()["result"]["observer_followup_schema_preview"]
@@ -985,10 +1010,14 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(preflight_preview["status"], "MANUAL_PREFLIGHT_READY")
         desk_preview = schema.json()["result"]["manual_trade_desk_schema_preview"]
         self.assertEqual(desk_preview["status"], "MANUAL_TRADE_DESK_READY")
+        position_preview = schema.json()["result"]["manual_option_position_watch_schema_preview"]
+        self.assertEqual(position_preview["status"], "POSITION_PROFIT_REVIEW")
         manual_action_preview = schema.json()["result"]["manual_broker_action_schema_preview"]
         self.assertEqual(manual_action_preview["status"], "MANUAL_ACTION_PENDING_RECHECK_REQUIRED")
         ledger_preview = schema.json()["result"]["paper_option_ledger_schema_preview"]
         self.assertEqual(ledger_preview["status"], "PAPER_LEDGER_READY")
+        risk_preview = schema.json()["result"]["session_risk_guard_schema_preview"]
+        self.assertEqual(risk_preview["status"], "SESSION_RISK_CLEAR")
         checkpoint_preview = schema.json()["result"]["journal_checkpoint_schema_preview"]
         self.assertEqual(checkpoint_preview["status"], "JOURNAL_CHECKPOINT_READY")
         restore_preview = schema.json()["result"]["journal_checkpoint_restore_schema_preview"]
@@ -1045,12 +1074,40 @@ class EndpointTests(unittest.TestCase):
             "can_place_order_from_this_mcp": False,
             "can_cancel_order_from_this_mcp": False,
         }
+        fake_watch = {
+            "status": "POSITION_PROFIT_REVIEW",
+            "ticker": "SOFI",
+            "direction": "put",
+            "contract_symbol": "SOFI260612P00015000",
+            "entry_price": 0.05,
+            "current_mark": 0.08,
+            "return_pct": 0.6,
+            "pnl_dollars": 3.0,
+            "spread_pct": 0.1,
+            "warnings": [],
+            "next_action": "Large option gain; consider manual profit-taking.",
+            "close_request": {
+                "endpoint": "/paper/options/close",
+                "entry_id": 101,
+                "contract_symbol": "SOFI260612P00015000",
+                "exit_price": 0.08,
+                "exit_reason": "profit_target",
+            },
+            "management_rules": ["Use limit-only discipline; no market orders."],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+            "broker_action": False,
+        }
         client = TestClient(create_app())
         with patch("app.fallback_endpoints._log_manual_option_paper_entry", return_value=fake_entry), patch(
             "app.fallback_endpoints._close_manual_option_paper_trade", return_value=fake_close
-        ), patch("app.fallback_endpoints._summarize_manual_option_paper_trades", return_value=fake_summary):
+        ), patch("app.fallback_endpoints._summarize_manual_option_paper_trades", return_value=fake_summary), patch(
+            "app.fallback_endpoints._watch_manual_option_position", return_value=fake_watch
+        ):
             entry = client.post("/paper/options/entry", json={"ticket": {"status": "MANUAL_PREFLIGHT_READY"}, "fill_price": 0.05})
             close = client.post("/paper/options/close", json={"entry_id": 101, "exit_price": 0.08})
+            watch = client.get("/paper/options/watch?entry_id=101&current_mark=0.08", headers={"accept": "text/html"})
             summary = client.get("/paper/options/summary", headers={"accept": "text/html"})
 
         self.assertEqual(entry.status_code, 200)
@@ -1059,9 +1116,46 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(close.status_code, 200)
         self.assertEqual(close.json()["result"]["status"], "PAPER_OPTION_CLOSED")
         self.assertFalse(close.json()["can_cancel_order_from_this_mcp"])
+        self.assertEqual(watch.status_code, 200)
+        self.assertIn("Option Position Watch", watch.text)
+        self.assertIn("POSITION_PROFIT_REVIEW", watch.text)
         self.assertEqual(summary.status_code, 200)
         self.assertIn("Paper Option Ledger", summary.text)
         self.assertIn("SOFI260612P00015000", summary.text)
+
+    def test_session_risk_guard_endpoint_is_review_only(self) -> None:
+        fake_risk = {
+            "status": "SESSION_RISK_CLEAR",
+            "build_version": "2026.06.10-tomorrow-control",
+            "account_value_reference": 50,
+            "proposed_risk_dollars": 5,
+            "per_trade_cap_dollars": 5,
+            "total_open_risk_cap_dollars": 15,
+            "open_position_count": 0,
+            "max_open_positions": 2,
+            "open_risk_dollars": 0,
+            "projected_open_risk_dollars": 5,
+            "closed_pnl_dollars": 0,
+            "blocking_reasons": [],
+            "warnings": [],
+            "open_entries": [],
+            "next_action": "Risk journal is clear for review.",
+            "action_links": {"manual_trade_desk": "/trade/manual-desk"},
+            "rules": ["No market orders."],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+            "broker_action": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints._get_session_risk_guard", return_value=fake_risk):
+            html = client.get("/risk/session?account_value=50&proposed_risk_dollars=5", headers={"accept": "text/html"})
+            json_response = client.get("/risk/session?account_value=50&proposed_risk_dollars=5")
+
+        self.assertEqual(html.status_code, 200)
+        self.assertIn("Session Risk Guard", html.text)
+        self.assertEqual(json_response.json()["result"]["status"], "SESSION_RISK_CLEAR")
+        self.assertFalse(json_response.json()["can_place_order_from_this_mcp"])
 
     def test_journal_checkpoint_endpoint_is_review_only(self) -> None:
         fake_checkpoint = {
@@ -1080,9 +1174,9 @@ class EndpointTests(unittest.TestCase):
         }
         fake_restore = {
             "status": "CHECKPOINT_RESTORE_READY",
-            "build_version": "2026.06.10-review-alerts",
+            "build_version": "2026.06.10-tomorrow-control",
             "source_label": "unit_test",
-            "checkpoint_build_version": "2026.06.10-review-alerts",
+            "checkpoint_build_version": "2026.06.10-tomorrow-control",
             "requested_event_count": 1,
             "restored_count": 1,
             "skipped_duplicate_count": 0,

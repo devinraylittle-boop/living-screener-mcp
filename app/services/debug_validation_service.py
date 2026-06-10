@@ -27,21 +27,23 @@ class DebugValidationService:
                 "setup_memory": "setup_fingerprint_v1",
                 "market_harvest": "review_harvest_v1",
                 "session_loop": "session_loop_v1",
-                "ops_command_center": "command_center_v1",
+                "ops_command_center": "command_center_v2",
                 "manual_preflight_ticket": "manual_preflight_v1",
                 "paper_option_ledger": "paper_option_ledger_v1",
-                "morning_autopilot": "morning_autopilot_v1",
-                "live_review_cycle": "live_review_cycle_v1",
+                "morning_autopilot": "morning_autopilot_v2",
+                "live_review_cycle": "live_review_cycle_v2",
                 "journal_checkpoint": "journal_checkpoint_v1",
                 "journal_checkpoint_restore": "journal_checkpoint_restore_v1",
-                "manual_trade_desk": "manual_trade_desk_v1",
+                "manual_trade_desk": "manual_trade_desk_v2",
+                "manual_option_position_watch": "manual_option_position_watch_v1",
                 "market_open_observer": "market_open_observer_v1",
                 "observer_followup": "observer_followup_v1",
                 "manual_broker_action": "manual_broker_action_v1",
-                "trading_day_launch": "trading_day_launch_v1",
+                "trading_day_launch": "trading_day_launch_v2",
                 "trading_day_heartbeat": "trading_day_heartbeat_v1",
                 "day_monitor": "day_monitor_v1",
                 "trading_day_alerts": "trading_day_alerts_v1",
+                "session_risk_guard": "session_risk_guard_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -56,10 +58,12 @@ class DebugValidationService:
                 "/ops/day-monitor",
                 "/ops/day-alerts",
                 "/paper/options/summary",
+                "/paper/options/watch",
                 "/journal/checkpoint",
                 "/trade/manual-desk",
                 "/trade/manual-action",
                 "/trade/pending-recheck",
+                "/risk/session",
             ],
             "readiness": {
                 "version_endpoint": True,
@@ -85,11 +89,13 @@ class DebugValidationService:
                 "trading_day_alerts_route": True,
                 "manual_preflight_route": True,
                 "paper_option_ledger_routes": True,
+                "paper_option_position_watch_route": True,
                 "journal_checkpoint_route": True,
                 "journal_checkpoint_restore": True,
                 "manual_trade_desk_route": True,
                 "manual_broker_action_route": True,
                 "pending_recheck_route": True,
+                "session_risk_guard_route": True,
             },
             "safety": self._safety(),
         }
@@ -269,8 +275,10 @@ class DebugValidationService:
             "observer_followup_schema_preview": self._observer_followup_schema_preview(),
             "manual_preflight_schema_preview": self._manual_preflight_schema_preview(),
             "manual_trade_desk_schema_preview": self._manual_trade_desk_schema_preview(),
+            "manual_option_position_watch_schema_preview": self._manual_option_position_watch_schema_preview(),
             "manual_broker_action_schema_preview": self._manual_broker_action_schema_preview(),
             "paper_option_ledger_schema_preview": self._paper_option_ledger_schema_preview(),
+            "session_risk_guard_schema_preview": self._session_risk_guard_schema_preview(),
             "journal_checkpoint_schema_preview": self._journal_checkpoint_schema_preview(),
             "journal_checkpoint_restore_schema_preview": self._journal_checkpoint_restore_schema_preview(),
             "safety": self._safety(),
@@ -407,12 +415,13 @@ class DebugValidationService:
     def _ops_command_center_schema_preview(self) -> dict[str, Any]:
         return {
             "status": "READY_FOR_HARVEST",
-            "schema_version": "command_center_v1",
+            "schema_version": "command_center_v2",
             "latest": {
                 "market_readiness": {"status": "MARKET_REVIEW_READY"},
                 "review_harvest": None,
                 "harvest_followup": None,
                 "learning_summary": None,
+                "session_risk_guard": {"status": "SESSION_RISK_CLEAR"},
             },
             "next_action": {
                 "label": "Run review harvest.",
@@ -422,6 +431,7 @@ class DebugValidationService:
                 "market_readiness": "/ops/market-readiness",
                 "review_harvest": "/ops/review-harvest",
                 "harvest_followup": "/ops/harvest-followup",
+                "session_risk": "/risk/session",
                 "learning_dashboard": "/learning/dashboard",
             },
             "notes": "Static command-center schema preview only. It reads loop state and does not run scans.",
@@ -430,10 +440,11 @@ class DebugValidationService:
     def _trading_day_launch_schema_preview(self) -> dict[str, Any]:
         return {
             "status": "LAUNCH_START_HERE",
-            "schema_version": "trading_day_launch_v1",
+            "schema_version": "trading_day_launch_v2",
             "next_action": "Start with health/build checks, then market readiness and market-open observer.",
             "launch_sequence": [
                 {"phase": "Build and safety", "primary_link": "/health/full"},
+                {"phase": "Session risk", "primary_link": "/risk/session"},
                 {"phase": "Opening observation", "primary_link": "/ops/market-open-observer"},
                 {"phase": "Live review cycle", "primary_link": "/ops/live-review-cycle"},
                 {"phase": "Manual broker inspection", "primary_link": "/trade/manual-desk"},
@@ -444,6 +455,7 @@ class DebugValidationService:
                 "No market orders.",
                 "No stock-setup-only trades.",
                 "No stale pending buy trusted after 60 seconds without recheck.",
+                "No new manual idea while session risk is SESSION_RISK_BLOCKED.",
                 "No broker action from this MCP.",
             ],
             "notes": "Static launch checklist preview only. The live tool maps safe next actions and cannot execute broker actions.",
@@ -504,7 +516,7 @@ class DebugValidationService:
     def _morning_autopilot_schema_preview(self) -> dict[str, Any]:
         return {
             "status": "AUTOPILOT_READY_FOR_HARVEST",
-            "schema_version": "morning_autopilot_v1",
+            "schema_version": "morning_autopilot_v2",
             "readiness": {
                 "status": "MARKET_REVIEW_READY",
                 "candidate_count": 3,
@@ -518,6 +530,7 @@ class DebugValidationService:
                 "closed_count": 2,
                 "total_pnl_dollars": 4.0,
             },
+            "session_risk_guard": self._session_risk_guard_schema_preview(),
             "next_action": "Run review harvest, then options-review only valid directional stock candidates.",
             "action_links": {
                 "market_readiness": "/ops/market-readiness",
@@ -530,7 +543,7 @@ class DebugValidationService:
     def _live_review_cycle_schema_preview(self) -> dict[str, Any]:
         return {
             "status": "LIVE_CYCLE_CANDIDATES_READY",
-            "schema_version": "live_review_cycle_v1",
+            "schema_version": "live_review_cycle_v2",
             "readiness": {
                 "status": "MARKET_REVIEW_READY",
                 "valid_row_count": 20,
@@ -550,6 +563,7 @@ class DebugValidationService:
                     "selected_contract": {"contract_symbol": "EXAMPLE260612P00100000", "ask": 0.42, "max_loss_dollars": 42.0},
                 }
             ],
+            "session_risk_guard": self._session_risk_guard_schema_preview(),
             "next_action": "Manually inspect the top candidate in broker, then run manual preflight with broker-visible bid/ask/volume/OI.",
             "manual_preflight_required": True,
             "notes": "Static live-cycle schema preview only. The live tool can run readiness and harvest but cannot execute broker actions.",
@@ -644,8 +658,11 @@ class DebugValidationService:
     def _manual_trade_desk_schema_preview(self) -> dict[str, Any]:
         return {
             "status": "MANUAL_TRADE_DESK_READY",
-            "schema_version": "manual_trade_desk_v1",
+            "schema_version": "manual_trade_desk_v2",
             "preflight": self._manual_preflight_schema_preview(),
+            "session_risk_guard": self._session_risk_guard_schema_preview(),
+            "blocking_reasons": [],
+            "warnings": [],
             "paper_entry_request": {
                 "endpoint": "/paper/options/entry",
                 "payload": {
@@ -662,6 +679,26 @@ class DebugValidationService:
                 "Export checkpoint after the decision.",
             ],
             "notes": "Static trade-desk schema preview only. It cannot execute broker actions.",
+        }
+
+    def _manual_option_position_watch_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "POSITION_PROFIT_REVIEW",
+            "schema_version": "manual_option_position_watch_v1",
+            "ticker": "SOFI",
+            "direction": "put",
+            "contract_symbol": "SOFI260612P00015000",
+            "entry_price": 0.08,
+            "current_mark": 0.12,
+            "return_pct": 0.5,
+            "pnl_dollars": 4.0,
+            "next_action": "Large option gain; consider manual profit-taking or tight stop discipline.",
+            "close_request": {
+                "endpoint": "/paper/options/close",
+                "exit_price": 0.12,
+                "exit_reason": "profit_target",
+            },
+            "notes": "Static position-watch preview only. The live route reviews an open manual/paper option and cannot close broker positions.",
         }
 
     def _manual_broker_action_schema_preview(self) -> dict[str, Any]:
@@ -767,6 +804,27 @@ class DebugValidationService:
             "notes": "Static restore preview only. The live tool restores local MCP journal evidence and cannot execute broker actions.",
         }
 
+    def _session_risk_guard_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "SESSION_RISK_CLEAR",
+            "schema_version": "session_risk_guard_v1",
+            "account_value_reference": 50.0,
+            "proposed_risk_dollars": 5.0,
+            "per_trade_cap_dollars": 5.0,
+            "total_open_risk_cap_dollars": 15.0,
+            "open_position_count": 0,
+            "open_risk_dollars": 0.0,
+            "projected_open_risk_dollars": 5.0,
+            "closed_pnl_dollars": 0.0,
+            "next_action": "Risk journal is clear for review; still require live review cycle and manual trade desk.",
+            "rules": [
+                "Journal evidence only; broker balances are not verified.",
+                "No market orders.",
+                "No broker action from this MCP.",
+            ],
+            "notes": "Static session-risk preview only. The live route summarizes local journal risk and cannot execute broker actions.",
+        }
+
     def _required_tool_status(self, tools: list[str]) -> dict[str, bool]:
         required = [
             "get_version",
@@ -788,7 +846,9 @@ class DebugValidationService:
             "log_manual_broker_action",
             "log_manual_option_paper_entry",
             "close_manual_option_paper_trade",
+            "watch_manual_option_position",
             "summarize_manual_option_paper_trades",
+            "get_session_risk_guard",
             "export_journal_checkpoint",
             "restore_journal_checkpoint",
             "get_trading_monster_blueprint",

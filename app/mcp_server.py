@@ -170,8 +170,14 @@ def build_manual_trade_preflight_ticket(snapshot: dict[str, Any], account_value:
 
 
 @mcp.tool
-def build_manual_trade_desk(snapshot: dict[str, Any], account_value: float = 50.0, max_contract_price: float | None = None, notes: str = "") -> dict:
-    return _build_manual_trade_desk(container, snapshot, account_value, max_contract_price, notes)
+def build_manual_trade_desk(
+    snapshot: dict[str, Any],
+    account_value: float = 50.0,
+    max_contract_price: float | None = None,
+    notes: str = "",
+    max_open_positions: int = 2,
+) -> dict:
+    return _build_manual_trade_desk(container, snapshot, account_value, max_contract_price, notes, max_open_positions)
 
 
 @mcp.tool
@@ -187,6 +193,25 @@ def log_manual_option_paper_entry(ticket: dict[str, Any], fill_price: float, qua
 @mcp.tool
 def close_manual_option_paper_trade(entry_id: int | None = None, contract_symbol: str | None = None, exit_price: float = 0.0, exit_reason: str = "manual_close", notes: str = "") -> dict:
     return _close_manual_option_paper_trade(container, entry_id, contract_symbol, exit_price, exit_reason, notes)
+
+
+@mcp.tool
+def watch_manual_option_position(
+    entry_id: int | None = None,
+    contract_symbol: str | None = None,
+    current_bid: float | None = None,
+    current_ask: float | None = None,
+    current_mark: float | None = None,
+    underlying_price: float | None = None,
+    underlying_vwap: float | None = None,
+    notes: str = "",
+) -> dict:
+    return _watch_manual_option_position(container, entry_id, contract_symbol, current_bid, current_ask, current_mark, underlying_price, underlying_vwap, notes)
+
+
+@mcp.tool
+def get_session_risk_guard(account_value: float = 50.0, proposed_risk_dollars: float | None = None, max_open_positions: int = 2) -> dict:
+    return _get_session_risk_guard(container, account_value, proposed_risk_dollars, max_open_positions)
 
 
 @mcp.tool
@@ -451,6 +476,7 @@ def _get_market_session_playbook(service_container, tickers: list[str] | None, a
             "Small-account gate is SMALL_ACCOUNT_SCALP_ACCEPTABLE.",
             "Friction band is not BLOCKED_BY_FRICTION.",
             "Setup memory does not show repeated similar risk.",
+            "Session risk guard is not SESSION_RISK_BLOCKED.",
             "Broker-visible option snapshot matches or improves the MCP quote.",
             "No market order; limit-only review.",
             "Manual approval phrase remains required outside this MCP.",
@@ -535,10 +561,12 @@ def _run_latest_harvest_followup(service_container, limit: int, classify: bool) 
 def _get_ops_command_center(service_container, tickers: list[str] | None, account_value: float) -> dict:
     universe = tickers or list(service_container.settings.scalp_watchlist)
     ticker_query = ",".join(universe)
+    account_ref = _float_or_zero(account_value) or 50.0
     latest_readiness = _latest_payload(service_container, "market_readiness")
     latest_harvest = _latest_payload(service_container, "review_harvest")
     latest_followup = _latest_payload(service_container, "harvest_followup")
     latest_learning = _latest_payload(service_container, "learning_summary")
+    session_risk = _get_session_risk_guard(service_container, account_ref, None, 2)
     recent_classifications = [
         event.get("payload") or {}
         for event in service_container.events.recent("learning_outcome_classification", 25)
@@ -550,7 +578,7 @@ def _get_ops_command_center(service_container, tickers: list[str] | None, accoun
         "generated_at": utc_now(),
         "mode": "review_only_command_center",
         "universe": universe,
-        "account_value_reference": _float_or_zero(account_value) or 50.0,
+        "account_value_reference": account_ref,
         "safety": {
             "review_only": True,
             "place_orders": False,
@@ -564,6 +592,7 @@ def _get_ops_command_center(service_container, tickers: list[str] | None, accoun
             "review_harvest": _compact_event(latest_harvest),
             "harvest_followup": _compact_event(latest_followup),
             "learning_summary": _compact_event(latest_learning),
+            "session_risk_guard": _compact_event(session_risk),
         },
         "counts": {
             "market_readiness": service_container.events.count("market_readiness"),
@@ -571,6 +600,7 @@ def _get_ops_command_center(service_container, tickers: list[str] | None, accoun
             "harvest_followup": service_container.events.count("harvest_followup"),
             "learning_classifications": service_container.events.count("learning_outcome_classification"),
             "review_outcomes": service_container.events.count("review_outcome"),
+            "session_risk_guard": service_container.events.count("session_risk_guard"),
         },
         "latest_learning_labels": [
             {
@@ -583,10 +613,11 @@ def _get_ops_command_center(service_container, tickers: list[str] | None, accoun
         ],
         "next_action": next_action,
         "action_links": {
-            "session_playbook": f"/ops/session-playbook?tickers={ticker_query}&account_value={_float_or_zero(account_value) or 50.0}",
+            "session_playbook": f"/ops/session-playbook?tickers={ticker_query}&account_value={account_ref}",
             "market_readiness": f"/ops/market-readiness?tickers={ticker_query}&max_candidates=25",
             "review_harvest": f"/ops/review-harvest?tickers={ticker_query}&max_candidates=25&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}",
             "harvest_followup": "/ops/harvest-followup?limit=5&classify=true",
+            "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html",
             "learning_dashboard": "/learning/dashboard",
             "paper_option_summary": "/paper/options/summary",
             "debug_health": f"/health/full?expected_build_version={BUILD_VERSION}",
@@ -598,6 +629,7 @@ def _get_ops_command_center(service_container, tickers: list[str] | None, accoun
             "Harvest candidate is REVIEW_ONLY_OPTIONS_READY.",
             "Small-account gate is SMALL_ACCOUNT_SCALP_ACCEPTABLE.",
             "Friction and setup memory are acceptable.",
+            "Session risk guard is not SESSION_RISK_BLOCKED.",
             "Broker-visible option snapshot validates the contract.",
             "Risk limit check passes.",
             "No market orders; broker action remains manual and outside this MCP.",
@@ -618,16 +650,22 @@ def _get_trading_day_launch_checklist(service_container, tickers: list[str] | No
     max_candidates = max(1, min(int(max_candidates or 25), 50))
     universe = [str(ticker).upper().strip() for ticker in (tickers or service_container.settings.default_tickers) if str(ticker).strip()]
     ticker_query = ",".join(universe)
+    account_ref = _float_or_zero(account_value) or 50.0
+    session_risk = _get_session_risk_guard(service_container, account_ref, None, 2)
     latest_readiness = _latest_payload(service_container, "market_readiness")
     latest_observer = _latest_payload(service_container, "market_open_observer")
     latest_live_cycle = _latest_payload(service_container, "live_review_cycle")
     latest_manual_action = _latest_payload(service_container, "manual_broker_action")
     latest_checkpoint = _latest_payload(service_container, "journal_checkpoint")
     pending_recheck_required = bool(latest_manual_action and latest_manual_action.get("pending_buy"))
+    session_risk_blocked = session_risk.get("status") == "SESSION_RISK_BLOCKED"
     live_candidates = bool((latest_live_cycle or {}).get("ranked_candidates"))
     if pending_recheck_required:
         status = "LAUNCH_PENDING_RECHECK_REQUIRED"
         next_action = "Run the pending-buy recheck before trusting any manually queued buy."
+    elif session_risk_blocked:
+        status = "LAUNCH_SESSION_RISK_BLOCKED"
+        next_action = "Do not add another idea; manage open paper/manual risk or close/log outcomes first."
     elif live_candidates:
         status = "LAUNCH_MANUAL_INSPECTION_READY"
         next_action = "Inspect the top live-cycle candidate in broker, then use manual trade desk with broker-visible fields."
@@ -647,10 +685,11 @@ def _get_trading_day_launch_checklist(service_container, tickers: list[str] | No
         "mode": "trading_day_launch_checklist",
         "generated_at": utc_now(),
         "universe": universe,
-        "account_value_reference": _float_or_zero(account_value) or 50.0,
+        "account_value_reference": account_ref,
         "max_candidates": max_candidates,
         "next_action": next_action,
         "latest": {
+            "session_risk_guard": _compact_event(session_risk),
             "market_readiness": _compact_event(latest_readiness),
             "market_open_observer": _compact_event(latest_observer),
             "live_review_cycle": _compact_event(latest_live_cycle),
@@ -666,6 +705,7 @@ def _get_trading_day_launch_checklist(service_container, tickers: list[str] | No
             "manual_option_paper_entry": service_container.events.count("manual_option_paper_entry"),
             "manual_option_paper_close": service_container.events.count("manual_option_paper_close"),
             "journal_checkpoint": service_container.events.count("journal_checkpoint"),
+            "session_risk_guard": service_container.events.count("session_risk_guard"),
         },
         "launch_sequence": [
             {
@@ -673,6 +713,12 @@ def _get_trading_day_launch_checklist(service_container, tickers: list[str] | No
                 "go_condition": "Build matches expected version, safety is review-only, and order/cancel capabilities are false.",
                 "primary_link": f"/health/full?expected_build_version={BUILD_VERSION}",
                 "stop_if": "Wrong build, missing required tools, or any execution capability appears enabled.",
+            },
+            {
+                "phase": "Session risk",
+                "go_condition": "Open journaled option risk is below cap and max open positions has not been reached.",
+                "primary_link": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html",
+                "stop_if": "Session risk is SESSION_RISK_BLOCKED, hard lockout is reached, or open exposure is already full.",
             },
             {
                 "phase": "Opening observation",
@@ -683,7 +729,7 @@ def _get_trading_day_launch_checklist(service_container, tickers: list[str] | No
             {
                 "phase": "Live review cycle",
                 "go_condition": "A candidate passes stock setup, options quality, small-account suitability, friction, and memory checks.",
-                "primary_link": f"/ops/live-review-cycle?tickers={ticker_query}&account_value={_float_or_zero(account_value) or 50.0}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}&format=html",
+                "primary_link": f"/ops/live-review-cycle?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}&format=html",
                 "stop_if": "Result is NO_TRADE_PLAN, data blocked, no eligible candidate, high friction, stale options, or unclear direction.",
             },
             {
@@ -711,15 +757,17 @@ def _get_trading_day_launch_checklist(service_container, tickers: list[str] | No
             "No trade from OPTIONS_CHAIN_ACCEPTABLE alone; small-account gate must also pass.",
             "No broker action from this MCP.",
             "No stale pending buy trusted after 60 seconds without recheck.",
+            "No new manual idea while session risk is SESSION_RISK_BLOCKED.",
             "No rule changes auto-applied from learning labels.",
         ],
         "action_links": {
             "health_full": f"/health/full?expected_build_version={BUILD_VERSION}",
             "tool_manifest": "/debug/tool-manifest",
             "scan_schema": f"/debug/scan-schema?expected_build_version={BUILD_VERSION}",
+            "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html",
             "market_readiness": f"/ops/market-readiness?tickers={ticker_query}&max_candidates={max_candidates}",
             "market_open_observer": f"/ops/market-open-observer?tickers={ticker_query}&max_candidates={max_candidates}&cadence_minutes=5&format=html",
-            "live_review_cycle": f"/ops/live-review-cycle?tickers={ticker_query}&account_value={_float_or_zero(account_value) or 50.0}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}&format=html",
+            "live_review_cycle": f"/ops/live-review-cycle?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}&format=html",
             "manual_trade_desk": "/trade/manual-desk",
             "manual_action_journal": "/trade/manual-action",
             "pending_recheck": "/trade/pending-recheck",
@@ -832,7 +880,10 @@ def _run_trading_day_heartbeat(
         operation_result = _run_live_review_cycle(service_container, universe, account_value, max_candidates, review_top_n, max_contract_price, include_followup=False)
         operation = "live_review_cycle"
         ranked = operation_result.get("ranked_candidates") or []
-        if ranked:
+        if operation_result.get("status") == "LIVE_CYCLE_SESSION_RISK_BLOCKED":
+            status = "HEARTBEAT_SESSION_RISK_BLOCKED"
+            next_action = "Candidate exists, but session risk blocks adding exposure. Manage/log open risk first."
+        elif ranked and operation_result.get("manual_preflight_required"):
             status = "HEARTBEAT_MANUAL_REVIEW_READY"
             next_action = "Inspect top ranked candidate in broker and use manual trade desk with broker-visible fields."
         elif operation_result.get("status") in {"LIVE_CYCLE_DATA_BLOCKED", "LIVE_CYCLE_NOT_READY"}:
@@ -1077,13 +1128,18 @@ def _summarize_trading_day_alerts(service_container, limit: int = 50) -> dict:
 def _run_morning_readiness_autopilot(service_container, tickers: list[str] | None, account_value: float, max_candidates: int) -> dict:
     max_candidates = max(1, min(int(max_candidates or 25), 50))
     universe = [str(ticker).upper().strip() for ticker in (tickers or service_container.settings.default_tickers) if str(ticker).strip()]
+    account_ref = _float_or_zero(account_value) or 50.0
+    session_risk = _get_session_risk_guard(service_container, account_ref, None, 2)
     readiness = _market_readiness_check(service_container, universe, max_candidates)
     playbook = _get_market_session_playbook(service_container, universe, account_value)
     command_center = _get_ops_command_center(service_container, universe, account_value)
     paper_ledger = _summarize_manual_option_paper_trades(service_container, 100)
     readiness_status = readiness.get("status")
     command_status = command_center.get("status")
-    if readiness_status == "MARKET_DATA_BLOCKED":
+    if session_risk.get("status") == "SESSION_RISK_BLOCKED":
+        status = "AUTOPILOT_SESSION_RISK_BLOCKED"
+        next_action = "Manage open paper/manual option exposure before adding another idea."
+    elif readiness_status == "MARKET_DATA_BLOCKED":
         status = "AUTOPILOT_DATA_BLOCKED"
         next_action = "Wait for cleaner data or fix quote/candle provider before reviewing options."
     elif readiness_status == "MARKET_REVIEW_READY":
@@ -1104,7 +1160,7 @@ def _run_morning_readiness_autopilot(service_container, tickers: list[str] | Non
         "mode": "morning_readiness_autopilot",
         "generated_at": utc_now(),
         "universe": universe,
-        "account_value_reference": account_value,
+        "account_value_reference": account_ref,
         "safety": {
             "review_only": True,
             "place_orders": False,
@@ -1115,6 +1171,7 @@ def _run_morning_readiness_autopilot(service_container, tickers: list[str] | Non
         },
         "readiness": _compact_autopilot_result(readiness),
         "command_center": _compact_autopilot_result(command_center),
+        "session_risk_guard": _compact_event(session_risk),
         "paper_ledger": {
             "status": paper_ledger.get("status"),
             "entry_count": paper_ledger.get("entry_count"),
@@ -1131,6 +1188,7 @@ def _run_morning_readiness_autopilot(service_container, tickers: list[str] | Non
             "market_readiness": f"/ops/market-readiness?tickers={','.join(universe)}&max_candidates={max_candidates}",
             "review_harvest": f"/ops/review-harvest?tickers={','.join(universe)}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}",
             "harvest_followup": "/ops/harvest-followup?limit=5&classify=true",
+            "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html",
             "paper_ledger": "/paper/options/summary",
             "debug_health": f"/health/full?expected_build_version={BUILD_VERSION}",
             "debug_schema": f"/debug/scan-schema?expected_build_version={BUILD_VERSION}",
@@ -1141,6 +1199,7 @@ def _run_morning_readiness_autopilot(service_container, tickers: list[str] | Non
         "notes": [
             "Autopilot runs readiness and summarizes the operating loop; it does not place, submit, simulate, modify, or cancel broker orders.",
             "Only rank candidates after stock setup and SMALL_ACCOUNT_SCALP_ACCEPTABLE both pass.",
+            "Session risk must not be blocked before adding any new manual idea.",
             "Use the paper ledger to record manual/paper outcomes so the mistake engine can learn after the fact.",
         ],
     }
@@ -1179,12 +1238,19 @@ def _run_live_review_cycle(
 
     paper_ledger = _summarize_manual_option_paper_trades(service_container, 100)
     ranked_candidates = (harvest or {}).get("ranked_candidates") or []
+    top_selected = ((ranked_candidates[0] or {}).get("selected_contract") or {}) if ranked_candidates else {}
+    proposed_risk = _float_or_zero(top_selected.get("max_loss_dollars"))
+    session_risk = _get_session_risk_guard(service_container, account_value, proposed_risk if proposed_risk > 0 else None, 2)
+    session_risk_blocked = session_risk.get("status") == "SESSION_RISK_BLOCKED"
     if readiness.get("status") == "MARKET_DATA_BLOCKED":
         status = "LIVE_CYCLE_DATA_BLOCKED"
         next_action = "Do not review options; wait for clean quote/candle data."
     elif not harvest:
         status = "LIVE_CYCLE_STANDBY"
         next_action = "Rerun readiness near the next market window."
+    elif ranked_candidates and session_risk_blocked:
+        status = "LIVE_CYCLE_SESSION_RISK_BLOCKED"
+        next_action = "Candidate exists, but session risk blocks adding exposure. Manage/log open risk first."
     elif ranked_candidates:
         status = "LIVE_CYCLE_CANDIDATES_READY"
         next_action = "Manually inspect the top candidate in broker, then run manual preflight with broker-visible bid/ask/volume/OI."
@@ -1204,6 +1270,7 @@ def _run_live_review_cycle(
         "max_contract_price_used": effective_contract_cap,
         "readiness": _compact_autopilot_result(readiness),
         "harvest": _compact_harvest_for_cycle(harvest),
+        "session_risk_guard": _compact_event(session_risk),
         "ranked_candidates": ranked_candidates,
         "watch_only_reviews": (harvest or {}).get("watch_only") or [],
         "skipped_candidates": (harvest or {}).get("skipped") or [],
@@ -1217,11 +1284,12 @@ def _run_live_review_cycle(
         },
         "followup": _compact_autopilot_result(followup),
         "next_action": next_action,
-        "manual_preflight_required": bool(ranked_candidates),
+        "manual_preflight_required": bool(ranked_candidates) and not session_risk_blocked,
         "manual_trade_gate": [
             "Live review cycle status is LIVE_CYCLE_CANDIDATES_READY.",
             "Candidate status is REVIEW_ONLY_OPTIONS_READY.",
             "Small-account gate is SMALL_ACCOUNT_SCALP_ACCEPTABLE.",
+            "Session risk guard is not SESSION_RISK_BLOCKED.",
             "Broker-visible contract snapshot still matches or improves the reviewed contract.",
             "Manual preflight returns MANUAL_PREFLIGHT_READY.",
             "No market order; any broker action is manual and outside this MCP.",
@@ -1231,6 +1299,7 @@ def _run_live_review_cycle(
             "morning_autopilot": f"/ops/morning-autopilot?tickers={','.join(universe)}&account_value={_float_or_zero(account_value) or 50.0}&max_candidates={max_candidates}",
             "live_review_cycle": f"/ops/live-review-cycle?tickers={','.join(universe)}&account_value={_float_or_zero(account_value) or 50.0}&max_candidates={max_candidates}&review_top_n={review_top_n}&max_contract_price={effective_contract_cap}",
             "review_harvest": f"/ops/review-harvest?tickers={','.join(universe)}&max_candidates={max_candidates}&review_top_n={review_top_n}&max_contract_price={effective_contract_cap}",
+            "session_risk": f"/risk/session?account_value={_float_or_zero(account_value) or 50.0}&proposed_risk_dollars={proposed_risk}&max_open_positions=2&format=html",
             "manual_preflight": "/review/manual-preflight",
             "paper_ledger": "/paper/options/summary",
             "harvest_followup": "/ops/harvest-followup?limit=5&classify=true",
@@ -1506,13 +1575,30 @@ def _build_manual_trade_preflight_ticket(service_container, snapshot: dict[str, 
     return service_container.events.log("manual_preflight_ticket", payload)
 
 
-def _build_manual_trade_desk(service_container, snapshot: dict[str, Any], account_value: float, max_contract_price: float | None, notes: str = "") -> dict:
+def _build_manual_trade_desk(
+    service_container,
+    snapshot: dict[str, Any],
+    account_value: float,
+    max_contract_price: float | None,
+    notes: str = "",
+    max_open_positions: int = 2,
+) -> dict:
     preflight = _build_manual_trade_preflight_ticket(service_container, snapshot, account_value, max_contract_price, notes)
     selected = preflight.get("selected_contract") or {}
     manual_ticket = preflight.get("manual_ticket") or {}
-    ready = preflight.get("status") == "MANUAL_PREFLIGHT_READY"
     contract_symbol = manual_ticket.get("contract_symbol") or selected.get("contract_symbol")
     reviewed_ask = _float_or_zero(manual_ticket.get("max_review_ask") or selected.get("ask"))
+    proposed_risk = _float_or_zero(manual_ticket.get("max_loss_dollars") or selected.get("max_loss_dollars"))
+    session_risk = _get_session_risk_guard(service_container, account_value, proposed_risk, max_open_positions)
+    session_blocking_reasons = session_risk.get("blocking_reasons") or []
+    session_warnings = session_risk.get("warnings") or []
+    desk_blocking_reasons = list(preflight.get("blocking_reasons") or [])
+    desk_warnings = list(preflight.get("warnings") or [])
+    if session_risk.get("status") == "SESSION_RISK_BLOCKED":
+        desk_blocking_reasons.extend([f"Session risk guard: {reason}" for reason in session_blocking_reasons])
+    else:
+        desk_warnings.extend([f"Session risk guard: {warning}" for warning in session_warnings])
+    ready = preflight.get("status") == "MANUAL_PREFLIGHT_READY" and session_risk.get("status") != "SESSION_RISK_BLOCKED"
     underlying_reference = _float_or_zero(snapshot.get("underlying_price") or snapshot.get("price"))
     paper_payload = {
         "ticket": preflight,
@@ -1528,6 +1614,9 @@ def _build_manual_trade_desk(service_container, snapshot: dict[str, Any], accoun
         "direction": preflight.get("direction"),
         "contract_symbol": contract_symbol,
         "preflight": preflight,
+        "session_risk_guard": session_risk,
+        "blocking_reasons": desk_blocking_reasons,
+        "warnings": desk_warnings,
         "paper_entry_request": {
             "endpoint": "/paper/options/entry",
             "payload": paper_payload,
@@ -1539,12 +1628,14 @@ def _build_manual_trade_desk(service_container, snapshot: dict[str, Any], accoun
         "next_steps": [
             "Confirm the broker screen still shows this exact contract symbol.",
             "Confirm bid/ask, volume, open interest, DTE, strike, and max loss still match or improve this ticket.",
+            "Confirm session risk guard remains clear before adding exposure.",
             "Use limit-only discipline; no market orders.",
             "If you manually act outside this MCP, log the paper/manual fill through /paper/options/entry for learning.",
             "If a buy remains pending after 60 seconds, re-review it before trusting it.",
             "Export /journal/checkpoint after the decision so the lesson survives restarts.",
         ] if ready else [
             "Do not inspect this as a trade candidate until the blocking reasons clear.",
+            "Clear session-risk blockers before adding another manual idea.",
             "Rerun live review cycle or manual preflight only after broker-visible fields improve.",
             "Keep the result as NO_TRADE_PLAN.",
         ],
@@ -1758,6 +1849,265 @@ def _close_manual_option_paper_trade(service_container, entry_id: int | None, co
     }
     service_container.journal.log_trade_result(payload)
     return service_container.events.log("manual_option_paper_close", payload)
+
+
+def _watch_manual_option_position(
+    service_container,
+    entry_id: int | None,
+    contract_symbol: str | None,
+    current_bid: float | None,
+    current_ask: float | None,
+    current_mark: float | None,
+    underlying_price: float | None,
+    underlying_vwap: float | None,
+    notes: str = "",
+) -> dict:
+    entry_event = _find_open_paper_entry(service_container, entry_id, contract_symbol)
+    if not entry_event:
+        return service_container.events.log(
+            "manual_option_position_watch",
+            {
+                "status": "POSITION_WATCH_NO_OPEN_ENTRY",
+                "reason": "No matching open paper/manual option entry was found.",
+                "entry_id": entry_id,
+                "contract_symbol": contract_symbol,
+                "review_only": True,
+                "can_place_order_from_this_mcp": False,
+                "can_cancel_order_from_this_mcp": False,
+                "broker_action": False,
+            },
+        )
+
+    entry = entry_event.get("payload") or {}
+    entry_price = _float_or_zero(entry.get("entry_price"))
+    quantity = max(1, int(entry.get("quantity") or 1))
+    bid = _float_or_zero(current_bid)
+    ask = _float_or_zero(current_ask)
+    mark = _float_or_zero(current_mark)
+    if mark <= 0 and bid > 0 and ask > 0:
+        mark = round((bid + ask) / 2, 4)
+    if mark <= 0:
+        return service_container.events.log(
+            "manual_option_position_watch",
+            {
+                "status": "POSITION_WATCH_NEEDS_LIVE_QUOTE",
+                "reason": "Provide current_mark or current bid/ask from the broker screen.",
+                "entry_event_id": entry_event.get("id"),
+                "ticker": entry.get("ticker"),
+                "contract_symbol": entry.get("contract_symbol"),
+                "entry_price": entry_price,
+                "review_only": True,
+                "can_place_order_from_this_mcp": False,
+                "can_cancel_order_from_this_mcp": False,
+                "broker_action": False,
+            },
+        )
+
+    return_pct = round((mark - entry_price) / entry_price, 5) if entry_price > 0 else None
+    pnl_dollars = round((mark - entry_price) * 100 * quantity, 2) if entry_price > 0 else None
+    spread_pct = round((ask - bid) / ((ask + bid) / 2), 4) if bid > 0 and ask > 0 and ask >= bid else None
+    direction = str(entry.get("direction") or "").lower()
+    underlying = _float_or_zero(underlying_price)
+    vwap = _float_or_zero(underlying_vwap)
+    warnings: list[str] = []
+    exit_reasons: list[str] = []
+
+    if spread_pct is not None and spread_pct > 0.25:
+        warnings.append("Option spread is very wide; do not use market orders and avoid chasing exits.")
+        exit_reasons.append("spread_too_wide")
+    elif spread_pct is not None and spread_pct > 0.15:
+        warnings.append("Option spread is wider than preferred; limit-only discipline required.")
+
+    adverse_vwap = False
+    if underlying > 0 and vwap > 0:
+        if direction in {"put", "puts", "short"} and underlying >= vwap:
+            adverse_vwap = True
+            warnings.append("Underlying is at/above VWAP against the put thesis.")
+            exit_reasons.append("underlying_reclaimed_vwap")
+        elif direction in {"call", "calls", "long"} and underlying <= vwap:
+            adverse_vwap = True
+            warnings.append("Underlying is at/below VWAP against the call thesis.")
+            exit_reasons.append("underlying_lost_vwap")
+
+    if return_pct is not None and return_pct <= -0.5:
+        status = "POSITION_STOP_REVIEW"
+        next_action = "Loss is severe for a small-account option; review manual close immediately."
+        exit_reasons.append("hard_loss_threshold")
+    elif return_pct is not None and return_pct <= -0.35:
+        status = "POSITION_STOP_REVIEW"
+        next_action = "Loss threshold hit; review manual close or reduce exposure."
+        exit_reasons.append("loss_threshold")
+    elif adverse_vwap and (return_pct is None or return_pct <= 0.1):
+        status = "POSITION_STOP_REVIEW"
+        next_action = "Underlying invalidated the thesis; review manual close instead of hoping."
+    elif return_pct is not None and return_pct >= 0.5:
+        status = "POSITION_PROFIT_REVIEW"
+        next_action = "Large option gain; consider manual profit-taking or tight stop discipline."
+        exit_reasons.append("profit_target")
+    elif return_pct is not None and return_pct >= 0.25:
+        status = "POSITION_PROFIT_WATCH"
+        next_action = "Position is working; consider protecting gains and avoid letting a winner turn red."
+        exit_reasons.append("profit_watch")
+    else:
+        status = "POSITION_HOLD_REVIEW"
+        next_action = "No hard exit trigger; keep watching thesis, spread, and option mark."
+
+    suggested_exit_reason = exit_reasons[0] if exit_reasons else "manual_review"
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "entry_event_id": entry_event.get("id"),
+        "entry_timestamp": entry.get("entry_timestamp"),
+        "ticker": entry.get("ticker"),
+        "direction": direction,
+        "contract_symbol": entry.get("contract_symbol"),
+        "entry_price": entry_price,
+        "quantity": quantity,
+        "current_bid": bid if bid > 0 else None,
+        "current_ask": ask if ask > 0 else None,
+        "current_mark": mark,
+        "underlying_price": underlying if underlying > 0 else None,
+        "underlying_vwap": vwap if vwap > 0 else None,
+        "return_pct": return_pct,
+        "pnl_dollars": pnl_dollars,
+        "spread_pct": spread_pct,
+        "warnings": warnings,
+        "next_action": next_action,
+        "close_request": {
+            "endpoint": "/paper/options/close",
+            "entry_id": entry_event.get("id"),
+            "contract_symbol": entry.get("contract_symbol"),
+            "exit_price": mark,
+            "exit_reason": suggested_exit_reason,
+            "notes": "Prepared by position watch; user must decide and act manually outside this MCP.",
+        },
+        "management_rules": [
+            "Review stop if option mark is down 35% or more from entry.",
+            "Review hard stop immediately if option mark is down 50% or more.",
+            "Review profit protection once option mark is up 25%; consider taking/locking gains above 50%.",
+            "For puts, VWAP reclaim by the underlying weakens the thesis; for calls, VWAP loss weakens it.",
+            "Use limit-only discipline; no market orders.",
+        ],
+        "notes": notes,
+        "paper_only": True,
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_placed": False,
+        "order_submitted": False,
+        "broker_action": False,
+    }
+    return service_container.events.log("manual_option_position_watch", payload)
+
+
+def _get_session_risk_guard(service_container, account_value: float = 50.0, proposed_risk_dollars: float | None = None, max_open_positions: int = 2) -> dict:
+    account_value = _float_or_zero(account_value) or 50.0
+    max_open_positions = max(1, min(int(max_open_positions or 2), 5))
+    proposed_risk = _float_or_zero(proposed_risk_dollars)
+    entries = [
+        event
+        for event in service_container.events.recent("manual_option_paper_entry", 500)
+        if (event.get("payload") or {}).get("status") in {"PAPER_OPTION_ENTRY_OPEN", "PAPER_ENTRY_LOGGED_FROM_UNREADY_TICKET"}
+    ]
+    closes = [
+        event
+        for event in service_container.events.recent("manual_option_paper_close", 500)
+        if (event.get("payload") or {}).get("status") == "PAPER_OPTION_CLOSED"
+    ]
+    closed_entry_ids = {(event.get("payload") or {}).get("entry_event_id") for event in closes}
+    open_entries = [event for event in entries if event.get("id") not in closed_entry_ids]
+    open_risk = round(sum(_float_or_zero((event.get("payload") or {}).get("entry_debit_dollars")) for event in open_entries), 2)
+    closed_pnl = round(sum(_float_or_zero((event.get("payload") or {}).get("pnl_dollars")) for event in closes), 2)
+    per_trade_cap = round(account_value * service_container.settings.max_trade_risk_pct, 2)
+    warn_drawdown = round(account_value * service_container.settings.warn_daily_drawdown_pct, 2)
+    soft_stop = round(account_value * service_container.settings.soft_stop_daily_drawdown_pct, 2)
+    hard_lockout = round(account_value * service_container.settings.hard_lockout_daily_drawdown_pct, 2)
+    total_open_cap = round(account_value * service_container.settings.hard_lockout_daily_drawdown_pct, 2)
+    projected_open_risk = round(open_risk + proposed_risk, 2)
+    warnings: list[str] = []
+    blocking_reasons: list[str] = []
+
+    if proposed_risk > 0 and proposed_risk > per_trade_cap:
+        blocking_reasons.append("Proposed risk exceeds per-trade journal risk cap.")
+    if len(open_entries) >= max_open_positions:
+        blocking_reasons.append("Max open paper/manual option positions already reached.")
+    if proposed_risk > 0 and projected_open_risk > total_open_cap:
+        blocking_reasons.append("Projected open option risk exceeds session open-risk cap.")
+    if open_risk >= total_open_cap:
+        blocking_reasons.append("Current open option risk is already at or above session cap.")
+    if closed_pnl <= -hard_lockout:
+        blocking_reasons.append("Closed paper/manual P/L reached hard lockout reference.")
+    elif closed_pnl <= -soft_stop:
+        warnings.append("Closed paper/manual P/L is beyond soft-stop reference.")
+    elif closed_pnl <= -warn_drawdown:
+        warnings.append("Closed paper/manual P/L is beyond warning reference.")
+    if open_risk >= account_value * service_container.settings.soft_stop_daily_drawdown_pct and open_risk < total_open_cap:
+        warnings.append("Current open option risk is elevated for the account reference.")
+
+    if blocking_reasons:
+        status = "SESSION_RISK_BLOCKED"
+        next_action = "Do not add another manual option idea; reduce/close risk or wait."
+    elif warnings:
+        status = "SESSION_RISK_CAUTION"
+        next_action = "Proceed only with extra discipline; prefer managing existing exposure over adding risk."
+    else:
+        status = "SESSION_RISK_CLEAR"
+        next_action = "Risk journal is clear for review; still require live review cycle and manual trade desk."
+
+    open_summaries = [
+        {
+            "entry_event_id": event.get("id"),
+            "timestamp": event.get("timestamp"),
+            "ticker": (event.get("payload") or {}).get("ticker"),
+            "contract_symbol": (event.get("payload") or {}).get("contract_symbol"),
+            "direction": (event.get("payload") or {}).get("direction"),
+            "entry_price": (event.get("payload") or {}).get("entry_price"),
+            "quantity": (event.get("payload") or {}).get("quantity"),
+            "entry_debit_dollars": (event.get("payload") or {}).get("entry_debit_dollars"),
+        }
+        for event in open_entries[:20]
+    ]
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "mode": "session_risk_guard",
+        "generated_at": utc_now(),
+        "account_value_reference": account_value,
+        "proposed_risk_dollars": proposed_risk if proposed_risk > 0 else None,
+        "per_trade_cap_dollars": per_trade_cap,
+        "total_open_risk_cap_dollars": total_open_cap,
+        "warning_drawdown_dollars": warn_drawdown,
+        "soft_stop_dollars": soft_stop,
+        "hard_lockout_dollars": hard_lockout,
+        "open_position_count": len(open_entries),
+        "max_open_positions": max_open_positions,
+        "open_risk_dollars": open_risk,
+        "projected_open_risk_dollars": projected_open_risk,
+        "closed_pnl_dollars": closed_pnl,
+        "closed_trade_count": len(closes),
+        "blocking_reasons": blocking_reasons,
+        "warnings": warnings,
+        "open_entries": open_summaries,
+        "next_action": next_action,
+        "action_links": {
+            "day_alerts": "/ops/day-alerts?limit=50&format=html",
+            "paper_ledger": "/paper/options/summary?format=html",
+            "position_watch": "/paper/options/watch",
+            "manual_trade_desk": "/trade/manual-desk",
+            "journal_checkpoint": "/journal/checkpoint?limit=500&format=json",
+        },
+        "rules": [
+            "This guard uses MCP journal evidence only; it does not know actual broker balances or positions.",
+            "Do not add exposure if pending-buy recheck, hard lockout, max open positions, or projected open-risk cap is triggered.",
+            "Live review cycle and manual trade desk are still required before any broker-side manual action.",
+            "No market orders.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "broker_action": False,
+    }
+    return service_container.events.log("session_risk_guard", payload)
 
 
 def _summarize_manual_option_paper_trades(service_container, limit: int = 100) -> dict:
