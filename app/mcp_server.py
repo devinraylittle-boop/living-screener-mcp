@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import Counter
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastmcp import FastMCP
@@ -146,6 +147,11 @@ def build_manual_trade_preflight_ticket(snapshot: dict[str, Any], account_value:
 @mcp.tool
 def build_manual_trade_desk(snapshot: dict[str, Any], account_value: float = 50.0, max_contract_price: float | None = None, notes: str = "") -> dict:
     return _build_manual_trade_desk(container, snapshot, account_value, max_contract_price, notes)
+
+
+@mcp.tool
+def log_manual_broker_action(action: dict[str, Any]) -> dict:
+    return _log_manual_broker_action(container, action)
 
 
 @mcp.tool
@@ -1064,6 +1070,83 @@ def _build_manual_trade_desk(service_container, snapshot: dict[str, Any], accoun
     return service_container.events.log("manual_trade_desk", payload)
 
 
+def _log_manual_broker_action(service_container, action: dict[str, Any]) -> dict:
+    ticker = str(action.get("ticker") or action.get("underlying") or "").upper()
+    contract_symbol = str(action.get("contract_symbol") or action.get("symbol") or "")
+    action_type = str(action.get("action_type") or action.get("manual_action") or "manual_note").lower()
+    order_status = str(action.get("order_status") or action.get("status") or action_type).lower()
+    side = str(action.get("side") or "buy").lower()
+    direction = str(action.get("direction") or action.get("type") or "").lower()
+    if direction in {"short", "put", "puts", "bearish"}:
+        normalized_direction = "put"
+    elif direction in {"long", "call", "calls", "bullish"}:
+        normalized_direction = "call"
+    else:
+        normalized_direction = "put" if "P" in contract_symbol.upper()[-12:] else "call"
+    quantity = max(1, int(_float_or_zero(action.get("quantity")) or 1))
+    limit_price = _float_or_none_value(action.get("limit_price", action.get("price")))
+    is_options_order = bool(action.get("is_options_order")) or bool(contract_symbol)
+    submitted_dt = _parse_manual_action_time(action.get("submitted_at") or action.get("timestamp")) or datetime.now(UTC)
+    submitted_at = submitted_dt.isoformat()
+    pending_buy = _manual_action_is_pending_buy(action_type, order_status, side)
+    recheck_after = submitted_dt + timedelta(seconds=service_container.settings.pending_buy_recheck_seconds) if pending_buy else None
+    recheck_payload = {
+        "ticker": ticker,
+        "submitted_at": submitted_at,
+        "limit_price": limit_price,
+        "is_options_order": is_options_order,
+        "direction": normalized_direction,
+        "mode": action.get("mode") or "scalp_review",
+    } if pending_buy else None
+    payload = {
+        "status": "MANUAL_ACTION_PENDING_RECHECK_REQUIRED" if pending_buy else "MANUAL_ACTION_LOGGED",
+        "build_version": BUILD_VERSION,
+        "ticker": ticker,
+        "contract_symbol": contract_symbol,
+        "action_type": action_type,
+        "order_status": order_status,
+        "side": side,
+        "direction": normalized_direction,
+        "quantity": quantity,
+        "limit_price": limit_price,
+        "submitted_at": submitted_at,
+        "is_options_order": is_options_order,
+        "pending_buy": pending_buy,
+        "pending_buy_recheck_seconds": service_container.settings.pending_buy_recheck_seconds,
+        "recheck_after": recheck_after.isoformat() if recheck_after else None,
+        "recheck_request": {
+            "tool": "review_pending_buy_order",
+            "endpoint": "/trade/pending-recheck",
+            "payload": recheck_payload,
+        } if recheck_payload else None,
+        "journal_checkpoint_request": {
+            "endpoint": "/journal/checkpoint?limit=500&format=json",
+            "when": "After manual broker action logging, pending recheck, paper close, or learning classification.",
+        },
+        "next_steps": [
+            "Wait until the recheck time before trusting the pending buy.",
+            "Run the pending-buy recheck before leaving, canceling, or replacing the order manually.",
+            "If the recheck returns RECONSIDER_PENDING_BUY, do not keep trusting the stale order.",
+            "Export /journal/checkpoint after the decision so the evidence survives restarts.",
+        ] if pending_buy else [
+            "Keep this as a user-reported broker action record only.",
+            "Use paper ledger or outcome tools if you want to study the result later.",
+            "Export /journal/checkpoint after meaningful manual decisions.",
+        ],
+        "raw_action": action,
+        "broker_action_was_user_reported": True,
+        "mcp_broker_action": False,
+        "order_placed_by_mcp": False,
+        "order_submitted_by_mcp": False,
+        "order_canceled_by_mcp": False,
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "notes": "Manual broker action journal only. This MCP records what the user reports; it cannot verify, place, submit, modify, or cancel broker orders.",
+    }
+    return service_container.events.log("manual_broker_action", payload)
+
+
 def _log_manual_option_paper_entry(service_container, ticket: dict[str, Any], fill_price: float, quantity: int, underlying_price: float | None, notes: str = "") -> dict:
     fill = _float_or_zero(fill_price)
     quantity = max(1, int(quantity or 1))
@@ -1687,6 +1770,40 @@ def _float_or_zero(value: Any) -> float:
         return float(value)
     except Exception:
         return 0.0
+
+
+def _float_or_none_value(value: Any) -> float | None:
+    try:
+        if value is None or value != value or str(value).strip() == "":
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _parse_manual_action_time(value: Any) -> datetime | None:
+    try:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
+        raw = str(value).strip()
+        if not raw:
+            return None
+        if raw.endswith("Z"):
+            raw = raw[:-1] + "+00:00"
+        parsed = datetime.fromisoformat(raw)
+        return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    except Exception:
+        return None
+
+
+def _manual_action_is_pending_buy(action_type: str, order_status: str, side: str) -> bool:
+    if side not in {"buy", "opening_buy", "buy_to_open"}:
+        return False
+    joined = f"{action_type} {order_status}".lower()
+    pending_words = {"pending", "queued", "new", "open", "submitted", "unconfirmed", "confirmed", "partially_filled", "working"}
+    return any(word in joined for word in pending_words)
 
 
 def _review_candidate_for_options(service_container, ticker: str, direction: str, mode: str, max_contract_price: float | None) -> dict:

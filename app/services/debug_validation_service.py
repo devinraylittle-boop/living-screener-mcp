@@ -36,6 +36,7 @@ class DebugValidationService:
                 "manual_trade_desk": "manual_trade_desk_v1",
                 "market_open_observer": "market_open_observer_v1",
                 "observer_followup": "observer_followup_v1",
+                "manual_broker_action": "manual_broker_action_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -48,6 +49,8 @@ class DebugValidationService:
                 "/paper/options/summary",
                 "/journal/checkpoint",
                 "/trade/manual-desk",
+                "/trade/manual-action",
+                "/trade/pending-recheck",
             ],
             "readiness": {
                 "version_endpoint": True,
@@ -71,6 +74,8 @@ class DebugValidationService:
                 "paper_option_ledger_routes": True,
                 "journal_checkpoint_route": True,
                 "manual_trade_desk_route": True,
+                "manual_broker_action_route": True,
+                "pending_recheck_route": True,
             },
             "safety": self._safety(),
         }
@@ -246,6 +251,7 @@ class DebugValidationService:
             "observer_followup_schema_preview": self._observer_followup_schema_preview(),
             "manual_preflight_schema_preview": self._manual_preflight_schema_preview(),
             "manual_trade_desk_schema_preview": self._manual_trade_desk_schema_preview(),
+            "manual_broker_action_schema_preview": self._manual_broker_action_schema_preview(),
             "paper_option_ledger_schema_preview": self._paper_option_ledger_schema_preview(),
             "journal_checkpoint_schema_preview": self._journal_checkpoint_schema_preview(),
             "safety": self._safety(),
@@ -565,6 +571,35 @@ class DebugValidationService:
             "notes": "Static trade-desk schema preview only. It cannot execute broker actions.",
         }
 
+    def _manual_broker_action_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "MANUAL_ACTION_PENDING_RECHECK_REQUIRED",
+            "schema_version": "manual_broker_action_v1",
+            "ticker": "EXAMPLE",
+            "contract_symbol": "EXAMPLE260612P00100000",
+            "action_type": "pending_buy",
+            "order_status": "queued",
+            "side": "buy",
+            "direction": "put",
+            "limit_price": 0.42,
+            "submitted_at": "2026-06-10T14:30:00+00:00",
+            "pending_buy": True,
+            "pending_buy_recheck_seconds": 60,
+            "recheck_request": {
+                "tool": "review_pending_buy_order",
+                "endpoint": "/trade/pending-recheck",
+                "payload": {
+                    "ticker": "EXAMPLE",
+                    "submitted_at": "2026-06-10T14:30:00+00:00",
+                    "limit_price": 0.42,
+                    "is_options_order": True,
+                    "direction": "put",
+                    "mode": "scalp_review",
+                },
+            },
+            "notes": "Static manual action schema preview only. It records user-reported broker actions and cannot verify or execute broker orders.",
+        }
+
     def _paper_option_ledger_schema_preview(self) -> dict[str, Any]:
         return {
             "status": "PAPER_LEDGER_READY",
@@ -634,6 +669,7 @@ class DebugValidationService:
             "run_observer_followup",
             "build_manual_trade_preflight_ticket",
             "build_manual_trade_desk",
+            "log_manual_broker_action",
             "log_manual_option_paper_entry",
             "close_manual_option_paper_trade",
             "summarize_manual_option_paper_trades",
@@ -652,7 +688,7 @@ class DebugValidationService:
         return {name: name in available for name in required}
 
     def _category(self, name: str) -> str:
-        if "harvest" in name or "readiness" in name or "observer" in name or "playbook" in name or "command_center" in name or "autopilot" in name or "cycle" in name or "preflight" in name or "desk" in name or "paper" in name or "journal" in name or "checkpoint" in name:
+        if "harvest" in name or "readiness" in name or "observer" in name or "playbook" in name or "command_center" in name or "autopilot" in name or "cycle" in name or "preflight" in name or "desk" in name or "manual_broker" in name or "paper" in name or "journal" in name or "checkpoint" in name:
             return "market_operations"
         if "evidence" in name or "blueprint" in name or "feature" in name or "scoring" in name:
             return "research_validation"
@@ -691,6 +727,8 @@ class DebugValidationService:
             return "Review-only broker snapshot, risk, and manual ticket preflight."
         if "desk" in name:
             return "Review-only manual trade desk that combines preflight, paper logging payload, and checkpoint reminder."
+        if "manual_broker" in name:
+            return "Review-only journal for user-reported broker actions; prepares pending-buy recheck cards without broker access."
         if "paper" in name:
             return "Paper/manual ledger for tracking hypothetical option entries and exits; no broker contact."
         if "journal" in name or "checkpoint" in name:

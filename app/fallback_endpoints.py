@@ -16,6 +16,7 @@ from app.mcp_server import (
     _get_ops_command_center,
     _get_market_session_playbook,
     _log_manual_option_paper_entry,
+    _log_manual_broker_action,
     _market_readiness_check,
     _review_candidate_for_options,
     _run_live_review_cycle,
@@ -1166,6 +1167,84 @@ def _manual_trade_desk_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Manual Trade Desk", body, payload)
 
 
+def _manual_broker_action_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    recheck = result.get("recheck_request") or {}
+    recheck_payload = recheck.get("payload") or {}
+    checkpoint = result.get("journal_checkpoint_request") or {}
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Manual Broker Action Journal</h1>
+    <p>User-reported broker action record, pending-buy recheck card, and checkpoint reminder. Review-only.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Ticker", result.get("ticker")),
+    ("Contract", result.get("contract_symbol")),
+    ("Action", result.get("action_type")),
+    ("Order Status", result.get("order_status")),
+    ("Side", result.get("side")),
+    ("Direction", result.get("direction")),
+    ("Limit Price", result.get("limit_price")),
+    ("Quantity", result.get("quantity")),
+    ("Submitted At", result.get("submitted_at")),
+    ("MCP Broker Action", result.get("mcp_broker_action")),
+])}
+<h2>Pending Buy Recheck</h2>
+{_field_grid([
+    ("Pending Buy", result.get("pending_buy")),
+    ("Recheck Seconds", result.get("pending_buy_recheck_seconds")),
+    ("Recheck After", result.get("recheck_after")),
+    ("Tool", recheck.get("tool")),
+    ("Endpoint", recheck.get("endpoint")),
+    ("Payload", recheck_payload),
+])}
+<h2>Checkpoint</h2>
+{_field_grid([
+    ("Endpoint", checkpoint.get("endpoint")),
+    ("When", checkpoint.get("when")),
+])}
+<h2>Next Steps</h2>
+{_list(result.get("next_steps") or [])}
+"""
+    return _html_page("Manual Broker Action Journal", body, payload)
+
+
+def _pending_recheck_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Pending Buy Recheck</h1>
+    <p>Review-only stale pending-buy check. This cannot leave, cancel, or replace any order.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Ticker", result.get("ticker")),
+    ("Age Seconds", result.get("age_seconds")),
+    ("Limit Price", result.get("limit_price")),
+    ("Current Price", result.get("current_price")),
+    ("Price Drift", result.get("price_drift_pct")),
+    ("Recheck Window", result.get("pending_buy_recheck_seconds")),
+    ("Can Cancel Orders", payload.get("can_cancel_order_from_this_mcp")),
+])}
+<h2>Reasons</h2>
+{_list(result.get("reasons") or [])}
+<h2>Warnings</h2>
+{_list(result.get("warnings") or [])}
+<h2>Next Action</h2>
+{_list([result.get("next_action")] if result.get("next_action") else [])}
+"""
+    return _html_page("Pending Buy Recheck", body, payload)
+
+
 def _paper_option_summary_html(payload: dict[str, Any]) -> HTMLResponse:
     result = payload.get("result") or {}
     open_rows = []
@@ -1584,6 +1663,59 @@ async def fallback_manual_trade_desk(request: Request) -> JSONResponse | HTMLRes
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _manual_trade_desk_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_manual_broker_action(request: Request) -> JSONResponse | HTMLResponse:
+    if request.method == "POST":
+        body = await request.json()
+    else:
+        params = request.query_params
+        body = {
+            "ticker": params.get("ticker"),
+            "contract_symbol": params.get("contract_symbol"),
+            "action_type": params.get("action_type"),
+            "order_status": params.get("order_status"),
+            "side": params.get("side"),
+            "direction": params.get("direction"),
+            "limit_price": _float_or_none(params.get("limit_price")),
+            "quantity": _int_or_default(params.get("quantity"), 1),
+            "submitted_at": params.get("submitted_at"),
+            "is_options_order": (params.get("is_options_order") or "").strip().lower() in {"1", "true", "yes"},
+            "mode": params.get("mode"),
+            "notes": params.get("notes"),
+        }
+    result = _log_manual_broker_action(container, body)
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _manual_broker_action_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_pending_recheck(request: Request) -> JSONResponse | HTMLResponse:
+    if request.method == "POST":
+        body = await request.json()
+    else:
+        params = request.query_params
+        body = {
+            "ticker": params.get("ticker"),
+            "submitted_at": params.get("submitted_at"),
+            "limit_price": _float_or_none(params.get("limit_price")),
+            "is_options_order": (params.get("is_options_order") or "").strip().lower() in {"1", "true", "yes"},
+            "direction": params.get("direction") or "call",
+            "mode": params.get("mode") or "scalp_review",
+        }
+    result = container.pending_orders.review_pending_buy(
+        str(body.get("ticker") or ""),
+        str(body.get("submitted_at") or ""),
+        _float_or_none(str(body.get("limit_price"))) if body.get("limit_price") is not None else None,
+        bool(body.get("is_options_order")),
+        str(body.get("direction") or "call"),
+        str(body.get("mode") or "scalp_review"),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _pending_recheck_html(payload)
     return JSONResponse(payload)
 
 
