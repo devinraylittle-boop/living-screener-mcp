@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections import Counter
 from html import escape
+from pathlib import Path
 from typing import Any
 
 from starlette.requests import Request
@@ -16,12 +17,14 @@ from app.mcp_server import (
     _get_ops_command_center,
     _get_market_session_playbook,
     _get_session_risk_guard,
+    _get_tomorrow_operator_brief,
     _get_trading_day_launch_checklist,
     _log_manual_option_paper_entry,
     _log_manual_broker_action,
     _market_readiness_check,
     _review_candidate_for_options,
     _restore_journal_checkpoint,
+    _run_go_live_rehearsal,
     _run_live_review_cycle,
     _run_market_open_observer,
     _run_morning_readiness_autopilot,
@@ -35,6 +38,9 @@ from app.mcp_server import (
     container,
 )
 from app.version import BUILD_VERSION
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _tickers(raw: str | None) -> list[str] | None:
@@ -84,6 +90,21 @@ def _wants_html(request: Request) -> bool:
 
 def _truthy(value: str | None) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "y", "on", "auto"}
+
+
+def _release_manifest_payload() -> dict[str, Any]:
+    manifest_path = ROOT / "RELEASE_MANIFEST.json"
+    fallback = {
+        "service": "Living Screener MCP",
+        "target_build_version": BUILD_VERSION,
+        "expected_live_tool_count": None,
+        "manifest_loaded": False,
+    }
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        manifest = fallback
+    return _review_only_envelope({"status": "RELEASE_MANIFEST_READY", "manifest": manifest})
 
 
 def _html_page(title: str, body: str, payload: dict[str, Any], extra_head: str = "") -> HTMLResponse:
@@ -176,6 +197,25 @@ def _html_page(title: str, body: str, payload: dict[str, Any], extra_head: str =
     tr:last-child td {{ border-bottom: 0; }}
     ul {{ margin: 8px 0 0 18px; padding: 0; }}
     li {{ margin: 5px 0; }}
+    input, select, button {{
+      width: 100%;
+      min-height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      padding: 8px 10px;
+      font: inherit;
+    }}
+    button {{
+      width: auto;
+      min-width: 190px;
+      border-color: #15171a;
+      background: #15171a;
+      color: #fff;
+      font-weight: 650;
+      cursor: pointer;
+    }}
     pre {{
       overflow: auto;
       padding: 14px;
@@ -802,6 +842,189 @@ def _trading_day_launch_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Trading Day Launch", body, payload)
 
 
+def _tomorrow_operator_brief_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    session_risk = result.get("session_risk_guard") or {}
+    paper_ledger = result.get("paper_ledger") or {}
+    connector = result.get("chatgpt_connector_fallback") or {}
+    sequence_rows = []
+    for item in result.get("morning_sequence") or []:
+        link = str(item.get("link") or "")
+        sequence_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('step') or ''))}</td>"
+            f"<td>{escape(str(item.get('target_time_ct') or ''))}</td>"
+            f"<td><a href=\"{escape(link)}\">{escape(link)}</a></td>"
+            f"<td>{escape(str(item.get('pass_condition') or ''))}</td>"
+            "</tr>"
+        )
+    schedule_rows = []
+    for item in result.get("session_schedule_ct") or []:
+        schedule_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('time') or ''))}</td>"
+            f"<td>{escape(str(item.get('focus') or ''))}</td>"
+            "</tr>"
+        )
+    latest_rows = []
+    for label, item in (result.get("latest") or {}).items():
+        latest_rows.append(
+            "<tr>"
+            f"<td>{escape(str(label).replace('_', ' ').title())}</td>"
+            f"<td>{escape(str((item or {}).get('status') if isinstance(item, dict) else ''))}</td>"
+            f"<td>{escape(str((item or {}).get('timestamp') if isinstance(item, dict) else ''))}</td>"
+            f"<td>{escape(str((item or {}).get('next_action') or (item or {}).get('next_step') if isinstance(item, dict) else ''))}</td>"
+            "</tr>"
+        )
+    action_rows = []
+    for label, url in (result.get("action_links") or {}).items():
+        action_rows.append(
+            "<tr>"
+            f"<td>{escape(str(label).replace('_', ' ').title())}</td>"
+            f"<td><a href=\"{escape(str(url))}\">{escape(str(url))}</a></td>"
+            "</tr>"
+        )
+    validation_rows = []
+    for url in connector.get("validation_urls") or []:
+        validation_rows.append(
+            "<tr>"
+            f"<td><a href=\"{escape(str(url))}\">{escape(str(url))}</a></td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Tomorrow Operator Brief</h1>
+    <p>One review-only start page for tomorrow: safety, session risk, pages to open, connector fallback, and hard stops.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Next Action", result.get("next_action")),
+    ("Universe", ', '.join(result.get("universe") or [])),
+    ("Account Ref.", result.get("account_value_reference")),
+    ("Contract Cap", result.get("small_account_contract_cap")),
+    ("Session Risk", session_risk.get("status")),
+    ("Paper Open", paper_ledger.get("open_count")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Morning Sequence</h2>
+<table>
+  <thead><tr><th>Step</th><th>Time CT</th><th>Link</th><th>Pass Condition</th></tr></thead>
+  <tbody>{''.join(sequence_rows)}</tbody>
+</table>
+<h2>Session Schedule</h2>
+<table>
+  <thead><tr><th>Time CT</th><th>Focus</th></tr></thead>
+  <tbody>{''.join(schedule_rows)}</tbody>
+</table>
+<h2>Session Risk And Paper Ledger</h2>
+{_field_grid([
+    ("Risk Status", session_risk.get("status")),
+    ("Open Positions", session_risk.get("open_position_count")),
+    ("Open Risk", session_risk.get("open_risk_dollars")),
+    ("Closed P/L", session_risk.get("closed_pnl_dollars")),
+    ("Risk Next Action", session_risk.get("next_action")),
+    ("Paper Ledger", paper_ledger.get("status")),
+    ("Paper Entries", paper_ledger.get("entry_count")),
+    ("Paper Win Rate", paper_ledger.get("win_rate")),
+])}
+<h2>Latest Logged State</h2>
+<table>
+  <thead><tr><th>Event</th><th>Status</th><th>Timestamp</th><th>Next</th></tr></thead>
+  <tbody>{''.join(latest_rows) if latest_rows else '<tr><td colspan="4">No operator state logged yet.</td></tr>'}</tbody>
+</table>
+<h2>Manual Trade Gate</h2>
+{_list(result.get("manual_trade_gate") or [])}
+<h2>Absolute No-Trade Rules</h2>
+{_list(result.get("absolute_no_trade_rules") or [])}
+<h2>Connector Fallback</h2>
+<p>{escape(str(connector.get('short_status') or ''))}</p>
+<table>
+  <thead><tr><th>Validation URL</th></tr></thead>
+  <tbody>{''.join(validation_rows)}</tbody>
+</table>
+<h2>Fallback Prompt</h2>
+<pre>{escape(str(connector.get("prompt") or ""))}</pre>
+<h2>Action Links</h2>
+<table>
+  <thead><tr><th>Action</th><th>Link</th></tr></thead>
+  <tbody>{''.join(action_rows)}</tbody>
+</table>
+<h2>Notes</h2>
+{_list(result.get("notes") or [])}
+"""
+    return _html_page("Tomorrow Operator Brief", body, payload)
+
+
+def _go_live_rehearsal_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    operator = result.get("operator_brief") or {}
+    readiness = result.get("market_readiness") or {}
+    live_rows = []
+    for item in result.get("required_live_urls") or []:
+        url = str(item.get("url") or "")
+        live_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('label') or ''))}</td>"
+            f"<td><a href=\"{escape(url)}\">{escape(url)}</a></td>"
+            f"<td>{escape(str(item.get('expected') or ''))}</td>"
+            "</tr>"
+        )
+    tab_rows = []
+    for item in result.get("tomorrow_open_tabs") or []:
+        url = str(item.get("url") or "")
+        tab_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('label') or ''))}</td>"
+            f"<td><a href=\"{escape(url)}\">{escape(url)}</a></td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Go-Live Rehearsal</h1>
+    <p>Deployment and operating-readiness rehearsal for tomorrow. Review-only; no scans unless requested, no trade plans, no broker action.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Next Action", result.get("next_action")),
+    ("Market Check Included", result.get("include_market_check")),
+    ("Operator Brief", operator.get("status")),
+    ("Session Risk", operator.get("session_risk_status")),
+    ("Paper Open", operator.get("paper_open_count")),
+    ("Readiness", readiness.get("status")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Blocking Reasons</h2>
+{_list(result.get("blocking_reasons") or ["None"])}
+<h2>Warnings</h2>
+{_list(result.get("warnings") or ["None"])}
+<h2>Live Validation URLs</h2>
+<table>
+  <thead><tr><th>Check</th><th>URL</th><th>Expected</th></tr></thead>
+  <tbody>{''.join(live_rows)}</tbody>
+</table>
+<h2>Tomorrow Tabs</h2>
+<table>
+  <thead><tr><th>Tab</th><th>URL</th></tr></thead>
+  <tbody>{''.join(tab_rows)}</tbody>
+</table>
+<h2>Manual Trade Gate</h2>
+{_list(result.get("manual_trade_gate") or [])}
+<h2>Absolute No-Trade Rules</h2>
+{_list(result.get("absolute_no_trade_rules") or [])}
+<h2>Notes</h2>
+{_list(result.get("notes") or [])}
+"""
+    return _html_page("Go-Live Rehearsal", body, payload)
+
+
 def _trading_day_heartbeat_html(payload: dict[str, Any], auto_refresh: bool = False) -> HTMLResponse:
     result = payload.get("result") or {}
     phase = result.get("phase") or {}
@@ -1397,6 +1620,64 @@ def _manual_trade_desk_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Manual Trade Desk", body, payload)
 
 
+def _manual_snapshot_form_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Manual Snapshot Form</h1>
+    <p>Enter broker-visible option fields, then submit to the manual trade desk. Review-only; this form cannot place, submit, modify, simulate, or cancel orders.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Destination", "/trade/manual-desk"),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<form method="get" action="/trade/manual-desk" class="panel">
+  <input type="hidden" name="format" value="html">
+  <div class="grid">
+    <label class="panel"><span class="label">Ticker</span><input name="ticker" required placeholder="SOFI"></label>
+    <label class="panel"><span class="label">Contract Symbol</span><input name="contract_symbol" required placeholder="SOFI260612P00015000"></label>
+    <label class="panel"><span class="label">Direction</span>
+      <select name="direction">
+        <option value="put">put</option>
+        <option value="call">call</option>
+      </select>
+    </label>
+    <label class="panel"><span class="label">Bid</span><input name="bid" required type="number" min="0" step="0.01" placeholder="0.04"></label>
+    <label class="panel"><span class="label">Ask</span><input name="ask" required type="number" min="0" step="0.01" placeholder="0.05"></label>
+    <label class="panel"><span class="label">Volume</span><input name="volume" required type="number" min="0" step="1" placeholder="500"></label>
+    <label class="panel"><span class="label">Open Interest</span><input name="open_interest" required type="number" min="0" step="1" placeholder="2000"></label>
+    <label class="panel"><span class="label">DTE</span><input name="dte" required type="number" min="0" step="1" placeholder="3"></label>
+    <label class="panel"><span class="label">Strike</span><input name="strike" required type="number" min="0" step="0.5" placeholder="15"></label>
+    <label class="panel"><span class="label">Underlying Price</span><input name="underlying_price" type="number" min="0" step="0.01" placeholder="16.50"></label>
+    <label class="panel"><span class="label">Underlying VWAP</span><input name="underlying_vwap" type="number" min="0" step="0.01" placeholder="16.80"></label>
+    <label class="panel"><span class="label">Account Value Ref.</span><input name="account_value" type="number" min="0" step="0.01" value="50"></label>
+    <label class="panel"><span class="label">Max Contract Price</span><input name="max_contract_price" type="number" min="0" step="0.01" value="1.00"></label>
+    <label class="panel"><span class="label">Max Open Positions</span><input name="max_open_positions" type="number" min="1" max="5" step="1" value="2"></label>
+  </div>
+  <p style="margin-top: 14px;"><button type="submit">Open Manual Trade Desk</button></p>
+</form>
+<h2>Use This Form Only After</h2>
+{_list(result.get("before_use") or [])}
+<h2>Hard Stops</h2>
+{_list(result.get("hard_stops") or [])}
+<h2>Next Pages</h2>
+<table>
+  <thead><tr><th>Page</th><th>URL</th></tr></thead>
+  <tbody>
+    <tr><td>Go-live rehearsal</td><td><a href="/ops/go-live-rehearsal?account_value=50&format=html">/ops/go-live-rehearsal?account_value=50&format=html</a></td></tr>
+    <tr><td>Live review cycle</td><td><a href="/ops/live-review-cycle?account_value=50&format=html">/ops/live-review-cycle?account_value=50&format=html</a></td></tr>
+    <tr><td>Session risk</td><td><a href="/risk/session?account_value=50&format=html">/risk/session?account_value=50&format=html</a></td></tr>
+  </tbody>
+</table>
+"""
+    return _html_page("Manual Snapshot Form", body, payload)
+
+
 def _manual_broker_action_html(payload: dict[str, Any]) -> HTMLResponse:
     result = payload.get("result") or {}
     recheck = result.get("recheck_request") or {}
@@ -1844,6 +2125,11 @@ async def fallback_safety(request: Request) -> JSONResponse:
     )
 
 
+async def fallback_release_manifest(request: Request) -> JSONResponse:
+    del request
+    return JSONResponse(_release_manifest_payload())
+
+
 async def fallback_market_scan(request: Request) -> JSONResponse:
     params = request.query_params
     mode = params.get("mode") or "conservative_review_only"
@@ -1933,6 +2219,35 @@ async def fallback_trading_day_launch(request: Request) -> JSONResponse | HTMLRe
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _trading_day_launch_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_tomorrow_operator_brief(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _get_tomorrow_operator_brief(
+        container,
+        _tickers(params.get("tickers")),
+        _float_or_none(params.get("account_value")) or 50.0,
+        _int_or_default(params.get("max_candidates"), 25),
+    )
+    payload = _review_only_envelope({"result": result})
+    if request.url.path == "/" or _wants_html(request):
+        return _tomorrow_operator_brief_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_go_live_rehearsal(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _run_go_live_rehearsal(
+        container,
+        _tickers(params.get("tickers")),
+        _float_or_none(params.get("account_value")) or 50.0,
+        _int_or_default(params.get("max_candidates"), 25),
+        _truthy(params.get("include_market_check")),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _go_live_rehearsal_html(payload)
     return JSONResponse(payload)
 
 
@@ -2109,6 +2424,36 @@ async def fallback_manual_trade_desk(request: Request) -> JSONResponse | HTMLRes
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _manual_trade_desk_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_manual_snapshot_form(request: Request) -> JSONResponse | HTMLResponse:
+    payload = _review_only_envelope(
+        {
+            "result": {
+                "status": "MANUAL_SNAPSHOT_FORM_READY",
+                "build_version": BUILD_VERSION,
+                "destination": "/trade/manual-desk",
+                "before_use": [
+                    "A live review cycle produced a candidate worth broker-side inspection.",
+                    "You are copying fields from the actual broker contract screen.",
+                    "The contract symbol, bid, ask, volume, open interest, DTE, and strike are visible.",
+                    "Session risk is not blocked.",
+                ],
+                "hard_stops": [
+                    "Do not use market orders.",
+                    "Do not enter a broker action from this form.",
+                    "Do not continue if the broker contract differs from the reviewed contract.",
+                    "Do not continue if spread, liquidity, or direction worsened since review.",
+                ],
+                "review_only": True,
+                "can_place_order_from_this_mcp": False,
+                "can_cancel_order_from_this_mcp": False,
+            }
+        }
+    )
+    if _wants_html(request):
+        return _manual_snapshot_form_html(payload)
     return JSONResponse(payload)
 
 

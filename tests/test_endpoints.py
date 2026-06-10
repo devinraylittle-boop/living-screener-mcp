@@ -34,6 +34,8 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("run_latest_harvest_followup", tools.json()["tools"])
         self.assertIn("get_ops_command_center", tools.json()["tools"])
         self.assertIn("get_trading_day_launch_checklist", tools.json()["tools"])
+        self.assertIn("get_tomorrow_operator_brief", tools.json()["tools"])
+        self.assertIn("run_go_live_rehearsal", tools.json()["tools"])
         self.assertIn("run_trading_day_heartbeat", tools.json()["tools"])
         self.assertIn("summarize_trading_day_alerts", tools.json()["tools"])
         self.assertIn("run_morning_readiness_autopilot", tools.json()["tools"])
@@ -428,10 +430,183 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("Manual Trade Preflight", preflight_html.text)
         self.assertIn("SOFI260612P00015000", preflight_html.text)
 
+    def test_tomorrow_operator_brief_endpoint_can_render_human_readable_html(self) -> None:
+        fake_brief = {
+            "status": "OPERATOR_READY_TO_START",
+            "build_version": "2026.06.10-manual-snapshot-form",
+            "next_action": "Open launch, morning autopilot, and day monitor.",
+            "universe": ["SOFI", "SMCI"],
+            "account_value_reference": 50,
+            "small_account_contract_cap": 1.0,
+            "session_risk_guard": {
+                "status": "SESSION_RISK_CLEAR",
+                "open_position_count": 0,
+                "open_risk_dollars": 0,
+                "closed_pnl_dollars": 0,
+                "next_action": "Risk journal is clear for review.",
+            },
+            "paper_ledger": {
+                "status": "PAPER_LEDGER_READY",
+                "entry_count": 0,
+                "open_count": 0,
+                "closed_count": 0,
+                "win_rate": 0,
+                "total_pnl_dollars": 0,
+            },
+            "latest": {"launch": {"status": "LAUNCH_START_HERE", "timestamp": "2026-06-10T13:00:00Z"}},
+            "morning_sequence": [
+                {
+                    "step": "1. Confirm deployment",
+                    "target_time_ct": "Before open",
+                    "link": "/health/full?expected_build_version=2026.06.10-manual-snapshot-form",
+                    "pass_condition": "OK and build matches.",
+                }
+            ],
+            "session_schedule_ct": [{"time": "08:50-10:15", "focus": "Run live review cycle only when clean."}],
+            "chatgpt_connector_fallback": {
+                "short_status": "Use public endpoints if the callable namespace is not exposed.",
+                "validation_urls": ["/version", "/tools"],
+                "prompt": "First try get_version and get_safety_config.",
+            },
+            "manual_trade_gate": ["Session risk guard is not SESSION_RISK_BLOCKED."],
+            "absolute_no_trade_rules": ["No broker action from this MCP.", "No market orders."],
+            "action_links": {"day_monitor": "/ops/day-monitor", "manual_trade_desk": "/trade/manual-desk"},
+            "notes": ["Operator brief is a human runbook."],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints._get_tomorrow_operator_brief", return_value=fake_brief):
+            html = client.get("/ops/tomorrow-brief?tickers=SOFI,SMCI&account_value=50&format=html")
+            json_response = client.get("/ops/tomorrow-brief?tickers=SOFI,SMCI&account_value=50")
+
+        self.assertEqual(html.status_code, 200)
+        self.assertIn("Tomorrow Operator Brief", html.text)
+        self.assertIn("Connector Fallback", html.text)
+        self.assertIn("SESSION_RISK_CLEAR", html.text)
+        self.assertIn("/ops/day-monitor", html.text)
+        self.assertEqual(json_response.status_code, 200)
+        self.assertEqual(json_response.json()["result"]["status"], "OPERATOR_READY_TO_START")
+        self.assertFalse(json_response.json()["can_place_order_from_this_mcp"])
+
+    def test_root_route_opens_operator_brief(self) -> None:
+        fake_brief = {
+            "status": "OPERATOR_READY_TO_START",
+            "build_version": "2026.06.10-manual-snapshot-form",
+            "next_action": "Open launch, morning autopilot, and day monitor.",
+            "universe": ["SOFI", "SMCI"],
+            "account_value_reference": 50,
+            "small_account_contract_cap": 1.0,
+            "session_risk_guard": {"status": "SESSION_RISK_CLEAR"},
+            "paper_ledger": {"status": "PAPER_LEDGER_READY", "open_count": 0},
+            "latest": {},
+            "morning_sequence": [],
+            "session_schedule_ct": [],
+            "chatgpt_connector_fallback": {"validation_urls": [], "prompt": ""},
+            "manual_trade_gate": [],
+            "absolute_no_trade_rules": ["No broker action from this MCP."],
+            "action_links": {"tomorrow_brief": "/ops/tomorrow-brief"},
+            "notes": [],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints._get_tomorrow_operator_brief", return_value=fake_brief):
+            html = client.get("/", headers={"accept": "text/html"})
+
+        self.assertEqual(html.status_code, 200)
+        self.assertIn("Tomorrow Operator Brief", html.text)
+        self.assertIn("OPERATOR_READY_TO_START", html.text)
+
+    def test_root_defaults_to_human_readable_operator_brief(self) -> None:
+        fake_brief = {
+            "status": "OPERATOR_READY_TO_START",
+            "build_version": "2026.06.10-manual-snapshot-form",
+            "generated_at": "2026-06-10T12:00:00+00:00",
+            "account_value_reference": 50.0,
+            "safety": {"review_only": True},
+            "health_checks": [],
+            "session_risk_guard": {"status": "SESSION_RISK_CLEAR"},
+            "paper_ledger": {"status": "PAPER_LEDGER_READY", "open_count": 0},
+            "latest": {},
+            "morning_sequence": [],
+            "session_schedule_ct": [],
+            "chatgpt_connector_fallback": {"validation_urls": [], "prompt": ""},
+            "manual_trade_gate": [],
+            "absolute_no_trade_rules": ["No broker action from this MCP."],
+            "action_links": {"tomorrow_brief": "/ops/tomorrow-brief"},
+            "notes": [],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints._get_tomorrow_operator_brief", return_value=fake_brief):
+            html = client.get("/")
+
+        self.assertEqual(html.status_code, 200)
+        self.assertIn("text/html", html.headers["content-type"])
+        self.assertIn("Tomorrow Operator Brief", html.text)
+
+    def test_go_live_rehearsal_endpoint_can_render_human_readable_html(self) -> None:
+        fake_rehearsal = {
+            "status": "GO_LIVE_REHEARSAL_READY",
+            "build_version": "2026.06.10-manual-snapshot-form",
+            "next_action": "Deploy and validate this build.",
+            "include_market_check": False,
+            "operator_brief": {
+                "status": "OPERATOR_READY_TO_START",
+                "session_risk_status": "SESSION_RISK_CLEAR",
+                "paper_open_count": 0,
+            },
+            "market_readiness": None,
+            "blocking_reasons": [],
+            "warnings": [],
+            "required_live_urls": [
+                {"label": "Version", "url": "/version", "expected": "build matches"},
+                {"label": "Go-live rehearsal", "url": "/ops/go-live-rehearsal", "expected": "ready or reasons"},
+            ],
+            "tomorrow_open_tabs": [{"label": "Day monitor", "url": "/ops/day-monitor"}],
+            "manual_trade_gate": ["Session risk guard is not SESSION_RISK_BLOCKED."],
+            "absolute_no_trade_rules": ["No broker action from this MCP."],
+            "notes": ["Rehearsal is not a trade recommendation."],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints._run_go_live_rehearsal", return_value=fake_rehearsal):
+            html = client.get("/ops/go-live-rehearsal?tickers=SOFI,SMCI&account_value=50&format=html")
+            json_response = client.get("/ops/go-live-rehearsal?tickers=SOFI,SMCI&account_value=50")
+
+        self.assertEqual(html.status_code, 200)
+        self.assertIn("Go-Live Rehearsal", html.text)
+        self.assertIn("GO_LIVE_REHEARSAL_READY", html.text)
+        self.assertIn("/ops/day-monitor", html.text)
+        self.assertEqual(json_response.status_code, 200)
+        self.assertEqual(json_response.json()["result"]["status"], "GO_LIVE_REHEARSAL_READY")
+        self.assertFalse(json_response.json()["can_place_order_from_this_mcp"])
+
+    def test_manual_snapshot_form_endpoint_can_render_human_readable_html(self) -> None:
+        client = TestClient(create_app())
+        html = client.get("/trade/manual-form?format=html")
+        json_response = client.get("/trade/manual-form")
+
+        self.assertEqual(html.status_code, 200)
+        self.assertIn("Manual Snapshot Form", html.text)
+        self.assertIn("/trade/manual-desk", html.text)
+        self.assertIn("contract_symbol", html.text)
+        self.assertIn("open_interest", html.text)
+        self.assertEqual(json_response.status_code, 200)
+        self.assertEqual(json_response.json()["result"]["status"], "MANUAL_SNAPSHOT_FORM_READY")
+        self.assertFalse(json_response.json()["can_place_order_from_this_mcp"])
+
     def test_manual_trade_desk_endpoint_can_render_human_readable_html(self) -> None:
         fake_trade_desk = {
             "status": "MANUAL_TRADE_DESK_READY",
-            "build_version": "2026.06.10-tomorrow-control",
+            "build_version": "2026.06.10-manual-snapshot-form",
             "ticker": "SOFI",
             "direction": "put",
             "contract_symbol": "SOFI260612P00015000",
@@ -507,7 +682,7 @@ class EndpointTests(unittest.TestCase):
     def test_market_open_observer_endpoint_logs_evidence_without_broker_action(self) -> None:
         fake_observer = {
             "status": "OBSERVER_STOCK_CANDIDATES",
-            "build_version": "2026.06.10-tomorrow-control",
+            "build_version": "2026.06.10-manual-snapshot-form",
             "mode": "market_open_observer",
             "cadence_minutes": 5,
             "candidate_count": 1,
@@ -563,7 +738,7 @@ class EndpointTests(unittest.TestCase):
     def test_observer_followup_endpoint_can_render_missed_move_learning(self) -> None:
         fake_followup = {
             "status": "OBSERVER_FOLLOWUP_LEARNING_NEEDED",
-            "build_version": "2026.06.10-tomorrow-control",
+            "build_version": "2026.06.10-manual-snapshot-form",
             "mode": "observer_followup",
             "source_observation_count": 2,
             "items_checked": 3,
@@ -614,7 +789,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_broker_action_endpoint_records_pending_recheck_card(self) -> None:
         fake_action = {
             "status": "MANUAL_ACTION_PENDING_RECHECK_REQUIRED",
-            "build_version": "2026.06.10-tomorrow-control",
+            "build_version": "2026.06.10-manual-snapshot-form",
             "ticker": "SOFI",
             "contract_symbol": "SOFI260612P00015000",
             "action_type": "pending_buy",
@@ -694,7 +869,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_launch_endpoint_renders_go_no_go_map(self) -> None:
         fake_launch = {
             "status": "LAUNCH_START_HERE",
-            "build_version": "2026.06.10-tomorrow-control",
+            "build_version": "2026.06.10-manual-snapshot-form",
             "mode": "trading_day_launch_checklist",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -710,7 +885,7 @@ class EndpointTests(unittest.TestCase):
                 {
                     "phase": "Build and safety",
                     "go_condition": "Build matches expected version.",
-                    "primary_link": "/health/full?expected_build_version=2026.06.10-tomorrow-control",
+                    "primary_link": "/health/full?expected_build_version=2026.06.10-manual-snapshot-form",
                     "stop_if": "Wrong build.",
                 },
                 {
@@ -743,7 +918,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_heartbeat_endpoint_renders_safe_cadence_tick(self) -> None:
         fake_heartbeat = {
             "status": "HEARTBEAT_NO_TRADE_PLAN",
-            "build_version": "2026.06.10-tomorrow-control",
+            "build_version": "2026.06.10-manual-snapshot-form",
             "mode": "trading_day_heartbeat",
             "phase": {"phase": "active", "forced": True, "now_et": "2026-06-10T11:00:00-04:00"},
             "universe": ["SOFI", "SMCI"],
@@ -780,7 +955,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_alerts_endpoint_renders_attention_queue(self) -> None:
         fake_alerts = {
             "status": "ALERTS_MANUAL_REVIEW_READY",
-            "build_version": "2026.06.10-tomorrow-control",
+            "build_version": "2026.06.10-manual-snapshot-form",
             "top_level": "REVIEW",
             "alert_count": 1,
             "alerts": [
@@ -929,16 +1104,22 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.10-tomorrow-control")
+        full = client.get("/health/full?expected_build_version=2026.06.10-manual-snapshot-form")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
+        release = client.get("/release-manifest")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-tomorrow-control")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-manual-snapshot-form")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
         self.assertTrue(full.json()["result"]["build_matches_expected"])
         self.assertEqual(mismatch.status_code, 409)
         self.assertEqual(mismatch.json()["result"]["status"], "BUILD_MISMATCH")
+        self.assertEqual(release.status_code, 200)
+        self.assertEqual(release.json()["status"], "RELEASE_MANIFEST_READY")
+        self.assertEqual(release.json()["manifest"]["target_build_version"], "2026.06.10-manual-snapshot-form")
+        self.assertEqual(release.json()["manifest"]["expected_live_tool_count"], 66)
+        self.assertIn("tools/start_tomorrow.ps1", release.json()["manifest"]["operator_helpers"])
         self.assertEqual(manifest.status_code, 200)
         self.assertEqual(manifest.json()["result"]["status"], "TOOL_MANIFEST_READY")
         self.assertTrue(manifest.json()["result"]["required_tools"]["market_readiness_check"])
@@ -947,6 +1128,8 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_latest_harvest_followup"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_ops_command_center"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_trading_day_launch_checklist"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["get_tomorrow_operator_brief"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["run_go_live_rehearsal"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_trading_day_heartbeat"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["summarize_trading_day_alerts"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_morning_readiness_autopilot"])
@@ -988,6 +1171,12 @@ class EndpointTests(unittest.TestCase):
         launch_preview = schema.json()["result"]["trading_day_launch_schema_preview"]
         self.assertEqual(launch_preview["status"], "LAUNCH_START_HERE")
         self.assertEqual(launch_preview["schema_version"], "trading_day_launch_v2")
+        operator_preview = schema.json()["result"]["tomorrow_operator_brief_schema_preview"]
+        self.assertEqual(operator_preview["status"], "OPERATOR_READY_TO_START")
+        self.assertEqual(operator_preview["schema_version"], "tomorrow_operator_brief_v1")
+        rehearsal_preview = schema.json()["result"]["go_live_rehearsal_schema_preview"]
+        self.assertEqual(rehearsal_preview["status"], "GO_LIVE_REHEARSAL_READY")
+        self.assertEqual(rehearsal_preview["schema_version"], "go_live_rehearsal_v1")
         heartbeat_preview = schema.json()["result"]["trading_day_heartbeat_schema_preview"]
         self.assertEqual(heartbeat_preview["status"], "HEARTBEAT_NO_TRADE_PLAN")
         monitor_preview = schema.json()["result"]["day_monitor_schema_preview"]
@@ -1010,6 +1199,9 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(preflight_preview["status"], "MANUAL_PREFLIGHT_READY")
         desk_preview = schema.json()["result"]["manual_trade_desk_schema_preview"]
         self.assertEqual(desk_preview["status"], "MANUAL_TRADE_DESK_READY")
+        form_preview = schema.json()["result"]["manual_snapshot_form_schema_preview"]
+        self.assertEqual(form_preview["status"], "MANUAL_SNAPSHOT_FORM_READY")
+        self.assertEqual(form_preview["schema_version"], "manual_snapshot_form_v1")
         position_preview = schema.json()["result"]["manual_option_position_watch_schema_preview"]
         self.assertEqual(position_preview["status"], "POSITION_PROFIT_REVIEW")
         manual_action_preview = schema.json()["result"]["manual_broker_action_schema_preview"]
@@ -1126,7 +1318,7 @@ class EndpointTests(unittest.TestCase):
     def test_session_risk_guard_endpoint_is_review_only(self) -> None:
         fake_risk = {
             "status": "SESSION_RISK_CLEAR",
-            "build_version": "2026.06.10-tomorrow-control",
+            "build_version": "2026.06.10-manual-snapshot-form",
             "account_value_reference": 50,
             "proposed_risk_dollars": 5,
             "per_trade_cap_dollars": 5,
@@ -1174,9 +1366,9 @@ class EndpointTests(unittest.TestCase):
         }
         fake_restore = {
             "status": "CHECKPOINT_RESTORE_READY",
-            "build_version": "2026.06.10-tomorrow-control",
+            "build_version": "2026.06.10-manual-snapshot-form",
             "source_label": "unit_test",
-            "checkpoint_build_version": "2026.06.10-tomorrow-control",
+            "checkpoint_build_version": "2026.06.10-manual-snapshot-form",
             "requested_event_count": 1,
             "restored_count": 1,
             "skipped_duplicate_count": 0,

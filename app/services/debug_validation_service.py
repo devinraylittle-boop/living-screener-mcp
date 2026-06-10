@@ -35,11 +35,14 @@ class DebugValidationService:
                 "journal_checkpoint": "journal_checkpoint_v1",
                 "journal_checkpoint_restore": "journal_checkpoint_restore_v1",
                 "manual_trade_desk": "manual_trade_desk_v2",
+                "manual_snapshot_form": "manual_snapshot_form_v1",
                 "manual_option_position_watch": "manual_option_position_watch_v1",
                 "market_open_observer": "market_open_observer_v1",
                 "observer_followup": "observer_followup_v1",
                 "manual_broker_action": "manual_broker_action_v1",
                 "trading_day_launch": "trading_day_launch_v2",
+                "tomorrow_operator_brief": "tomorrow_operator_brief_v1",
+                "go_live_rehearsal": "go_live_rehearsal_v1",
                 "trading_day_heartbeat": "trading_day_heartbeat_v1",
                 "day_monitor": "day_monitor_v1",
                 "trading_day_alerts": "trading_day_alerts_v1",
@@ -54,6 +57,8 @@ class DebugValidationService:
                 "/ops/market-open-observer",
                 "/ops/observer-followup",
                 "/ops/trading-day-launch",
+                "/ops/tomorrow-brief",
+                "/ops/go-live-rehearsal",
                 "/ops/day-heartbeat",
                 "/ops/day-monitor",
                 "/ops/day-alerts",
@@ -61,6 +66,7 @@ class DebugValidationService:
                 "/paper/options/watch",
                 "/journal/checkpoint",
                 "/trade/manual-desk",
+                "/trade/manual-form",
                 "/trade/manual-action",
                 "/trade/pending-recheck",
                 "/risk/session",
@@ -84,6 +90,8 @@ class DebugValidationService:
                 "market_open_observer_route": True,
                 "observer_followup_route": True,
                 "trading_day_launch_route": True,
+                "tomorrow_operator_brief_route": True,
+                "go_live_rehearsal_route": True,
                 "trading_day_heartbeat_route": True,
                 "day_monitor_route": True,
                 "trading_day_alerts_route": True,
@@ -93,6 +101,7 @@ class DebugValidationService:
                 "journal_checkpoint_route": True,
                 "journal_checkpoint_restore": True,
                 "manual_trade_desk_route": True,
+                "manual_snapshot_form_route": True,
                 "manual_broker_action_route": True,
                 "pending_recheck_route": True,
                 "session_risk_guard_route": True,
@@ -266,6 +275,8 @@ class DebugValidationService:
             "harvest_followup_schema_preview": self._harvest_followup_schema_preview(),
             "ops_command_center_schema_preview": self._ops_command_center_schema_preview(),
             "trading_day_launch_schema_preview": self._trading_day_launch_schema_preview(),
+            "tomorrow_operator_brief_schema_preview": self._tomorrow_operator_brief_schema_preview(),
+            "go_live_rehearsal_schema_preview": self._go_live_rehearsal_schema_preview(),
             "trading_day_heartbeat_schema_preview": self._trading_day_heartbeat_schema_preview(),
             "day_monitor_schema_preview": self._day_monitor_schema_preview(),
             "trading_day_alerts_schema_preview": self._trading_day_alerts_schema_preview(),
@@ -275,6 +286,7 @@ class DebugValidationService:
             "observer_followup_schema_preview": self._observer_followup_schema_preview(),
             "manual_preflight_schema_preview": self._manual_preflight_schema_preview(),
             "manual_trade_desk_schema_preview": self._manual_trade_desk_schema_preview(),
+            "manual_snapshot_form_schema_preview": self._manual_snapshot_form_schema_preview(),
             "manual_option_position_watch_schema_preview": self._manual_option_position_watch_schema_preview(),
             "manual_broker_action_schema_preview": self._manual_broker_action_schema_preview(),
             "paper_option_ledger_schema_preview": self._paper_option_ledger_schema_preview(),
@@ -459,6 +471,60 @@ class DebugValidationService:
                 "No broker action from this MCP.",
             ],
             "notes": "Static launch checklist preview only. The live tool maps safe next actions and cannot execute broker actions.",
+        }
+
+    def _tomorrow_operator_brief_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "OPERATOR_READY_TO_START",
+            "schema_version": "tomorrow_operator_brief_v1",
+            "session_risk_guard": self._session_risk_guard_schema_preview(),
+            "morning_sequence": [
+                {"step": "1. Confirm deployment", "link": "/health/full"},
+                {"step": "2. Open launch page", "link": "/ops/trading-day-launch"},
+                {"step": "3. Run morning autopilot", "link": "/ops/morning-autopilot"},
+                {"step": "4. Leave day monitor open", "link": "/ops/day-monitor"},
+            ],
+            "chatgpt_connector_fallback": {
+                "validation_urls": ["/version", "/tools", "/health/full", "/debug/scan-schema"],
+                "short_status": "Use public endpoints if the callable namespace is not exposed.",
+            },
+            "manual_trade_gate": [
+                "Session risk guard is not SESSION_RISK_BLOCKED.",
+                "Live review cycle status is LIVE_CYCLE_CANDIDATES_READY.",
+                "Manual trade desk returns MANUAL_TRADE_DESK_READY.",
+            ],
+            "absolute_no_trade_rules": [
+                "No broker action from this MCP.",
+                "No market orders.",
+                "No stock-setup-only trades.",
+            ],
+            "notes": "Static operator brief preview only. The live route summarizes safe pages and cannot execute broker actions.",
+        }
+
+    def _go_live_rehearsal_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "GO_LIVE_REHEARSAL_READY",
+            "schema_version": "go_live_rehearsal_v1",
+            "operator_brief": {
+                "status": "OPERATOR_READY_TO_START",
+                "session_risk_status": "SESSION_RISK_CLEAR",
+                "paper_open_count": 0,
+            },
+            "required_live_urls": [
+                {"label": "Root operator brief", "url": "/"},
+                {"label": "Version", "url": "/version"},
+                {"label": "Tools", "url": "/tools"},
+                {"label": "Full health", "url": "/health/full"},
+                {"label": "Go-live rehearsal", "url": "/ops/go-live-rehearsal"},
+            ],
+            "tomorrow_open_tabs": [
+                {"label": "Operator brief", "url": "/ops/tomorrow-brief"},
+                {"label": "Day monitor", "url": "/ops/day-monitor"},
+                {"label": "Day alerts", "url": "/ops/day-alerts"},
+            ],
+            "blocking_reasons": [],
+            "warnings": [],
+            "notes": "Static go-live rehearsal preview only. The live tool checks workflow readiness and cannot execute broker actions.",
         }
 
     def _trading_day_heartbeat_schema_preview(self) -> dict[str, Any]:
@@ -681,6 +747,33 @@ class DebugValidationService:
             "notes": "Static trade-desk schema preview only. It cannot execute broker actions.",
         }
 
+    def _manual_snapshot_form_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "MANUAL_SNAPSHOT_FORM_READY",
+            "schema_version": "manual_snapshot_form_v1",
+            "route": "/trade/manual-form",
+            "submits_to": "/trade/manual-desk",
+            "required_fields": [
+                "ticker",
+                "contract_symbol",
+                "direction",
+                "bid",
+                "ask",
+                "volume",
+                "open_interest",
+                "dte",
+                "strike",
+            ],
+            "optional_fields": [
+                "underlying_price",
+                "underlying_vwap",
+                "account_value",
+                "max_contract_price",
+                "max_open_positions",
+            ],
+            "notes": "Static form preview only. The live route helps enter broker-visible fields and cannot execute broker actions.",
+        }
+
     def _manual_option_position_watch_schema_preview(self) -> dict[str, Any]:
         return {
             "status": "POSITION_PROFIT_REVIEW",
@@ -835,6 +928,8 @@ class DebugValidationService:
             "run_latest_harvest_followup",
             "get_ops_command_center",
             "get_trading_day_launch_checklist",
+            "get_tomorrow_operator_brief",
+            "run_go_live_rehearsal",
             "run_trading_day_heartbeat",
             "summarize_trading_day_alerts",
             "run_morning_readiness_autopilot",
@@ -865,7 +960,7 @@ class DebugValidationService:
         return {name: name in available for name in required}
 
     def _category(self, name: str) -> str:
-        if "harvest" in name or "readiness" in name or "observer" in name or "playbook" in name or "command_center" in name or "launch" in name or "heartbeat" in name or "autopilot" in name or "cycle" in name or "preflight" in name or "desk" in name or "manual_broker" in name or "paper" in name or "journal" in name or "checkpoint" in name:
+        if "harvest" in name or "readiness" in name or "observer" in name or "playbook" in name or "command_center" in name or "launch" in name or "brief" in name or "rehearsal" in name or "heartbeat" in name or "autopilot" in name or "cycle" in name or "preflight" in name or "desk" in name or "manual_broker" in name or "paper" in name or "journal" in name or "checkpoint" in name:
             return "market_operations"
         if "evidence" in name or "blueprint" in name or "feature" in name or "scoring" in name:
             return "research_validation"
@@ -894,6 +989,10 @@ class DebugValidationService:
             return "Review-only command center summary; reads logs and suggests the next safe action."
         if "launch" in name:
             return "Review-only trading-day launch checklist; maps go/no-go gates and next safe actions."
+        if "brief" in name:
+            return "Review-only tomorrow operator brief; maps safe pages, fallback validation, and hard stops."
+        if "rehearsal" in name:
+            return "Review-only go-live rehearsal; checks workflow readiness and required URLs without broker action."
         if "autopilot" in name:
             return "Review-only morning readiness summary; checks data readiness, ledger state, and next safe action."
         if "cycle" in name:

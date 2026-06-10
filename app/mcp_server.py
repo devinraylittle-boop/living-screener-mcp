@@ -65,6 +65,17 @@ def _version_payload() -> dict:
     }
 
 
+def _resolve_universe(service_container, tickers: list[str] | None) -> list[str]:
+    settings = service_container.settings
+    configured = (
+        tickers
+        or getattr(settings, "default_tickers", None)
+        or getattr(settings, "scalp_watchlist", None)
+        or getattr(settings, "default_watchlist", ())
+    )
+    return [str(ticker).upper().strip() for ticker in configured if str(ticker).strip()]
+
+
 @mcp.tool
 def run_market_scan(mode: str, tickers: list[str] | None = None, max_candidates: int = 25) -> dict:
     return container.scanner.run_market_scan(mode, tickers, max_candidates)
@@ -103,6 +114,16 @@ def get_ops_command_center(tickers: list[str] | None = None, account_value: floa
 @mcp.tool
 def get_trading_day_launch_checklist(tickers: list[str] | None = None, account_value: float = 50.0, max_candidates: int = 25) -> dict:
     return _get_trading_day_launch_checklist(container, tickers, account_value, max_candidates)
+
+
+@mcp.tool
+def get_tomorrow_operator_brief(tickers: list[str] | None = None, account_value: float = 50.0, max_candidates: int = 25) -> dict:
+    return _get_tomorrow_operator_brief(container, tickers, account_value, max_candidates)
+
+
+@mcp.tool
+def run_go_live_rehearsal(tickers: list[str] | None = None, account_value: float = 50.0, max_candidates: int = 25, include_market_check: bool = False) -> dict:
+    return _run_go_live_rehearsal(container, tickers, account_value, max_candidates, include_market_check)
 
 
 @mcp.tool
@@ -648,7 +669,7 @@ def _get_ops_command_center(service_container, tickers: list[str] | None, accoun
 
 def _get_trading_day_launch_checklist(service_container, tickers: list[str] | None, account_value: float, max_candidates: int) -> dict:
     max_candidates = max(1, min(int(max_candidates or 25), 50))
-    universe = [str(ticker).upper().strip() for ticker in (tickers or service_container.settings.default_tickers) if str(ticker).strip()]
+    universe = _resolve_universe(service_container, tickers)
     ticker_query = ",".join(universe)
     account_ref = _float_or_zero(account_value) or 50.0
     session_risk = _get_session_risk_guard(service_container, account_ref, None, 2)
@@ -796,6 +817,290 @@ def _get_trading_day_launch_checklist(service_container, tickers: list[str] | No
     return service_container.events.log("trading_day_launch_checklist", payload)
 
 
+def _get_tomorrow_operator_brief(service_container, tickers: list[str] | None, account_value: float, max_candidates: int) -> dict:
+    max_candidates = max(1, min(int(max_candidates or 25), 50))
+    universe = _resolve_universe(service_container, tickers)
+    ticker_query = ",".join(universe)
+    account_ref = _float_or_zero(account_value) or 50.0
+    contract_cap = service_container.settings.scalp_max_contract_price
+    session_risk = _get_session_risk_guard(service_container, account_ref, None, 2)
+    paper_ledger = _summarize_manual_option_paper_trades(service_container, 100)
+    latest_launch = _latest_payload(service_container, "trading_day_launch_checklist")
+    latest_heartbeat = _latest_payload(service_container, "trading_day_heartbeat")
+    latest_live_cycle = _latest_payload(service_container, "live_review_cycle")
+    latest_manual_action = _latest_payload(service_container, "manual_broker_action")
+    latest_checkpoint = _latest_payload(service_container, "journal_checkpoint")
+    pending_recheck_required = bool(latest_manual_action and latest_manual_action.get("pending_buy"))
+    session_risk_blocked = session_risk.get("status") == "SESSION_RISK_BLOCKED"
+
+    if pending_recheck_required:
+        status = "OPERATOR_PENDING_RECHECK_REQUIRED"
+        next_action = "Run pending-buy recheck before any new scan or review loop."
+    elif session_risk_blocked:
+        status = "OPERATOR_SESSION_RISK_BLOCKED"
+        next_action = "Manage or close/log open paper/manual exposure before considering another idea."
+    else:
+        status = "OPERATOR_READY_TO_START"
+        next_action = "Open launch, morning autopilot, and day monitor; wait for clean market data before live review."
+
+    action_links = {
+        "version": "/version",
+        "tools": "/tools",
+        "health_full": f"/health/full?expected_build_version={BUILD_VERSION}",
+        "debug_schema": f"/debug/scan-schema?expected_build_version={BUILD_VERSION}",
+        "launch": f"/ops/trading-day-launch?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&format=html",
+        "morning_autopilot": f"/ops/morning-autopilot?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&format=html",
+        "day_monitor": f"/ops/day-monitor?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={contract_cap}&format=html",
+        "day_alerts": "/ops/day-alerts?limit=50&format=html",
+        "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html",
+        "live_review_cycle": f"/ops/live-review-cycle?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={contract_cap}&format=html",
+        "manual_snapshot_form": "/trade/manual-form?format=html",
+        "manual_trade_desk": "/trade/manual-desk",
+        "manual_action_journal": "/trade/manual-action",
+        "pending_recheck": "/trade/pending-recheck",
+        "paper_ledger": "/paper/options/summary?format=html",
+        "learning_dashboard": "/learning/dashboard",
+        "journal_checkpoint": "/journal/checkpoint?limit=500&format=json",
+    }
+    validation_urls = [
+        "/version",
+        "/tools",
+        f"/health/full?expected_build_version={BUILD_VERSION}",
+        f"/debug/scan-schema?expected_build_version={BUILD_VERSION}",
+    ]
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "mode": "tomorrow_operator_brief",
+        "generated_at": utc_now(),
+        "timezone": "America/Chicago",
+        "universe": universe,
+        "account_value_reference": account_ref,
+        "max_candidates": max_candidates,
+        "small_account_contract_cap": contract_cap,
+        "next_action": next_action,
+        "safety": {
+            "review_only": True,
+            "place_orders": False,
+            "market_orders_allowed": False,
+            "manual_approval_required": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        },
+        "session_risk_guard": _compact_event(session_risk),
+        "paper_ledger": {
+            "status": paper_ledger.get("status"),
+            "entry_count": paper_ledger.get("entry_count"),
+            "open_count": paper_ledger.get("open_count"),
+            "closed_count": paper_ledger.get("closed_count"),
+            "win_rate": paper_ledger.get("win_rate"),
+            "total_pnl_dollars": paper_ledger.get("total_pnl_dollars"),
+        },
+        "latest": {
+            "launch": _compact_event(latest_launch),
+            "heartbeat": _compact_event(latest_heartbeat),
+            "live_review_cycle": _compact_event(latest_live_cycle),
+            "manual_broker_action": _compact_event(latest_manual_action),
+            "journal_checkpoint": _compact_event(latest_checkpoint),
+        },
+        "morning_sequence": [
+            {
+                "step": "1. Confirm deployment",
+                "target_time_ct": "Before open",
+                "link": action_links["health_full"],
+                "pass_condition": "OK and build matches.",
+            },
+            {
+                "step": "2. Open launch page",
+                "target_time_ct": "Before open",
+                "link": action_links["launch"],
+                "pass_condition": "No pending recheck and session risk not blocked.",
+            },
+            {
+                "step": "3. Run morning autopilot",
+                "target_time_ct": "Before open",
+                "link": action_links["morning_autopilot"],
+                "pass_condition": "Data/readiness state is clear enough to observe.",
+            },
+            {
+                "step": "4. Leave day monitor open",
+                "target_time_ct": "Market hours",
+                "link": action_links["day_monitor"],
+                "pass_condition": "Heartbeat cadence runs without execution capability.",
+            },
+            {
+                "step": "5. Use live cycle only after stabilization",
+                "target_time_ct": "After opening noise",
+                "link": action_links["live_review_cycle"],
+                "pass_condition": "Stock setup, options quality, small-account gate, and session risk all pass.",
+            },
+            {
+                "step": "6. Manual desk only with broker-visible fields",
+                "target_time_ct": "Only if candidate survives",
+                "link": action_links["manual_trade_desk"],
+                "pass_condition": "Manual desk ready and session risk clear.",
+            },
+            {
+                "step": "7. Log and checkpoint",
+                "target_time_ct": "After any decision",
+                "link": action_links["journal_checkpoint"],
+                "pass_condition": "Paper/manual action and learning evidence saved.",
+            },
+        ],
+        "session_schedule_ct": [
+            {"time": "08:20-08:30", "focus": "Build, safety, and session-risk check only."},
+            {"time": "08:30-08:50", "focus": "Observe opening volatility; do not force options reviews."},
+            {"time": "08:50-10:15", "focus": "Run live review cycle only when data, spreads, and direction are clean."},
+            {"time": "10:15-12:30", "focus": "Lower activity; keep monitor/alerts open and log misses."},
+            {"time": "12:30-14:15", "focus": "Afternoon manual-review window if gates are clean."},
+            {"time": "After close", "focus": "Review outcomes, classify mistakes, checkpoint journal."},
+        ],
+        "chatgpt_connector_fallback": {
+            "short_status": "If ChatGPT says the connector is unavailable, use public endpoints instead of treating the app as broken.",
+            "validation_urls": validation_urls,
+            "prompt": (
+                "Living Screener MCP may be connected but the callable namespace may not be exposed in this turn. "
+                "First try get_version and get_safety_config. If unavailable, use public fallback endpoints /version, /tools, "
+                f"/health/full?expected_build_version={BUILD_VERSION}, and /debug/scan-schema?expected_build_version={BUILD_VERSION}. "
+                "Report endpoint/runtime failure only as endpoint access failed from this runtime. Do not create a trade plan unless explicitly requested and safety gates pass."
+            ),
+        },
+        "manual_trade_gate": [
+            "Build and safety confirmed.",
+            "No pending buy older than 60 seconds without recheck.",
+            "Session risk guard is not SESSION_RISK_BLOCKED.",
+            "Live review cycle status is LIVE_CYCLE_CANDIDATES_READY.",
+            "Candidate is REVIEW_ONLY_OPTIONS_READY.",
+            "Small-account gate is SMALL_ACCOUNT_SCALP_ACCEPTABLE.",
+            "Broker-visible snapshot matches or improves the reviewed contract.",
+            "Manual trade desk returns MANUAL_TRADE_DESK_READY.",
+            "Limit-only discipline; no market orders.",
+            "Any broker action is manual/outside MCP and must be logged afterward.",
+        ],
+        "absolute_no_trade_rules": [
+            "No broker action from this MCP.",
+            "No market orders.",
+            "No stock-setup-only trades.",
+            "No OPTIONS_CHAIN_ACCEPTABLE-only trades.",
+            "No new idea while session risk is blocked.",
+            "No stale pending buy trusted after 60 seconds.",
+            "No rule changes from one outcome or without backtesting.",
+        ],
+        "action_links": action_links,
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "broker_action": False,
+        "notes": [
+            "Operator brief is a human runbook; it does not run a scan or create a trade plan.",
+            "Use this as the first page tomorrow so every next step goes through the same safety gates.",
+            "Accuracy comes before opportunity count; PASS remains correct when any required evidence is missing.",
+        ],
+    }
+    return service_container.events.log("tomorrow_operator_brief", payload)
+
+
+def _run_go_live_rehearsal(
+    service_container,
+    tickers: list[str] | None,
+    account_value: float,
+    max_candidates: int,
+    include_market_check: bool = False,
+) -> dict:
+    max_candidates = max(1, min(int(max_candidates or 25), 50))
+    universe = _resolve_universe(service_container, tickers)
+    ticker_query = ",".join(universe)
+    account_ref = _float_or_zero(account_value) or 50.0
+    brief = _get_tomorrow_operator_brief(service_container, universe, account_ref, max_candidates)
+    market_readiness = _market_readiness_check(service_container, universe, max_candidates) if include_market_check else None
+    session_risk = brief.get("session_risk_guard") or {}
+    operator_status = str(brief.get("status") or "")
+    blocking_reasons: list[str] = []
+    warnings: list[str] = []
+
+    if operator_status == "OPERATOR_PENDING_RECHECK_REQUIRED":
+        blocking_reasons.append("Pending buy recheck is required before any new review loop.")
+    if operator_status == "OPERATOR_SESSION_RISK_BLOCKED" or session_risk.get("status") == "SESSION_RISK_BLOCKED":
+        blocking_reasons.append("Session risk guard is blocking new manual option ideas.")
+    if include_market_check and market_readiness:
+        readiness_status = str(market_readiness.get("status") or "")
+        if readiness_status == "MARKET_DATA_BLOCKED":
+            blocking_reasons.append("Market readiness reports blocked quote/candle data.")
+        elif readiness_status == "MARKET_READINESS_UNKNOWN":
+            warnings.append("Market readiness is unknown; use observation mode until data improves.")
+        elif readiness_status == "MARKET_DATA_READY_NO_CANDIDATES":
+            warnings.append("Market data is usable but no stock candidates are present.")
+
+    if blocking_reasons:
+        status = "GO_LIVE_REHEARSAL_BLOCKED"
+        next_action = "Fix the blocking item before starting tomorrow's live review workflow."
+    elif warnings:
+        status = "GO_LIVE_REHEARSAL_CAUTION"
+        next_action = "Open the operator brief and day monitor; do not force trades while cautions remain."
+    else:
+        status = "GO_LIVE_REHEARSAL_READY"
+        next_action = "Deploy/validate this build, then start tomorrow at the operator brief and day monitor."
+
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "mode": "go_live_rehearsal",
+        "generated_at": utc_now(),
+        "universe": universe,
+        "account_value_reference": account_ref,
+        "max_candidates": max_candidates,
+        "include_market_check": bool(include_market_check),
+        "next_action": next_action,
+        "blocking_reasons": blocking_reasons,
+        "warnings": warnings,
+        "safety": {
+            "review_only": True,
+            "place_orders": False,
+            "market_orders_allowed": False,
+            "manual_approval_required": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        },
+        "operator_brief": {
+            "status": brief.get("status"),
+            "next_action": brief.get("next_action"),
+            "session_risk_status": session_risk.get("status"),
+            "paper_open_count": (brief.get("paper_ledger") or {}).get("open_count"),
+        },
+        "market_readiness": _compact_autopilot_result(market_readiness) if market_readiness else None,
+        "required_live_urls": [
+            {"label": "Root operator brief", "url": "/", "expected": "HTML page with Tomorrow Operator Brief."},
+            {"label": "Version", "url": "/version", "expected": f"build_version {BUILD_VERSION}."},
+            {"label": "Tools", "url": "/tools", "expected": "Includes run_go_live_rehearsal and get_tomorrow_operator_brief."},
+            {"label": "Full health", "url": f"/health/full?expected_build_version={BUILD_VERSION}", "expected": "OK, not BUILD_MISMATCH."},
+            {"label": "Debug schema", "url": f"/debug/scan-schema?expected_build_version={BUILD_VERSION}", "expected": "Includes rehearsal and operator brief previews."},
+            {"label": "Tomorrow brief", "url": f"/ops/tomorrow-brief?tickers={ticker_query}&account_value={account_ref}&format=html", "expected": "Readable operator page."},
+            {"label": "Go-live rehearsal", "url": f"/ops/go-live-rehearsal?tickers={ticker_query}&account_value={account_ref}&format=html", "expected": "GO_LIVE_REHEARSAL_READY or clear blocking reasons."},
+            {"label": "Manual snapshot form", "url": "/trade/manual-form?format=html", "expected": "Readable form for broker-visible option fields."},
+        ],
+        "tomorrow_open_tabs": [
+            {"label": "Operator brief", "url": f"/ops/tomorrow-brief?tickers={ticker_query}&account_value={account_ref}&format=html"},
+            {"label": "Day monitor", "url": f"/ops/day-monitor?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&format=html"},
+            {"label": "Day alerts", "url": "/ops/day-alerts?limit=50&format=html"},
+            {"label": "Session risk", "url": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html"},
+            {"label": "Manual snapshot form", "url": "/trade/manual-form?format=html"},
+            {"label": "Paper ledger", "url": "/paper/options/summary?format=html"},
+        ],
+        "manual_trade_gate": brief.get("manual_trade_gate") or [],
+        "absolute_no_trade_rules": brief.get("absolute_no_trade_rules") or [],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "broker_action": False,
+        "notes": [
+            "Rehearsal checks operator readiness and optional market data readiness; it does not rank options or create a trade plan.",
+            "Use include_market_check=true only when you want a fresh market-readiness scan as part of the rehearsal.",
+            "A READY rehearsal means the workflow can start; it is not a trade recommendation.",
+        ],
+    }
+    return service_container.events.log("go_live_rehearsal", payload)
+
+
 def _market_phase(force_phase: str | None = None) -> dict[str, Any]:
     forced = str(force_phase or "").strip().lower()
     allowed = {"premarket", "opening", "active", "late", "afterhours", "closed", "offhours"}
@@ -853,7 +1158,7 @@ def _run_trading_day_heartbeat(
     review_top_n = max(1, min(int(review_top_n or 8), 20))
     account_value = _float_or_zero(account_value) or 50.0
     max_contract_price = max_contract_price if max_contract_price is not None else service_container.settings.scalp_max_contract_price
-    universe = [str(ticker).upper().strip() for ticker in (tickers or service_container.settings.default_tickers) if str(ticker).strip()]
+    universe = _resolve_universe(service_container, tickers)
     ticker_query = ",".join(universe)
     phase_info = _market_phase(force_phase)
     phase = str(phase_info.get("phase") or "offhours")
@@ -1127,7 +1432,7 @@ def _summarize_trading_day_alerts(service_container, limit: int = 50) -> dict:
 
 def _run_morning_readiness_autopilot(service_container, tickers: list[str] | None, account_value: float, max_candidates: int) -> dict:
     max_candidates = max(1, min(int(max_candidates or 25), 50))
-    universe = [str(ticker).upper().strip() for ticker in (tickers or service_container.settings.default_tickers) if str(ticker).strip()]
+    universe = _resolve_universe(service_container, tickers)
     account_ref = _float_or_zero(account_value) or 50.0
     session_risk = _get_session_risk_guard(service_container, account_ref, None, 2)
     readiness = _market_readiness_check(service_container, universe, max_candidates)
@@ -1217,7 +1522,7 @@ def _run_live_review_cycle(
 ) -> dict:
     max_candidates = max(1, min(int(max_candidates or 25), 50))
     review_top_n = max(1, min(int(review_top_n or 8), 20))
-    universe = [str(ticker).upper().strip() for ticker in (tickers or service_container.settings.default_tickers) if str(ticker).strip()]
+    universe = _resolve_universe(service_container, tickers)
     effective_contract_cap = max_contract_price
     if effective_contract_cap is None:
         effective_contract_cap = service_container.settings.scalp_max_contract_price
@@ -1327,7 +1632,7 @@ def _run_live_review_cycle(
 def _run_market_open_observer(service_container, tickers: list[str] | None, max_candidates: int, cadence_minutes: int) -> dict:
     max_candidates = max(1, min(int(max_candidates or 25), 50))
     cadence_minutes = max(1, min(int(cadence_minutes or 5), 30))
-    universe = [str(ticker).upper().strip() for ticker in (tickers or service_container.settings.default_tickers) if str(ticker).strip()]
+    universe = _resolve_universe(service_container, tickers)
     scan = service_container.scanner.run_market_scan("scalp_review", universe, max_candidates)
     rows = list(scan.get("top_candidates") or []) + list(scan.get("pass_list") or [])
     valid_rows = [row for row in rows if row.get("data_status") == "valid"]

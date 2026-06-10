@@ -17,6 +17,7 @@ from app.fallback_endpoints import (
     fallback_explain_premove_score,
     fallback_feature_registry,
     fallback_global_research_scan,
+    fallback_go_live_rehearsal,
     fallback_harvest_followup,
     fallback_journal_checkpoint,
     fallback_learning_classify,
@@ -27,6 +28,7 @@ from app.fallback_endpoints import (
     fallback_log_review_decision,
     fallback_manual_preflight,
     fallback_manual_broker_action,
+    fallback_manual_snapshot_form,
     fallback_manual_trade_desk,
     fallback_market_open_observer,
     fallback_market_scan,
@@ -42,12 +44,14 @@ from app.fallback_endpoints import (
     fallback_paper_option_watch,
     fallback_pending_recheck,
     fallback_review_harvest,
+    fallback_release_manifest,
     fallback_premove_blueprint,
     fallback_session_playbook,
     fallback_session_risk_guard,
     fallback_safety,
     fallback_scalp_scan,
     fallback_scoring_model,
+    fallback_tomorrow_operator_brief,
     fallback_trading_day_launch,
     fallback_trading_day_heartbeat,
     fallback_validate_broker_snapshot,
@@ -63,12 +67,14 @@ def create_app():
     app = mcp.http_app(path="/mcp", transport="streamable-http")
     app.state.settings = settings
     app.state.mcp = mcp
+    app.add_route("/", fallback_tomorrow_operator_brief, methods=["GET"])
     app.add_route("/health", health, methods=["GET"])
     app.add_route("/health/full", fallback_health_full, methods=["GET"])
     app.add_route("/config", safe_config, methods=["GET"])
     app.add_route("/version", version, methods=["GET"])
     app.add_route("/tools", tools, methods=["GET"])
     app.add_route("/safety", fallback_safety, methods=["GET"])
+    app.add_route("/release-manifest", fallback_release_manifest, methods=["GET"])
     app.add_route("/scan/market", fallback_market_scan, methods=["GET"])
     app.add_route("/scan/scalp", fallback_scalp_scan, methods=["GET"])
     app.add_route("/ops/market-readiness", fallback_market_readiness, methods=["GET"])
@@ -77,6 +83,8 @@ def create_app():
     app.add_route("/ops/harvest-followup", fallback_harvest_followup, methods=["GET"])
     app.add_route("/ops/command-center", fallback_command_center, methods=["GET"])
     app.add_route("/ops/trading-day-launch", fallback_trading_day_launch, methods=["GET"])
+    app.add_route("/ops/tomorrow-brief", fallback_tomorrow_operator_brief, methods=["GET"])
+    app.add_route("/ops/go-live-rehearsal", fallback_go_live_rehearsal, methods=["GET"])
     app.add_route("/ops/day-heartbeat", fallback_trading_day_heartbeat, methods=["GET"])
     app.add_route("/ops/day-monitor", fallback_day_monitor, methods=["GET"])
     app.add_route("/ops/day-alerts", fallback_day_alerts, methods=["GET"])
@@ -86,6 +94,7 @@ def create_app():
     app.add_route("/ops/observer-followup", fallback_observer_followup, methods=["GET"])
     app.add_route("/review/options", fallback_options_review, methods=["GET"])
     app.add_route("/review/manual-preflight", fallback_manual_preflight, methods=["GET", "POST"])
+    app.add_route("/trade/manual-form", fallback_manual_snapshot_form, methods=["GET"])
     app.add_route("/trade/manual-desk", fallback_manual_trade_desk, methods=["GET", "POST"])
     app.add_route("/trade/manual-action", fallback_manual_broker_action, methods=["GET", "POST"])
     app.add_route("/trade/pending-recheck", fallback_pending_recheck, methods=["GET", "POST"])
