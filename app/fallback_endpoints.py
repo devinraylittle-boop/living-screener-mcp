@@ -11,6 +11,7 @@ from starlette.responses import HTMLResponse, JSONResponse
 from app.mcp_server import (
     _build_manual_trade_preflight_ticket,
     _close_manual_option_paper_trade,
+    _export_journal_checkpoint,
     _get_ops_command_center,
     _get_market_session_playbook,
     _log_manual_option_paper_entry,
@@ -993,6 +994,58 @@ def _paper_option_summary_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Paper Option Ledger", body, payload)
 
 
+def _journal_checkpoint_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    count_rows = []
+    for event_type, count in sorted((result.get("event_type_counts") or {}).items()):
+        count_rows.append(
+            "<tr>"
+            f"<td>{escape(str(event_type))}</td>"
+            f"<td>{escape(str(count))}</td>"
+            "</tr>"
+        )
+    recent_rows = []
+    for event in (result.get("events") or [])[:25]:
+        recent_rows.append(
+            "<tr>"
+            f"<td>{escape(str(event.get('id') or ''))}</td>"
+            f"<td>{escape(str(event.get('timestamp') or ''))}</td>"
+            f"<td>{escape(str(event.get('event_type') or ''))}</td>"
+            f"<td>{escape(str((event.get('payload') or {}).get('status') or ''))}</td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Journal Checkpoint</h1>
+    <p>Export recent review, paper, outcome, and learning events before Render restarts or redeploys.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Events", result.get("event_count")),
+    ("Latest Event ID", result.get("latest_event_id")),
+    ("Checkpoint Event ID", result.get("checkpoint_event_id")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Event Type Counts</h2>
+<table>
+  <thead><tr><th>Event Type</th><th>Count</th></tr></thead>
+  <tbody>{''.join(count_rows) if count_rows else '<tr><td colspan="2">No events exported.</td></tr>'}</tbody>
+</table>
+<h2>Recent Events</h2>
+<table>
+  <thead><tr><th>ID</th><th>Time</th><th>Type</th><th>Status</th></tr></thead>
+  <tbody>{''.join(recent_rows) if recent_rows else '<tr><td colspan="4">No events exported.</td></tr>'}</tbody>
+</table>
+<h2>Restore Guidance</h2>
+{_list(result.get("restore_guidance") or [])}
+"""
+    return _html_page("Journal Checkpoint", body, payload)
+
+
 def _blueprint_html(payload: dict[str, Any], title: str) -> HTMLResponse:
     result = payload.get("result") or {}
     sections = []
@@ -1273,6 +1326,23 @@ async def fallback_paper_option_summary(request: Request) -> JSONResponse | HTML
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _paper_option_summary_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_journal_checkpoint(request: Request) -> JSONResponse | HTMLResponse:
+    if request.method == "POST":
+        body = await request.json()
+        limit = _int_or_default(str(body.get("limit")) if body.get("limit") is not None else None, 500)
+        event_types_raw = body.get("event_types")
+        event_types = event_types_raw if isinstance(event_types_raw, list) else None
+    else:
+        params = request.query_params
+        limit = _int_or_default(params.get("limit"), 500)
+        event_types = [item.strip() for item in str(params.get("event_types") or "").split(",") if item.strip()] or None
+    result = _export_journal_checkpoint(container, limit, event_types)
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _journal_checkpoint_html(payload)
     return JSONResponse(payload)
 
 

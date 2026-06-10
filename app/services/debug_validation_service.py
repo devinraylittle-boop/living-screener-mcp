@@ -32,6 +32,7 @@ class DebugValidationService:
                 "paper_option_ledger": "paper_option_ledger_v1",
                 "morning_autopilot": "morning_autopilot_v1",
                 "live_review_cycle": "live_review_cycle_v1",
+                "journal_checkpoint": "journal_checkpoint_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -40,6 +41,7 @@ class DebugValidationService:
                 "/ops/morning-autopilot",
                 "/ops/live-review-cycle",
                 "/paper/options/summary",
+                "/journal/checkpoint",
             ],
             "readiness": {
                 "version_endpoint": True,
@@ -59,6 +61,7 @@ class DebugValidationService:
                 "live_review_cycle_route": True,
                 "manual_preflight_route": True,
                 "paper_option_ledger_routes": True,
+                "journal_checkpoint_route": True,
             },
             "safety": self._safety(),
         }
@@ -232,6 +235,7 @@ class DebugValidationService:
             "live_review_cycle_schema_preview": self._live_review_cycle_schema_preview(),
             "manual_preflight_schema_preview": self._manual_preflight_schema_preview(),
             "paper_option_ledger_schema_preview": self._paper_option_ledger_schema_preview(),
+            "journal_checkpoint_schema_preview": self._journal_checkpoint_schema_preview(),
             "safety": self._safety(),
         }
 
@@ -495,6 +499,28 @@ class DebugValidationService:
             "notes": "Static paper-ledger schema preview only. It logs manual/paper ideas and outcomes, never broker orders.",
         }
 
+    def _journal_checkpoint_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "JOURNAL_CHECKPOINT_READY",
+            "schema_version": "journal_checkpoint_v1",
+            "event_count": 3,
+            "latest_event_id": 123,
+            "event_type_counts": {
+                "live_review_cycle": 1,
+                "manual_option_paper_close": 1,
+                "learning_outcome_classification": 1,
+            },
+            "events": [
+                {
+                    "id": 123,
+                    "timestamp": "2026-06-10T13:30:00Z",
+                    "event_type": "live_review_cycle",
+                    "payload": {"status": "NO_TRADE_PLAN"},
+                }
+            ],
+            "notes": "Static checkpoint schema preview only. The live tool exports local journal evidence and cannot execute broker actions.",
+        }
+
     def _required_tool_status(self, tools: list[str]) -> dict[str, bool]:
         required = [
             "get_version",
@@ -510,6 +536,7 @@ class DebugValidationService:
             "log_manual_option_paper_entry",
             "close_manual_option_paper_trade",
             "summarize_manual_option_paper_trades",
+            "export_journal_checkpoint",
             "get_trading_monster_blueprint",
             "get_feature_registry",
             "get_scoring_model",
@@ -524,7 +551,7 @@ class DebugValidationService:
         return {name: name in available for name in required}
 
     def _category(self, name: str) -> str:
-        if "harvest" in name or "readiness" in name or "playbook" in name or "command_center" in name or "autopilot" in name or "cycle" in name or "preflight" in name or "paper" in name:
+        if "harvest" in name or "readiness" in name or "playbook" in name or "command_center" in name or "autopilot" in name or "cycle" in name or "preflight" in name or "paper" in name or "journal" in name or "checkpoint" in name:
             return "market_operations"
         if "evidence" in name or "blueprint" in name or "feature" in name or "scoring" in name:
             return "research_validation"
@@ -559,6 +586,8 @@ class DebugValidationService:
             return "Review-only broker snapshot, risk, and manual ticket preflight."
         if "paper" in name:
             return "Paper/manual ledger for tracking hypothetical option entries and exits; no broker contact."
+        if "journal" in name or "checkpoint" in name:
+            return "Read-only journal checkpoint/export for preserving local review and learning evidence."
         if "scan" in name:
             return "Review-only scan; no execution path."
         return "Review-only tool."

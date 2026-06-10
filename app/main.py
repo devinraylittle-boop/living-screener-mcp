@@ -16,6 +16,7 @@ from app.fallback_endpoints import (
     fallback_feature_registry,
     fallback_global_research_scan,
     fallback_harvest_followup,
+    fallback_journal_checkpoint,
     fallback_learning_classify,
     fallback_learning_dashboard,
     fallback_learning_proposals,
@@ -72,6 +73,7 @@ def create_app():
     app.add_route("/paper/options/entry", fallback_paper_option_entry, methods=["POST"])
     app.add_route("/paper/options/close", fallback_paper_option_close, methods=["POST"])
     app.add_route("/paper/options/summary", fallback_paper_option_summary, methods=["GET"])
+    app.add_route("/journal/checkpoint", fallback_journal_checkpoint, methods=["GET", "POST"])
     app.add_route("/review/log-decision", fallback_log_review_decision, methods=["POST"])
     app.add_route("/review/outcome", fallback_check_review_outcome, methods=["GET", "POST"])
     app.add_route("/learning/classify", fallback_learning_classify, methods=["POST"])

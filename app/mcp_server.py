@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any
 
 from fastmcp import FastMCP
@@ -145,6 +146,11 @@ def close_manual_option_paper_trade(entry_id: int | None = None, contract_symbol
 @mcp.tool
 def summarize_manual_option_paper_trades(limit: int = 100) -> dict:
     return _summarize_manual_option_paper_trades(container, limit)
+
+
+@mcp.tool
+def export_journal_checkpoint(limit: int = 500, event_types: list[str] | None = None) -> dict:
+    return _export_journal_checkpoint(container, limit, event_types)
 
 
 @mcp.tool
@@ -995,6 +1001,58 @@ def _summarize_manual_option_paper_trades(service_container, limit: int = 100) -
         "notes": "Paper/manual ledger only. It never contacts a broker and never proves an order existed.",
     }
     return service_container.events.log("manual_option_paper_summary", payload)
+
+
+def _export_journal_checkpoint(service_container, limit: int = 500, event_types: list[str] | None = None) -> dict:
+    limit = max(1, min(int(limit or 500), 2000))
+    requested_types = [
+        str(event_type).strip()
+        for event_type in (event_types or [])
+        if str(event_type).strip()
+    ]
+    if requested_types:
+        events: list[dict[str, Any]] = []
+        for event_type in requested_types:
+            events.extend(service_container.events.recent(event_type, limit))
+        events = sorted(events, key=lambda item: int(item.get("id") or 0), reverse=True)[:limit]
+    else:
+        events = service_container.events.recent(None, limit)
+    counts = Counter(str(event.get("event_type") or "unknown") for event in events)
+    latest_event_id = max([int(event.get("id") or 0) for event in events], default=0)
+    checkpoint = {
+        "status": "JOURNAL_CHECKPOINT_READY",
+        "build_version": BUILD_VERSION,
+        "exported_at": utc_now(),
+        "limit": limit,
+        "event_filter": requested_types,
+        "event_count": len(events),
+        "latest_event_id": latest_event_id,
+        "event_type_counts": dict(counts),
+        "events": events,
+        "restore_guidance": [
+            "Save this JSON if Render restarts or redeploys before the next review.",
+            "Use the events as evidence for ChatGPT/Codex analysis and rule proposals.",
+            "Do not treat a checkpoint as an execution record; it is local MCP journal evidence only.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "notes": "Checkpoint export only. It does not contact a broker and does not place, submit, simulate, modify, or cancel orders.",
+    }
+    checkpoint_event = service_container.events.log(
+        "journal_checkpoint_export",
+        {
+            "status": "JOURNAL_CHECKPOINT_EXPORTED",
+            "build_version": BUILD_VERSION,
+            "exported_event_count": len(events),
+            "latest_event_id": latest_event_id,
+            "event_type_counts": dict(counts),
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        },
+    )
+    return {**checkpoint, "checkpoint_event_id": checkpoint_event.get("id")}
 
 
 def _find_open_paper_entry(service_container, entry_id: int | None, contract_symbol: str | None) -> dict[str, Any] | None:

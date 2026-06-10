@@ -36,9 +36,9 @@ class EventRepository:
         params: tuple[Any, ...]
         if event_type:
             sql += " WHERE event_type = ?"
-            params = (event_type, max(1, min(int(limit), 500)))
+            params = (event_type, max(1, min(int(limit), 2000)))
         else:
-            params = (max(1, min(int(limit), 500)),)
+            params = (max(1, min(int(limit), 2000)),)
         sql += " ORDER BY id DESC LIMIT ?"
         rows = []
         with self.database.connect() as connection:
