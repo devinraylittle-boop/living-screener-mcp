@@ -38,6 +38,7 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("review_candidate_for_options", tools.json()["tools"])
         self.assertIn("validate_broker_option_snapshot", tools.json()["tools"])
         self.assertIn("build_manual_trade_preflight_ticket", tools.json()["tools"])
+        self.assertIn("build_manual_trade_desk", tools.json()["tools"])
         self.assertIn("log_manual_option_paper_entry", tools.json()["tools"])
         self.assertIn("close_manual_option_paper_trade", tools.json()["tools"])
         self.assertIn("summarize_manual_option_paper_trades", tools.json()["tools"])
@@ -418,6 +419,68 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("Manual Trade Preflight", preflight_html.text)
         self.assertIn("SOFI260612P00015000", preflight_html.text)
 
+    def test_manual_trade_desk_endpoint_can_render_human_readable_html(self) -> None:
+        fake_trade_desk = {
+            "status": "MANUAL_TRADE_DESK_READY",
+            "build_version": "2026.06.10-manual-trade-desk",
+            "ticker": "SOFI",
+            "direction": "put",
+            "contract_symbol": "SOFI260612P00015000",
+            "preflight": {
+                "status": "MANUAL_PREFLIGHT_READY",
+                "option_validation": {"status": "OPTIONS_CHAIN_ACCEPTABLE"},
+                "risk_check": {"status": "APPROVE_FOR_REVIEW"},
+                "selected_contract": {
+                    "contract_symbol": "SOFI260612P00015000",
+                    "bid": 0.04,
+                    "ask": 0.045,
+                    "spread_pct": 0.1176,
+                    "volume": 500,
+                    "open_interest": 2000,
+                    "days_to_expiration": 3,
+                    "strike": 15,
+                },
+                "manual_ticket": {
+                    "contract_symbol": "SOFI260612P00015000",
+                    "order_type": "limit_only",
+                    "max_review_ask": 0.045,
+                    "max_loss_dollars": 4.5,
+                    "quantity": 1,
+                    "mcp_can_execute": False,
+                },
+                "blocking_reasons": [],
+                "warnings": ["Spread is wider than preferred."],
+            },
+            "paper_entry_request": {
+                "endpoint": "/paper/options/entry",
+                "payload": {"fill_price": 0.045, "quantity": 1, "underlying_price": 16.5},
+            },
+            "checkpoint_request": {"endpoint": "/journal/checkpoint?limit=500&format=json"},
+            "next_steps": ["Confirm the broker screen still shows this exact contract symbol."],
+            "review_only": True,
+            "paper_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints._build_manual_trade_desk", return_value=fake_trade_desk):
+            html = client.get(
+                "/trade/manual-desk?ticker=SOFI&contract_symbol=SOFI260612P00015000&direction=put&bid=0.04&ask=0.045&volume=500&open_interest=2000&dte=3&strike=15&underlying_price=16.5",
+                headers={"accept": "text/html"},
+            )
+            json_response = client.get(
+                "/trade/manual-desk?ticker=SOFI&contract_symbol=SOFI260612P00015000&direction=put&bid=0.04&ask=0.045&volume=500&open_interest=2000&dte=3&strike=15&underlying_price=16.5"
+            )
+
+        self.assertEqual(html.status_code, 200)
+        self.assertIn("Manual Trade Desk", html.text)
+        self.assertIn("SOFI260612P00015000", html.text)
+        self.assertIn("/paper/options/entry", html.text)
+        self.assertIn("/journal/checkpoint", html.text)
+        self.assertEqual(json_response.status_code, 200)
+        self.assertEqual(json_response.json()["result"]["status"], "MANUAL_TRADE_DESK_READY")
+        self.assertFalse(json_response.json()["can_place_order_from_this_mcp"])
+
     def test_offhours_and_crypto_fallbacks_are_review_only(self) -> None:
         fake_global_scan = {
             "status": "GLOBAL_RESEARCH_SCAN_COMPLETE",
@@ -534,10 +597,10 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.10-journal-checkpoint")
+        full = client.get("/health/full?expected_build_version=2026.06.10-manual-trade-desk")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-journal-checkpoint")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-manual-trade-desk")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -554,6 +617,7 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_morning_readiness_autopilot"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_live_review_cycle"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["build_manual_trade_preflight_ticket"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["build_manual_trade_desk"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["log_manual_option_paper_entry"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["close_manual_option_paper_trade"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["summarize_manual_option_paper_trades"])
@@ -584,6 +648,8 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(live_cycle_preview["status"], "LIVE_CYCLE_CANDIDATES_READY")
         preflight_preview = schema.json()["result"]["manual_preflight_schema_preview"]
         self.assertEqual(preflight_preview["status"], "MANUAL_PREFLIGHT_READY")
+        desk_preview = schema.json()["result"]["manual_trade_desk_schema_preview"]
+        self.assertEqual(desk_preview["status"], "MANUAL_TRADE_DESK_READY")
         ledger_preview = schema.json()["result"]["paper_option_ledger_schema_preview"]
         self.assertEqual(ledger_preview["status"], "PAPER_LEDGER_READY")
         checkpoint_preview = schema.json()["result"]["journal_checkpoint_schema_preview"]

@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.10-journal-checkpoint
+2026.06.10-manual-trade-desk
 ```
 
 ## Render Environment
@@ -82,6 +82,8 @@ Live review cycle is the market-hours decision page. Use `run_live_review_cycle`
 
 Journal checkpoints protect tomorrow's learning loop from Render restarts. Use `export_journal_checkpoint` or `/journal/checkpoint` after important scan/review/paper events to export recent local journal events, event-type counts, and restore guidance. Save the JSON externally and paste it back into ChatGPT/Codex later for analysis if the hosted local SQLite journal resets. This is evidence export only; it cannot create broker action.
 
+Manual trade desk is the final human checkpoint page. Use `build_manual_trade_desk` or `/trade/manual-desk` with broker-visible option fields after a live review cycle identifies a candidate. It runs manual preflight, shows blocking reasons/warnings, prepares a paper-entry payload, and reminds you to export a journal checkpoint after the decision. It still cannot place, submit, simulate, modify, or cancel broker orders.
+
 Off-hours research tools keep the system productive when U.S. options liquidity is stale or closed. Use `get_offhours_research_plan` and `run_global_research_scan` for underlying-only studies across crypto and global instruments. These scans do not validate U.S. options chains and must not be treated as broker action. Use them to find patterns worth logging and checking later with the mistake engine.
 
 The off-hours scanner treats unavailable volume as unknown instead of bearish. If high/low range data is unusable, it falls back to close-to-close movement expansion so crypto/global feeds can still be studied without pretending missing RVOL is truly weak.
@@ -102,7 +104,7 @@ These routes call the same review-only services as the MCP tools. They exist so 
 
 ```text
 GET /safety
-GET /health/full?expected_build_version=2026.06.10-journal-checkpoint
+GET /health/full?expected_build_version=2026.06.10-manual-trade-desk
 GET /scan/scalp?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
 GET /scan/market?mode=conservative_review_only&tickers=SPY,QQQ,KO,PG
 GET /ops/command-center?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50
@@ -124,6 +126,8 @@ GET /review/options?ticker=SMCI&direction=put&mode=scalp_review&format=html
 GET /review/options?ticker=SMCI&direction=put&mode=scalp_review&format=json
 GET /review/manual-preflight?ticker=SOFI&contract_symbol=SOFI260612P00015000&direction=put&bid=0.04&ask=0.045&volume=500&open_interest=2000&dte=3&strike=15&account_value=50
 POST /review/manual-preflight
+GET /trade/manual-desk?ticker=SOFI&contract_symbol=SOFI260612P00015000&direction=put&bid=0.04&ask=0.045&volume=500&open_interest=2000&dte=3&strike=15&account_value=50&format=html
+POST /trade/manual-desk
 POST /paper/options/entry
 POST /paper/options/close
 GET /paper/options/summary
@@ -151,7 +155,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.10-journal-checkpoint
+GET /debug/scan-schema?expected_build_version=2026.06.10-manual-trade-desk
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -159,6 +163,8 @@ GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=stri
 Opening `/review/options` in a normal browser returns a cleaner HTML view with status, gates, selected contract, warnings, rejected-contract diagnostics, and raw JSON. Add `format=json` when you want machine-readable output.
 
 Opening `/review/manual-preflight` with broker-visible contract fields returns a manual ticket view with options gate, risk gate, blocking reasons, warnings, and a checklist. It is the last review-only check before any separate manual broker action.
+
+Opening `/trade/manual-desk` with broker-visible contract fields returns one human-readable desk: preflight status, selected contract, paper-entry payload, checkpoint reminder, blocking reasons, warnings, and next steps.
 
 Opening `/paper/options/summary` shows the paper option ledger: open paper entries, recent closes, paper P/L, and learning labels. Use it to study what would have happened after a manual/paper idea without creating a broker action.
 
@@ -223,7 +229,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.10-journal-checkpoint",
+  "build_version": "2026.06.10-manual-trade-desk",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false
