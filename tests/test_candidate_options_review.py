@@ -38,11 +38,26 @@ class FakeOptions:
         return self.result
 
 
+class FakeSetupMemory:
+    def compare_snapshot(self, snapshot: dict, limit: int = 100) -> dict:
+        del limit
+        return {
+            "status": "SETUP_MEMORY_READY",
+            "memory_signal": "NO_MEMORY_YET",
+            "fingerprint": {"ticker": snapshot.get("ticker"), "tags": []},
+            "similar_review_summary": {"sample_size": 0},
+            "similar_lesson_summary": {"sample_size": 0},
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+        }
+
+
 class FakeContainer:
     def __init__(self, stock_item: dict, options_result: dict):
         self.events = FakeEvents()
         self.scanner = FakeScanner(stock_item)
         self.options = FakeOptions(options_result)
+        self.setup_memory = FakeSetupMemory()
         self.settings = type("Settings", (), {"scalp_min_relative_volume": 1.15, "scalp_max_contract_price": 1.0})()
 
 
@@ -83,6 +98,7 @@ class CandidateOptionsReviewTests(unittest.TestCase):
         self.assertEqual(result["status"], "REVIEW_ONLY_OPTIONS_READY")
         self.assertTrue(result["review_only"])
         self.assertFalse(result["order_allowed"])
+        self.assertEqual(result["setup_memory"]["memory_signal"], "NO_MEMORY_YET")
 
     def test_scalp_candidate_with_low_relative_volume_warns_but_can_advance(self) -> None:
         container = FakeContainer(

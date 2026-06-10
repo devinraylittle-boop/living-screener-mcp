@@ -50,6 +50,8 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("build_evidence_packet", tools.json()["tools"])
         self.assertIn("build_evidence_packets_from_scan", tools.json()["tools"])
         self.assertIn("summarize_evidence_packets", tools.json()["tools"])
+        self.assertIn("build_setup_fingerprint", tools.json()["tools"])
+        self.assertIn("compare_setup_memory", tools.json()["tools"])
 
     def test_browser_fallback_endpoints_are_review_only(self) -> None:
         client = TestClient(create_app())
@@ -134,6 +136,12 @@ class EndpointTests(unittest.TestCase):
                 "warnings": ["Selected contract spread is wider than preferred."],
             },
             "warnings": ["Selected contract spread is wider than preferred."],
+            "setup_memory": {
+                "memory_signal": "NO_MEMORY_YET",
+                "fingerprint": {"setup_key": "demo-key", "tags": ["wide_spread"]},
+                "similar_review_summary": {"sample_size": 0},
+                "similar_lesson_summary": {"sample_size": 0, "average_directional_return": None},
+            },
         }
         client = TestClient(create_app())
         with patch("app.fallback_endpoints._review_candidate_for_options", return_value=fake_review):
@@ -146,6 +154,8 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("SMALL_ACCOUNT_SCALP_ACCEPTABLE", html.text)
         self.assertIn("Friction Review", html.text)
         self.assertIn("MANAGEABLE_FRICTION", html.text)
+        self.assertIn("Setup Memory", html.text)
+        self.assertIn("NO_MEMORY_YET", html.text)
         self.assertEqual(json_response.status_code, 200)
         self.assertEqual(json_response.json()["result"]["ticker"], "SMCI")
 
@@ -178,6 +188,7 @@ class EndpointTests(unittest.TestCase):
                 ]
             },
         )
+        setup_memory = client.post("/learning/setup-memory", json={"snapshot": payload["snapshot"]})
         dashboard = client.get("/learning/dashboard", headers={"accept": "text/html"})
 
         self.assertEqual(classified.status_code, 200)
@@ -185,6 +196,8 @@ class EndpointTests(unittest.TestCase):
         self.assertFalse(classified.json()["can_place_order_from_this_mcp"])
         self.assertEqual(proposals.status_code, 200)
         self.assertTrue(proposals.json()["result"]["do_not_auto_apply"])
+        self.assertEqual(setup_memory.status_code, 200)
+        self.assertEqual(setup_memory.json()["result"]["status"], "SETUP_MEMORY_READY")
         self.assertEqual(dashboard.status_code, 200)
         self.assertIn("Learning Dashboard", dashboard.text)
 
@@ -304,10 +317,10 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.09-friction-score")
+        full = client.get("/health/full?expected_build_version=2026.06.09-setup-memory")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.09-friction-score")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.09-setup-memory")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -317,6 +330,7 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(manifest.status_code, 200)
         self.assertEqual(manifest.json()["result"]["status"], "TOOL_MANIFEST_READY")
         self.assertTrue(manifest.json()["result"]["required_tools"]["summarize_evidence_packets"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["compare_setup_memory"])
         self.assertEqual(schema.status_code, 200)
         self.assertEqual(schema.json()["result"]["status"], "SCAN_SCHEMA_READY")
         example = schema.json()["result"]["example_candidate"]
@@ -325,4 +339,6 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("evidence_packet", example)
         options_preview = schema.json()["result"]["options_review_schema_preview"]
         self.assertEqual(options_preview["small_account_review"]["friction_band"], "LOW_FRICTION")
+        setup_preview = schema.json()["result"]["setup_memory_schema_preview"]
+        self.assertEqual(setup_preview["status"], "SETUP_MEMORY_READY")
         self.assertFalse(schema.json()["can_place_order_from_this_mcp"])

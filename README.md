@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.09-friction-score
+2026.06.09-setup-memory
 ```
 
 ## Render Environment
@@ -64,6 +64,8 @@ Review outcome memory starts with `log_review_decision`, then later `check_revie
 
 The mistake engine turns those outcomes into research labels. Use `log_research_snapshot` to save a scan/review/pass snapshot, `classify_review_outcome` after an outcome check, `summarize_learning` to see which mistake types are recurring, and `generate_learning_rule_proposals` to produce evidence-backed rule-change hypotheses. These proposals are deliberately marked `do_not_auto_apply: true`; they must be backtested and manually accepted before any active gate changes.
 
+Setup memory compares new review-only candidates against prior logged reviews and learning labels. Every options review now includes `setup_memory`, with a setup fingerprint, similarity summaries, and a `memory_signal` such as `NO_MEMORY_YET`, `SIMILAR_REVIEW_HISTORY_FOUND`, `SIMILAR_EDGE_SEEN_BEFORE`, or `SIMILAR_RISK_SEEN_BEFORE`. This is advisory context only; it cannot approve a trade or alter active gates by itself.
+
 Off-hours research tools keep the system productive when U.S. options liquidity is stale or closed. Use `get_offhours_research_plan` and `run_global_research_scan` for underlying-only studies across crypto and global instruments. These scans do not validate U.S. options chains and must not be treated as broker action. Use them to find patterns worth logging and checking later with the mistake engine.
 
 The off-hours scanner treats unavailable volume as unknown instead of bearish. If high/low range data is unusable, it falls back to close-to-close movement expansion so crypto/global feeds can still be studied without pretending missing RVOL is truly weak.
@@ -84,7 +86,7 @@ These routes call the same review-only services as the MCP tools. They exist so 
 
 ```text
 GET /safety
-GET /health/full?expected_build_version=2026.06.09-friction-score
+GET /health/full?expected_build_version=2026.06.09-setup-memory
 GET /scan/scalp?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
 GET /scan/market?mode=conservative_review_only&tickers=SPY,QQQ,KO,PG
 GET /review/options?ticker=SMCI&direction=put&mode=scalp_review
@@ -97,6 +99,7 @@ GET /review/outcome?ticker=SMCI&direction=put&entry_reference=41.46&review_times
 POST /review/outcome
 POST /learning/classify
 POST /learning/proposals
+POST /learning/setup-memory
 GET /learning/dashboard
 GET /research/offhours
 GET /research/global-scan?market=crypto&period=5d&interval=5m
@@ -110,7 +113,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.09-friction-score
+GET /debug/scan-schema?expected_build_version=2026.06.09-setup-memory
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -166,7 +169,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.09-friction-score",
+  "build_version": "2026.06.09-setup-memory",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false
