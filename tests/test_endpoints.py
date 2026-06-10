@@ -34,6 +34,7 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("run_latest_harvest_followup", tools.json()["tools"])
         self.assertIn("get_ops_command_center", tools.json()["tools"])
         self.assertIn("get_trading_day_launch_checklist", tools.json()["tools"])
+        self.assertIn("run_trading_day_heartbeat", tools.json()["tools"])
         self.assertIn("run_morning_readiness_autopilot", tools.json()["tools"])
         self.assertIn("run_live_review_cycle", tools.json()["tools"])
         self.assertIn("run_market_open_observer", tools.json()["tools"])
@@ -427,7 +428,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_trade_desk_endpoint_can_render_human_readable_html(self) -> None:
         fake_trade_desk = {
             "status": "MANUAL_TRADE_DESK_READY",
-            "build_version": "2026.06.10-checkpoint-restore",
+            "build_version": "2026.06.10-day-heartbeat",
             "ticker": "SOFI",
             "direction": "put",
             "contract_symbol": "SOFI260612P00015000",
@@ -489,7 +490,7 @@ class EndpointTests(unittest.TestCase):
     def test_market_open_observer_endpoint_logs_evidence_without_broker_action(self) -> None:
         fake_observer = {
             "status": "OBSERVER_STOCK_CANDIDATES",
-            "build_version": "2026.06.10-checkpoint-restore",
+            "build_version": "2026.06.10-day-heartbeat",
             "mode": "market_open_observer",
             "cadence_minutes": 5,
             "candidate_count": 1,
@@ -545,7 +546,7 @@ class EndpointTests(unittest.TestCase):
     def test_observer_followup_endpoint_can_render_missed_move_learning(self) -> None:
         fake_followup = {
             "status": "OBSERVER_FOLLOWUP_LEARNING_NEEDED",
-            "build_version": "2026.06.10-checkpoint-restore",
+            "build_version": "2026.06.10-day-heartbeat",
             "mode": "observer_followup",
             "source_observation_count": 2,
             "items_checked": 3,
@@ -596,7 +597,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_broker_action_endpoint_records_pending_recheck_card(self) -> None:
         fake_action = {
             "status": "MANUAL_ACTION_PENDING_RECHECK_REQUIRED",
-            "build_version": "2026.06.10-checkpoint-restore",
+            "build_version": "2026.06.10-day-heartbeat",
             "ticker": "SOFI",
             "contract_symbol": "SOFI260612P00015000",
             "action_type": "pending_buy",
@@ -676,7 +677,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_launch_endpoint_renders_go_no_go_map(self) -> None:
         fake_launch = {
             "status": "LAUNCH_START_HERE",
-            "build_version": "2026.06.10-checkpoint-restore",
+            "build_version": "2026.06.10-day-heartbeat",
             "mode": "trading_day_launch_checklist",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -692,7 +693,7 @@ class EndpointTests(unittest.TestCase):
                 {
                     "phase": "Build and safety",
                     "go_condition": "Build matches expected version.",
-                    "primary_link": "/health/full?expected_build_version=2026.06.10-checkpoint-restore",
+                    "primary_link": "/health/full?expected_build_version=2026.06.10-day-heartbeat",
                     "stop_if": "Wrong build.",
                 },
                 {
@@ -721,6 +722,38 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(json_response.status_code, 200)
         self.assertEqual(json_response.json()["result"]["status"], "LAUNCH_START_HERE")
         self.assertFalse(json_response.json()["can_place_order_from_this_mcp"])
+
+    def test_trading_day_heartbeat_endpoint_renders_safe_cadence_tick(self) -> None:
+        fake_heartbeat = {
+            "status": "HEARTBEAT_NO_TRADE_PLAN",
+            "build_version": "2026.06.10-day-heartbeat",
+            "mode": "trading_day_heartbeat",
+            "phase": {"phase": "active", "forced": True, "now_et": "2026-06-10T11:00:00-04:00"},
+            "universe": ["SOFI", "SMCI"],
+            "operation": "live_review_cycle",
+            "operation_status": "LIVE_CYCLE_NO_ELIGIBLE_CANDIDATES",
+            "operation_result": {"id": 12, "status": "LIVE_CYCLE_NO_ELIGIBLE_CANDIDATES", "eligible_count": 0},
+            "next_action": "No eligible small-account scalp candidate; continue cadence without forcing a setup.",
+            "next_refresh_seconds": 300,
+            "pending_recheck_required": False,
+            "absolute_no_trade_rules": ["No market orders.", "No broker action from this MCP."],
+            "action_links": {"self": "/ops/day-heartbeat", "journal_checkpoint": "/journal/checkpoint?limit=500&format=json"},
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+            "broker_action": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints._run_trading_day_heartbeat", return_value=fake_heartbeat):
+            html = client.get("/ops/day-heartbeat?tickers=SOFI,SMCI&force_phase=active", headers={"accept": "text/html"})
+            json_response = client.get("/ops/day-heartbeat?tickers=SOFI,SMCI&force_phase=active")
+
+        self.assertEqual(html.status_code, 200)
+        self.assertIn("Trading Day Heartbeat", html.text)
+        self.assertIn("No market orders.", html.text)
+        self.assertEqual(json_response.status_code, 200)
+        self.assertEqual(json_response.json()["result"]["status"], "HEARTBEAT_NO_TRADE_PLAN")
+        self.assertFalse(json_response.json()["can_cancel_order_from_this_mcp"])
 
     def test_offhours_and_crypto_fallbacks_are_review_only(self) -> None:
         fake_global_scan = {
@@ -838,10 +871,10 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.10-checkpoint-restore")
+        full = client.get("/health/full?expected_build_version=2026.06.10-day-heartbeat")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-checkpoint-restore")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-day-heartbeat")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -856,6 +889,7 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_latest_harvest_followup"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_ops_command_center"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_trading_day_launch_checklist"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["run_trading_day_heartbeat"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_morning_readiness_autopilot"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_live_review_cycle"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_market_open_observer"])
@@ -890,6 +924,8 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(command_center_preview["status"], "READY_FOR_HARVEST")
         launch_preview = schema.json()["result"]["trading_day_launch_schema_preview"]
         self.assertEqual(launch_preview["status"], "LAUNCH_START_HERE")
+        heartbeat_preview = schema.json()["result"]["trading_day_heartbeat_schema_preview"]
+        self.assertEqual(heartbeat_preview["status"], "HEARTBEAT_NO_TRADE_PLAN")
         autopilot_preview = schema.json()["result"]["morning_autopilot_schema_preview"]
         self.assertEqual(autopilot_preview["status"], "AUTOPILOT_READY_FOR_HARVEST")
         live_cycle_preview = schema.json()["result"]["live_review_cycle_schema_preview"]
@@ -997,9 +1033,9 @@ class EndpointTests(unittest.TestCase):
         }
         fake_restore = {
             "status": "CHECKPOINT_RESTORE_READY",
-            "build_version": "2026.06.10-checkpoint-restore",
+            "build_version": "2026.06.10-day-heartbeat",
             "source_label": "unit_test",
-            "checkpoint_build_version": "2026.06.10-checkpoint-restore",
+            "checkpoint_build_version": "2026.06.10-day-heartbeat",
             "requested_event_count": 1,
             "restored_count": 1,
             "skipped_duplicate_count": 0,
