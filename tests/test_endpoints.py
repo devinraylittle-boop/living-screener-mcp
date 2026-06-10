@@ -33,6 +33,8 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("get_market_session_playbook", tools.json()["tools"])
         self.assertIn("run_latest_harvest_followup", tools.json()["tools"])
         self.assertIn("get_ops_command_center", tools.json()["tools"])
+        self.assertIn("run_morning_readiness_autopilot", tools.json()["tools"])
+        self.assertIn("run_live_review_cycle", tools.json()["tools"])
         self.assertIn("review_candidate_for_options", tools.json()["tools"])
         self.assertIn("validate_broker_option_snapshot", tools.json()["tools"])
         self.assertIn("build_manual_trade_preflight_ticket", tools.json()["tools"])
@@ -290,6 +292,42 @@ class EndpointTests(unittest.TestCase):
             "can_place_order_from_this_mcp": False,
             "can_cancel_order_from_this_mcp": False,
         }
+        fake_autopilot = {
+            "status": "AUTOPILOT_READY_FOR_HARVEST",
+            "next_action": "Run review harvest, then options-review only valid directional stock candidates.",
+            "readiness": {"status": "MARKET_REVIEW_READY", "candidate_count": 1, "valid_row_count": 2, "quote_problem_count": 0},
+            "paper_ledger": {"status": "PAPER_LEDGER_READY", "entry_count": 0, "open_count": 0, "closed_count": 0, "total_pnl_dollars": 0},
+            "session_blocks": [{"central_time": "08:50-10:15", "label": "First review harvest", "intent": "Review valid candidates."}],
+            "manual_trade_gate": ["Use limit-only review."],
+            "action_links": {"review_harvest": "/ops/review-harvest", "paper_ledger": "/paper/options/summary"},
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        fake_live_cycle = {
+            "status": "LIVE_CYCLE_CANDIDATES_READY",
+            "next_action": "Manually inspect the top candidate in broker, then run manual preflight with broker-visible bid/ask/volume/OI.",
+            "manual_preflight_required": True,
+            "readiness": {"status": "MARKET_REVIEW_READY", "data_status": "available", "valid_row_count": 2, "quote_problem_count": 0},
+            "harvest": {"status": "REVIEW_HARVEST_READY", "reviewed_count": 1, "eligible_count": 1, "watch_only_count": 0},
+            "ranked_candidates": [
+                {
+                    "ticker": "SOFI",
+                    "status": "REVIEW_ONLY_OPTIONS_READY",
+                    "direction": "put",
+                    "stock_setup": {"ticker": "SOFI", "score": 82, "direction": "short"},
+                    "small_account_review": {"status": "SMALL_ACCOUNT_SCALP_ACCEPTABLE", "priority_score": 90},
+                    "selected_contract": {"contract_symbol": "SOFI260612P00015000", "ask": 0.05, "max_loss_dollars": 5.0},
+                }
+            ],
+            "watch_only_reviews": [],
+            "paper_ledger": {"status": "PAPER_LEDGER_READY", "entry_count": 0, "open_count": 0, "closed_count": 0, "total_pnl_dollars": 0},
+            "manual_trade_gate": ["Manual preflight returns MANUAL_PREFLIGHT_READY."],
+            "action_links": {"manual_preflight": "/review/manual-preflight", "paper_ledger": "/paper/options/summary"},
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
         fake_preflight = {
             "status": "MANUAL_PREFLIGHT_READY",
             "ticker": "SOFI",
@@ -331,6 +369,10 @@ class EndpointTests(unittest.TestCase):
         ), patch(
             "app.fallback_endpoints._get_ops_command_center", return_value=fake_command_center
         ), patch(
+            "app.fallback_endpoints._run_morning_readiness_autopilot", return_value=fake_autopilot
+        ), patch(
+            "app.fallback_endpoints._run_live_review_cycle", return_value=fake_live_cycle
+        ), patch(
             "app.fallback_endpoints._build_manual_trade_preflight_ticket", return_value=fake_preflight
         ):
             readiness = client.get("/ops/market-readiness?tickers=SOFI,SMCI")
@@ -339,6 +381,8 @@ class EndpointTests(unittest.TestCase):
             playbook_html = client.get("/ops/session-playbook?tickers=SOFI,SMCI", headers={"accept": "text/html"})
             followup_html = client.get("/ops/harvest-followup?limit=5&classify=true", headers={"accept": "text/html"})
             command_center_html = client.get("/ops/command-center?tickers=SOFI,SMCI", headers={"accept": "text/html"})
+            autopilot_html = client.get("/ops/morning-autopilot?tickers=SOFI,SMCI", headers={"accept": "text/html"})
+            live_cycle_html = client.get("/ops/live-review-cycle?tickers=SOFI,SMCI", headers={"accept": "text/html"})
             preflight_html = client.get(
                 "/review/manual-preflight?ticker=SOFI&contract_symbol=SOFI260612P00015000&direction=put&bid=0.04&ask=0.045&volume=500&open_interest=2000&dte=3&strike=15",
                 headers={"accept": "text/html"},
@@ -363,6 +407,12 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(command_center_html.status_code, 200)
         self.assertIn("Ops Command Center", command_center_html.text)
         self.assertIn("Run review harvest.", command_center_html.text)
+        self.assertEqual(autopilot_html.status_code, 200)
+        self.assertIn("Morning Readiness Autopilot", autopilot_html.text)
+        self.assertIn("Run review harvest", autopilot_html.text)
+        self.assertEqual(live_cycle_html.status_code, 200)
+        self.assertIn("Live Review Cycle", live_cycle_html.text)
+        self.assertIn("SOFI260612P00015000", live_cycle_html.text)
         self.assertEqual(preflight_html.status_code, 200)
         self.assertIn("Manual Trade Preflight", preflight_html.text)
         self.assertIn("SOFI260612P00015000", preflight_html.text)
@@ -483,10 +533,10 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.09-paper-ledger")
+        full = client.get("/health/full?expected_build_version=2026.06.09-live-review-cycle")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.09-paper-ledger")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.09-live-review-cycle")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -500,6 +550,8 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_market_session_playbook"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_latest_harvest_followup"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_ops_command_center"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["run_morning_readiness_autopilot"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["run_live_review_cycle"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["build_manual_trade_preflight_ticket"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["log_manual_option_paper_entry"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["close_manual_option_paper_trade"])
@@ -524,6 +576,10 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(followup_preview["status"], "HARVEST_FOLLOWUP_COMPLETE")
         command_center_preview = schema.json()["result"]["ops_command_center_schema_preview"]
         self.assertEqual(command_center_preview["status"], "READY_FOR_HARVEST")
+        autopilot_preview = schema.json()["result"]["morning_autopilot_schema_preview"]
+        self.assertEqual(autopilot_preview["status"], "AUTOPILOT_READY_FOR_HARVEST")
+        live_cycle_preview = schema.json()["result"]["live_review_cycle_schema_preview"]
+        self.assertEqual(live_cycle_preview["status"], "LIVE_CYCLE_CANDIDATES_READY")
         preflight_preview = schema.json()["result"]["manual_preflight_schema_preview"]
         self.assertEqual(preflight_preview["status"], "MANUAL_PREFLIGHT_READY")
         ledger_preview = schema.json()["result"]["paper_option_ledger_schema_preview"]

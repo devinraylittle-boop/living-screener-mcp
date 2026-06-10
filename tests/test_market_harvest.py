@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from app.mcp_server import _get_market_session_playbook, _get_ops_command_center, _market_readiness_check, _run_latest_harvest_followup, _run_review_harvest
+from app.mcp_server import _get_market_session_playbook, _get_ops_command_center, _market_readiness_check, _run_latest_harvest_followup, _run_live_review_cycle, _run_morning_readiness_autopilot, _run_review_harvest
 
 
 class FakeEvents:
@@ -216,6 +216,28 @@ class MarketHarvestTests(unittest.TestCase):
         self.assertEqual(third["status"], "HARVEST_READY_NEEDS_FOLLOWUP")
         self.assertEqual(third["next_action"]["endpoint"], "/ops/harvest-followup")
         self.assertFalse(third["can_place_order_from_this_mcp"])
+
+    def test_morning_autopilot_summarizes_readiness_without_execution(self) -> None:
+        result = _run_morning_readiness_autopilot(self.container(), ["SOFI"], 50, 5)
+
+        self.assertEqual(result["event_type"], "morning_readiness_autopilot")
+        self.assertIn(result["status"], {"AUTOPILOT_READY_FOR_HARVEST", "AUTOPILOT_KEEP_SCANNING", "AUTOPILOT_DATA_BLOCKED", "AUTOPILOT_STANDBY"})
+        self.assertIn("readiness", result)
+        self.assertIn("paper_ledger", result)
+        self.assertIn("review_harvest", result["action_links"])
+        self.assertFalse(result["can_place_order_from_this_mcp"])
+        self.assertFalse(result["can_cancel_order_from_this_mcp"])
+
+    def test_live_review_cycle_runs_harvest_when_data_is_usable(self) -> None:
+        result = _run_live_review_cycle(self.container(), ["SOFI"], 50, 5, 3, None, False)
+
+        self.assertEqual(result["event_type"], "live_review_cycle")
+        self.assertIn(result["status"], {"LIVE_CYCLE_CANDIDATES_READY", "NO_TRADE_PLAN", "LIVE_CYCLE_DATA_BLOCKED", "LIVE_CYCLE_STANDBY"})
+        self.assertIn("readiness", result)
+        self.assertIn("paper_ledger", result)
+        self.assertIn("manual_preflight", result["action_links"])
+        self.assertFalse(result["can_place_order_from_this_mcp"])
+        self.assertFalse(result["can_cancel_order_from_this_mcp"])
 
 
 if __name__ == "__main__":

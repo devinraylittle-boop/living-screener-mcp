@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.09-paper-ledger
+2026.06.09-live-review-cycle
 ```
 
 ## Render Environment
@@ -76,6 +76,10 @@ Manual preflight tickets combine broker-visible option snapshots with the existi
 
 Paper option ledger tools let you study manual or hypothetical option decisions without touching a broker. Use `log_manual_option_paper_entry` after a paper/manual fill reference, then `close_manual_option_paper_trade` when you want to record the exit. The ledger calculates P/L, records the close, and sends the outcome into the mistake engine for learning labels. Use `summarize_manual_option_paper_trades` or `/paper/options/summary` to view open entries, recent closes, win rate, and paper P/L. These records do not prove a broker order existed and cannot place, submit, modify, simulate, or cancel orders.
 
+Morning readiness autopilot gives tomorrow's workflow a single starting page. Use `run_morning_readiness_autopilot` or `/ops/morning-autopilot` before and during the session to confirm build/safety, run market readiness, summarize the session playbook, check the paper ledger, and return the next safe action. It does not run a full review harvest automatically and cannot create broker action.
+
+Live review cycle is the market-hours decision page. Use `run_live_review_cycle` or `/ops/live-review-cycle` after the market has usable data. It checks readiness, stops early on bad data, runs review harvest only when data is usable, ranks only candidates that pass both stock setup and `SMALL_ACCOUNT_SCALP_ACCEPTABLE`, summarizes paper ledger state, and returns the next manual action. It cannot place, submit, simulate, modify, or cancel broker orders.
+
 Off-hours research tools keep the system productive when U.S. options liquidity is stale or closed. Use `get_offhours_research_plan` and `run_global_research_scan` for underlying-only studies across crypto and global instruments. These scans do not validate U.S. options chains and must not be treated as broker action. Use them to find patterns worth logging and checking later with the mistake engine.
 
 The off-hours scanner treats unavailable volume as unknown instead of bearish. If high/low range data is unusable, it falls back to close-to-close movement expansion so crypto/global feeds can still be studied without pretending missing RVOL is truly weak.
@@ -96,11 +100,15 @@ These routes call the same review-only services as the MCP tools. They exist so 
 
 ```text
 GET /safety
-GET /health/full?expected_build_version=2026.06.09-paper-ledger
+GET /health/full?expected_build_version=2026.06.09-live-review-cycle
 GET /scan/scalp?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
 GET /scan/market?mode=conservative_review_only&tickers=SPY,QQQ,KO,PG
 GET /ops/command-center?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50
 GET /ops/command-center?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&format=html
+GET /ops/morning-autopilot?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25
+GET /ops/morning-autopilot?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&format=html
+GET /ops/live-review-cycle?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25&review_top_n=8&max_contract_price=1.00
+GET /ops/live-review-cycle?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&format=html
 GET /ops/session-playbook?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50
 GET /ops/session-playbook?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&format=html
 GET /ops/market-readiness?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
@@ -138,7 +146,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.09-paper-ledger
+GET /debug/scan-schema?expected_build_version=2026.06.09-live-review-cycle
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -162,6 +170,10 @@ Opening `/ops/review-harvest` in a browser returns a ranked review-only harvest 
 Opening `/ops/session-playbook` returns a timed review-only operating checklist for pre-market checks, opening stabilization, harvest windows, afternoon decision review, and after-action learning. Opening `/ops/harvest-followup` grades the latest harvest's ranked candidates and sends the outcomes into the learning classifier when `classify=true`.
 
 Opening `/ops/command-center` returns the simplest live operations view: latest readiness, latest harvest, latest follow-up, latest learning labels, links for the next step, and the manual trade gate. It is meant to stay open during the trading window.
+
+Opening `/ops/morning-autopilot` returns the morning checkpoint: build/safety, readiness, paper ledger status, session blocks, manual trade gate, and next action links. Use this as the first page tomorrow before any harvest.
+
+Opening `/ops/live-review-cycle` returns the market-hours checkpoint: data readiness, harvest summary, ranked eligible candidates, watch-only reviews, paper ledger state, and the exact manual preflight gate. It is the page to use when you are deciding whether anything deserves broker-side inspection.
 
 Opening `/debug/scan-schema` returns a static example candidate with `key_signals.evidence_scorecard`, `evidence_packet`, `missing_modules`, `penalty_reasons`, `confidence_band`, `known_blindspots`, and `why_not_ranked`. It does not call market data or create a trade plan.
 
@@ -204,7 +216,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.09-paper-ledger",
+  "build_version": "2026.06.09-live-review-cycle",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false
