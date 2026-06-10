@@ -47,6 +47,7 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("close_manual_option_paper_trade", tools.json()["tools"])
         self.assertIn("summarize_manual_option_paper_trades", tools.json()["tools"])
         self.assertIn("export_journal_checkpoint", tools.json()["tools"])
+        self.assertIn("restore_journal_checkpoint", tools.json()["tools"])
         self.assertIn("log_review_decision", tools.json()["tools"])
         self.assertIn("check_review_outcome", tools.json()["tools"])
         self.assertIn("summarize_review_outcomes", tools.json()["tools"])
@@ -426,7 +427,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_trade_desk_endpoint_can_render_human_readable_html(self) -> None:
         fake_trade_desk = {
             "status": "MANUAL_TRADE_DESK_READY",
-            "build_version": "2026.06.10-trading-day-launch",
+            "build_version": "2026.06.10-checkpoint-restore",
             "ticker": "SOFI",
             "direction": "put",
             "contract_symbol": "SOFI260612P00015000",
@@ -488,7 +489,7 @@ class EndpointTests(unittest.TestCase):
     def test_market_open_observer_endpoint_logs_evidence_without_broker_action(self) -> None:
         fake_observer = {
             "status": "OBSERVER_STOCK_CANDIDATES",
-            "build_version": "2026.06.10-trading-day-launch",
+            "build_version": "2026.06.10-checkpoint-restore",
             "mode": "market_open_observer",
             "cadence_minutes": 5,
             "candidate_count": 1,
@@ -544,7 +545,7 @@ class EndpointTests(unittest.TestCase):
     def test_observer_followup_endpoint_can_render_missed_move_learning(self) -> None:
         fake_followup = {
             "status": "OBSERVER_FOLLOWUP_LEARNING_NEEDED",
-            "build_version": "2026.06.10-trading-day-launch",
+            "build_version": "2026.06.10-checkpoint-restore",
             "mode": "observer_followup",
             "source_observation_count": 2,
             "items_checked": 3,
@@ -595,7 +596,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_broker_action_endpoint_records_pending_recheck_card(self) -> None:
         fake_action = {
             "status": "MANUAL_ACTION_PENDING_RECHECK_REQUIRED",
-            "build_version": "2026.06.10-trading-day-launch",
+            "build_version": "2026.06.10-checkpoint-restore",
             "ticker": "SOFI",
             "contract_symbol": "SOFI260612P00015000",
             "action_type": "pending_buy",
@@ -675,7 +676,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_launch_endpoint_renders_go_no_go_map(self) -> None:
         fake_launch = {
             "status": "LAUNCH_START_HERE",
-            "build_version": "2026.06.10-trading-day-launch",
+            "build_version": "2026.06.10-checkpoint-restore",
             "mode": "trading_day_launch_checklist",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -691,7 +692,7 @@ class EndpointTests(unittest.TestCase):
                 {
                     "phase": "Build and safety",
                     "go_condition": "Build matches expected version.",
-                    "primary_link": "/health/full?expected_build_version=2026.06.10-trading-day-launch",
+                    "primary_link": "/health/full?expected_build_version=2026.06.10-checkpoint-restore",
                     "stop_if": "Wrong build.",
                 },
                 {
@@ -837,10 +838,10 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.10-trading-day-launch")
+        full = client.get("/health/full?expected_build_version=2026.06.10-checkpoint-restore")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-trading-day-launch")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-checkpoint-restore")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -866,6 +867,7 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(manifest.json()["result"]["required_tools"]["close_manual_option_paper_trade"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["summarize_manual_option_paper_trades"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["export_journal_checkpoint"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["restore_journal_checkpoint"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["summarize_evidence_packets"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["compare_setup_memory"])
         self.assertEqual(schema.status_code, 200)
@@ -906,6 +908,8 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(ledger_preview["status"], "PAPER_LEDGER_READY")
         checkpoint_preview = schema.json()["result"]["journal_checkpoint_schema_preview"]
         self.assertEqual(checkpoint_preview["status"], "JOURNAL_CHECKPOINT_READY")
+        restore_preview = schema.json()["result"]["journal_checkpoint_restore_schema_preview"]
+        self.assertEqual(restore_preview["status"], "CHECKPOINT_RESTORE_READY")
         self.assertFalse(schema.json()["can_place_order_from_this_mcp"])
 
     def test_paper_option_ledger_endpoints_are_review_only(self) -> None:
@@ -991,10 +995,30 @@ class EndpointTests(unittest.TestCase):
             "can_place_order_from_this_mcp": False,
             "can_cancel_order_from_this_mcp": False,
         }
+        fake_restore = {
+            "status": "CHECKPOINT_RESTORE_READY",
+            "build_version": "2026.06.10-checkpoint-restore",
+            "source_label": "unit_test",
+            "checkpoint_build_version": "2026.06.10-checkpoint-restore",
+            "requested_event_count": 1,
+            "restored_count": 1,
+            "skipped_duplicate_count": 0,
+            "invalid_count": 0,
+            "restore_event_id": 55,
+            "restored_event_type_counts": {"live_review_cycle": 1},
+            "restored_events": [{"id": 54, "event_type": "live_review_cycle", "original_id": 44}],
+            "notes": ["Restore evidence only."],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
         client = TestClient(create_app())
         with patch("app.fallback_endpoints._export_journal_checkpoint", return_value=fake_checkpoint):
             checkpoint_json = client.get("/journal/checkpoint?limit=100")
             checkpoint_html = client.get("/journal/checkpoint?limit=100", headers={"accept": "text/html"})
+        with patch("app.fallback_endpoints._restore_journal_checkpoint", return_value=fake_restore):
+            restore_json = client.post("/journal/checkpoint", json=fake_checkpoint)
+            restore_html = client.post("/journal/checkpoint", json=fake_checkpoint, headers={"accept": "text/html"})
 
         self.assertEqual(checkpoint_json.status_code, 200)
         self.assertEqual(checkpoint_json.json()["result"]["status"], "JOURNAL_CHECKPOINT_READY")
@@ -1002,3 +1026,9 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(checkpoint_html.status_code, 200)
         self.assertIn("Journal Checkpoint", checkpoint_html.text)
         self.assertIn("live_review_cycle", checkpoint_html.text)
+        self.assertEqual(restore_json.status_code, 200)
+        self.assertEqual(restore_json.json()["result"]["status"], "CHECKPOINT_RESTORE_READY")
+        self.assertFalse(restore_json.json()["can_place_order_from_this_mcp"])
+        self.assertEqual(restore_html.status_code, 200)
+        self.assertIn("Journal Checkpoint Restore", restore_html.text)
+        self.assertIn("Restored Events", restore_html.text)

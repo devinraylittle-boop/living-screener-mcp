@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.10-trading-day-launch
+2026.06.10-checkpoint-restore
 ```
 
 ## Render Environment
@@ -86,7 +86,7 @@ Observer follow-up closes the learning loop for skipped rows. Use `run_observer_
 
 Manual broker action journal records what you report doing in Robinhood or another broker outside this MCP. Use `log_manual_broker_action` or `/trade/manual-action` after a manual pass, manual pending buy, manual fill, or manual cancellation. If the record is a pending buy, it returns a 60-second recheck card for `review_pending_buy_order` and `/trade/pending-recheck`. This is a journal and safety reminder only; it cannot verify the broker state or place/cancel/modify orders.
 
-Journal checkpoints protect tomorrow's learning loop from Render restarts. Use `export_journal_checkpoint` or `/journal/checkpoint` after important scan/review/paper events to export recent local journal events, event-type counts, and restore guidance. Save the JSON externally and paste it back into ChatGPT/Codex later for analysis if the hosted local SQLite journal resets. This is evidence export only; it cannot create broker action.
+Journal checkpoints protect tomorrow's learning loop from Render restarts. Use `export_journal_checkpoint` or `/journal/checkpoint` after important scan/review/paper events to export recent local journal events, event-type counts, and restore guidance. If Render loses the local SQLite journal, use `restore_journal_checkpoint` or `POST /journal/checkpoint` with the saved checkpoint JSON to rehydrate local MCP evidence. Restored events are deduped, marked with restore metadata, and remain evidence only; they cannot create broker action.
 
 Manual trade desk is the final human checkpoint page. Use `build_manual_trade_desk` or `/trade/manual-desk` with broker-visible option fields after a live review cycle identifies a candidate. It runs manual preflight, shows blocking reasons/warnings, prepares a paper-entry payload, and reminds you to export a journal checkpoint after the decision. It still cannot place, submit, simulate, modify, or cancel broker orders.
 
@@ -112,7 +112,7 @@ These routes call the same review-only services as the MCP tools. They exist so 
 
 ```text
 GET /safety
-GET /health/full?expected_build_version=2026.06.10-trading-day-launch
+GET /health/full?expected_build_version=2026.06.10-checkpoint-restore
 GET /scan/scalp?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
 GET /scan/market?mode=conservative_review_only&tickers=SPY,QQQ,KO,PG
 GET /ops/trading-day-launch?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25
@@ -152,7 +152,7 @@ GET /paper/options/summary
 GET /paper/options/summary?format=html
 GET /journal/checkpoint?limit=500
 GET /journal/checkpoint?limit=500&format=html
-POST /journal/checkpoint
+POST /journal/checkpoint              # export if body has limit/event_types, restore if body has events
 POST /review/broker-option-snapshot
 POST /review/log-decision
 GET /review/outcome?ticker=SMCI&direction=put&entry_reference=41.46&review_timestamp=2026-06-09T14:46:19Z
@@ -173,7 +173,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.10-trading-day-launch
+GET /debug/scan-schema?expected_build_version=2026.06.10-checkpoint-restore
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -212,7 +212,7 @@ Opening `/ops/market-open-observer` returns the opening-window evidence recorder
 
 Opening `/ops/observer-followup` grades recent observer evidence after time has passed. It reports outcomes, learning labels such as `MISSED_MOVE` or `GOOD_PASS`, and next actions for research. Use it before changing rules, then export a journal checkpoint.
 
-Opening `/journal/checkpoint` returns a saveable local journal export with event counts, recent events, and restore guidance. Use it after meaningful review cycles, paper entries/closes, and learning classifications.
+Opening `/journal/checkpoint` returns a saveable local journal export with event counts, recent events, and restore guidance. Use it after meaningful review cycles, paper entries/closes, and learning classifications. Posting a saved checkpoint JSON back to `/journal/checkpoint` restores missing local evidence with duplicate protection, which helps the launch page, command center, learning dashboard, and paper ledger recover context after a Render restart.
 
 Opening `/debug/scan-schema` returns a static example candidate with `key_signals.evidence_scorecard`, `evidence_packet`, `missing_modules`, `penalty_reasons`, `confidence_band`, `known_blindspots`, and `why_not_ranked`. It does not call market data or create a trade plan.
 
@@ -255,7 +255,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.10-trading-day-launch",
+  "build_version": "2026.06.10-checkpoint-restore",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false
