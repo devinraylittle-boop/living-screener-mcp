@@ -1,0 +1,57 @@
+{
+  "service": "Living Screener MCP",
+  "release_folder": "living-screener-mcp-manual-snapshot-form-20260610-090000",
+  "target_build_version": "2026.06.10-manual-snapshot-form",
+  "expected_live_tool_count": 66,
+  "safety_invariants": {
+    "review_only": true,
+    "place_orders": false,
+    "market_orders_allowed": false,
+    "manual_approval_required": true,
+    "can_place_order_from_this_mcp": false,
+    "can_cancel_order_from_this_mcp": false
+  },
+  "must_upload_to_repository_root": [
+    "app/",
+    "data/",
+    "docs/",
+    "tests/",
+    "tools/",
+    "Dockerfile",
+    "README.md",
+    "render.yaml",
+    "requirements.txt",
+    "pyproject.toml"
+  ],
+  "do_not_upload": [
+    ".venv/",
+    "__pycache__/",
+    ".pytest_cache/",
+    ".git/",
+    "old release folders",
+    "old zip files",
+    "robinhood-mcp-login.log",
+    "data/living_screener.sqlite3"
+  ],
+  "live_validation_endpoints": [
+    "/version",
+    "/tools",
+    "/health/full?expected_build_version=2026.06.10-manual-snapshot-form",
+    "/",
+    "/ops/go-live-rehearsal?account_value=50&format=html",
+    "/trade/manual-form?format=html"
+  ],
+  "operator_helpers": [
+    "tools/validate_live.ps1",
+    "tools/watch_deploy.ps1",
+    "tools/start_tomorrow.ps1",
+    "docs/TOMORROW_MARKET_RUNBOOK.md"
+  ],
+  "post_deploy_pass_signal": "LIVE_VALIDATION_PASS",
+  "tomorrow_start_signal": "START_TOMORROW_READY",
+  "notes": [
+    "This MCP remains review-only and cannot place or cancel brokerage orders.",
+    "A live build mismatch means Render has not received the correct root-level files yet.",
+    "Run tools/watch_deploy.ps1 after redeploy, then tools/start_tomorrow.ps1 after validation passes."
+  ]
+}

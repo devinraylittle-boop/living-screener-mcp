@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.10-tomorrow-control
+2026.06.10-manual-snapshot-form
 ```
 
 ## Render Environment
@@ -82,6 +82,14 @@ Session risk guard checks the journal before adding another manual idea. Use `ge
 
 Tomorrow control pages are session-risk aware. The command center, launch checklist, morning autopilot, live review cycle, and heartbeat now surface session risk before manual review. If session risk is blocked, the live cycle and heartbeat do not treat ranked candidates as manual-ready, even when stock/options gates are otherwise clean.
 
+Tomorrow operator brief is the single nontechnical start page. Use `get_tomorrow_operator_brief` or `/ops/tomorrow-brief` to see build/safety state, session risk, paper ledger status, pages to open, Central Time schedule blocks, ChatGPT connector fallback instructions, manual trade gates, and hard stop rules. It does not run scans, rank candidates, create trade plans, or contact a broker.
+
+The app root `/` also opens the operator brief, so the plain Render URL becomes a useful control page instead of a dead end.
+
+Go-live rehearsal is the final hosted-app readiness check. Use `run_go_live_rehearsal` or `/ops/go-live-rehearsal` after deployment to confirm the build, operator brief, required URLs, session risk, and optional market readiness before tomorrow's workflow starts. It can include a market-readiness check when `include_market_check=true`, but it does not options-review, rank contracts, create trade plans, or contact a broker.
+
+Manual snapshot form makes broker-visible data entry less error-prone. Open `/trade/manual-form` after a live review candidate survives and copy the contract symbol, bid, ask, volume, open interest, DTE, strike, and underlying fields from the broker screen. The form submits to `/trade/manual-desk`; it cannot place, submit, simulate, modify, or cancel orders.
+
 Morning readiness autopilot gives tomorrow's workflow a single starting page. Use `run_morning_readiness_autopilot` or `/ops/morning-autopilot` before and during the session to confirm build/safety, run market readiness, summarize the session playbook, check the paper ledger, and return the next safe action. It does not run a full review harvest automatically and cannot create broker action.
 
 Live review cycle is the market-hours decision page. Use `run_live_review_cycle` or `/ops/live-review-cycle` after the market has usable data. It checks readiness, stops early on bad data, runs review harvest only when data is usable, ranks only candidates that pass both stock setup and `SMALL_ACCOUNT_SCALP_ACCEPTABLE`, summarizes paper ledger state, and returns the next manual action. It cannot place, submit, simulate, modify, or cancel broker orders.
@@ -124,11 +132,17 @@ These routes call the same review-only services as the MCP tools. They exist so 
 
 ```text
 GET /safety
-GET /health/full?expected_build_version=2026.06.10-tomorrow-control
+GET /
+GET /release-manifest
+GET /health/full?expected_build_version=2026.06.10-manual-snapshot-form
 GET /scan/scalp?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
 GET /scan/market?mode=conservative_review_only&tickers=SPY,QQQ,KO,PG
 GET /ops/trading-day-launch?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25
 GET /ops/trading-day-launch?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25&format=html
+GET /ops/tomorrow-brief?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25&format=html
+GET /ops/go-live-rehearsal?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25&format=html
+GET /ops/go-live-rehearsal?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&include_market_check=true&format=html
+GET /trade/manual-form?format=html
 GET /ops/day-heartbeat?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25&review_top_n=8&max_contract_price=1.00
 GET /ops/day-heartbeat?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&format=html
 GET /ops/day-monitor?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25&review_top_n=8&max_contract_price=1.00&format=html
@@ -192,9 +206,39 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.10-tomorrow-control
+GET /debug/scan-schema?expected_build_version=2026.06.10-manual-snapshot-form
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
+```
+
+After Render redeploys, you can run the live validation helper from PowerShell:
+
+```powershell
+.\tools\validate_live.ps1
+```
+
+It checks `/version`, `/tools`, `/release-manifest`, `/health/full`, `/`, `/ops/go-live-rehearsal`, and `/trade/manual-form`. It prints `LIVE_VALIDATION_PASS` only when the deployed app is the expected build and the human control pages are reachable.
+
+If Render is still building, run the watcher instead:
+
+```powershell
+.\tools\watch_deploy.ps1
+```
+
+It polls `/version` every 30 seconds. When `2026.06.10-manual-snapshot-form` appears, it automatically runs `validate_live.ps1`.
+
+On market morning, after validation passes, run:
+
+```powershell
+.\tools\start_tomorrow.ps1
+```
+
+It validates the live app first, then opens the operator brief, go-live rehearsal, day monitor, alerts, manual snapshot form, paper summary, and journal checkpoint pages. It does not run a scan or perform any broker action by itself.
+
+The full morning runbook lives at:
+
+```text
+docs/TOMORROW_MARKET_RUNBOOK.md
 ```
 
 Opening `/review/options` in a normal browser returns a cleaner HTML view with status, gates, selected contract, warnings, rejected-contract diagnostics, and raw JSON. Add `format=json` when you want machine-readable output.
@@ -204,6 +248,12 @@ Opening `/review/manual-preflight` with broker-visible contract fields returns a
 Opening `/trade/manual-desk` with broker-visible contract fields returns one human-readable desk: preflight status, session risk guard, selected contract, paper-entry payload, checkpoint reminder, blocking reasons, warnings, and next steps.
 
 Opening `/ops/trading-day-launch` returns the top-level go/no-go map for tomorrow: build checks, latest state, launch phases, action links, no-trade rules, and the next safest step. It is the safest starting page before opening observer, live review cycle, manual desk, or journal tools.
+
+Opening `/ops/tomorrow-brief` returns the one-page operator brief for tomorrow: build/safety state, session risk, paper ledger status, morning sequence, pages to open, connector fallback prompt, manual trade gate, and absolute no-trade rules. It is the best first page when you want clarity before market pressure starts.
+
+Opening `/ops/go-live-rehearsal` returns the hosted readiness rehearsal: operator brief status, session risk, required validation URLs, tomorrow tabs, blocking reasons, warnings, and hard rules. Add `include_market_check=true` when you want it to include a fresh market-readiness scan, still without options review or broker action.
+
+Opening `/trade/manual-form` returns a simple broker-snapshot entry form. It sends the typed fields to `/trade/manual-desk`, where the existing manual preflight, options validation, and session risk guard decide whether the snapshot is usable for review. The form itself cannot execute or journal a broker action.
 
 Opening `/ops/day-heartbeat` runs one safe cadence step and returns the result, next refresh seconds, next action, action links, and hard no-trade rules. Use it repeatedly during the open session. If it returns `HEARTBEAT_MANUAL_REVIEW_READY`, the next step is broker-visible inspection plus `/trade/manual-desk`, not direct execution. If it returns `HEARTBEAT_SESSION_RISK_BLOCKED`, manage or log existing exposure before considering any new idea.
 
@@ -284,7 +334,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.10-tomorrow-control",
+  "build_version": "2026.06.10-manual-snapshot-form",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false
