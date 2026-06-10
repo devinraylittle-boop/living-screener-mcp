@@ -32,8 +32,13 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("run_review_harvest", tools.json()["tools"])
         self.assertIn("get_market_session_playbook", tools.json()["tools"])
         self.assertIn("run_latest_harvest_followup", tools.json()["tools"])
+        self.assertIn("get_ops_command_center", tools.json()["tools"])
         self.assertIn("review_candidate_for_options", tools.json()["tools"])
         self.assertIn("validate_broker_option_snapshot", tools.json()["tools"])
+        self.assertIn("build_manual_trade_preflight_ticket", tools.json()["tools"])
+        self.assertIn("log_manual_option_paper_entry", tools.json()["tools"])
+        self.assertIn("close_manual_option_paper_trade", tools.json()["tools"])
+        self.assertIn("summarize_manual_option_paper_trades", tools.json()["tools"])
         self.assertIn("log_review_decision", tools.json()["tools"])
         self.assertIn("check_review_outcome", tools.json()["tools"])
         self.assertIn("summarize_review_outcomes", tools.json()["tools"])
@@ -273,17 +278,71 @@ class EndpointTests(unittest.TestCase):
             "can_place_order_from_this_mcp": False,
             "can_cancel_order_from_this_mcp": False,
         }
+        fake_command_center = {
+            "status": "READY_FOR_HARVEST",
+            "universe": ["SOFI", "SMCI"],
+            "next_action": {"label": "Run review harvest.", "reason": "Ready.", "endpoint": "/ops/review-harvest"},
+            "latest": {"market_readiness": {"status": "MARKET_REVIEW_READY"}},
+            "action_links": {"review_harvest": "/ops/review-harvest", "learning_dashboard": "/learning/dashboard"},
+            "latest_learning_labels": [],
+            "manual_trade_gate": ["Command center build and safety are confirmed."],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        fake_preflight = {
+            "status": "MANUAL_PREFLIGHT_READY",
+            "ticker": "SOFI",
+            "direction": "put",
+            "account_value_reference": 50,
+            "option_validation": {"status": "OPTIONS_CHAIN_ACCEPTABLE"},
+            "risk_check": {"status": "APPROVE_FOR_REVIEW"},
+            "selected_contract": {
+                "contract_symbol": "SOFI260612P00015000",
+                "bid": 0.04,
+                "ask": 0.045,
+                "spread_pct": 0.1176,
+                "volume": 500,
+                "open_interest": 2000,
+                "days_to_expiration": 3,
+                "strike": 15,
+            },
+            "manual_ticket": {
+                "contract_symbol": "SOFI260612P00015000",
+                "order_type": "limit_only",
+                "max_review_ask": 0.045,
+                "max_loss_dollars": 4.5,
+                "quantity": 1,
+                "broker_action_required": True,
+                "mcp_can_execute": False,
+            },
+            "blocking_reasons": [],
+            "warnings": [],
+            "checklist": ["Use limit-only review."],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
         client = TestClient(create_app())
         with patch("app.fallback_endpoints._market_readiness_check", return_value=fake_readiness), patch(
             "app.fallback_endpoints._run_review_harvest", return_value=fake_harvest
         ), patch("app.fallback_endpoints._get_market_session_playbook", return_value=fake_playbook), patch(
             "app.fallback_endpoints._run_latest_harvest_followup", return_value=fake_followup
+        ), patch(
+            "app.fallback_endpoints._get_ops_command_center", return_value=fake_command_center
+        ), patch(
+            "app.fallback_endpoints._build_manual_trade_preflight_ticket", return_value=fake_preflight
         ):
             readiness = client.get("/ops/market-readiness?tickers=SOFI,SMCI")
             harvest_json = client.get("/ops/review-harvest?tickers=SOFI,SMCI")
             harvest_html = client.get("/ops/review-harvest?tickers=SOFI,SMCI", headers={"accept": "text/html"})
             playbook_html = client.get("/ops/session-playbook?tickers=SOFI,SMCI", headers={"accept": "text/html"})
             followup_html = client.get("/ops/harvest-followup?limit=5&classify=true", headers={"accept": "text/html"})
+            command_center_html = client.get("/ops/command-center?tickers=SOFI,SMCI", headers={"accept": "text/html"})
+            preflight_html = client.get(
+                "/review/manual-preflight?ticker=SOFI&contract_symbol=SOFI260612P00015000&direction=put&bid=0.04&ask=0.045&volume=500&open_interest=2000&dte=3&strike=15",
+                headers={"accept": "text/html"},
+            )
 
         self.assertEqual(readiness.status_code, 200)
         self.assertEqual(readiness.json()["result"]["status"], "MARKET_REVIEW_READY")
@@ -301,6 +360,12 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(followup_html.status_code, 200)
         self.assertIn("Harvest Follow-Up", followup_html.text)
         self.assertIn("GOOD_SIGNAL", followup_html.text)
+        self.assertEqual(command_center_html.status_code, 200)
+        self.assertIn("Ops Command Center", command_center_html.text)
+        self.assertIn("Run review harvest.", command_center_html.text)
+        self.assertEqual(preflight_html.status_code, 200)
+        self.assertIn("Manual Trade Preflight", preflight_html.text)
+        self.assertIn("SOFI260612P00015000", preflight_html.text)
 
     def test_offhours_and_crypto_fallbacks_are_review_only(self) -> None:
         fake_global_scan = {
@@ -418,10 +483,10 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.09-session-loop")
+        full = client.get("/health/full?expected_build_version=2026.06.09-paper-ledger")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.09-session-loop")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.09-paper-ledger")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -434,6 +499,11 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_review_harvest"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_market_session_playbook"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_latest_harvest_followup"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["get_ops_command_center"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["build_manual_trade_preflight_ticket"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["log_manual_option_paper_entry"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["close_manual_option_paper_trade"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["summarize_manual_option_paper_trades"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["summarize_evidence_packets"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["compare_setup_memory"])
         self.assertEqual(schema.status_code, 200)
@@ -452,4 +522,78 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(playbook_preview["status"], "SESSION_PLAYBOOK_READY")
         followup_preview = schema.json()["result"]["harvest_followup_schema_preview"]
         self.assertEqual(followup_preview["status"], "HARVEST_FOLLOWUP_COMPLETE")
+        command_center_preview = schema.json()["result"]["ops_command_center_schema_preview"]
+        self.assertEqual(command_center_preview["status"], "READY_FOR_HARVEST")
+        preflight_preview = schema.json()["result"]["manual_preflight_schema_preview"]
+        self.assertEqual(preflight_preview["status"], "MANUAL_PREFLIGHT_READY")
+        ledger_preview = schema.json()["result"]["paper_option_ledger_schema_preview"]
+        self.assertEqual(ledger_preview["status"], "PAPER_LEDGER_READY")
         self.assertFalse(schema.json()["can_place_order_from_this_mcp"])
+
+    def test_paper_option_ledger_endpoints_are_review_only(self) -> None:
+        fake_entry = {
+            "status": "PAPER_OPTION_ENTRY_OPEN",
+            "id": 101,
+            "ticker": "SOFI",
+            "contract_symbol": "SOFI260612P00015000",
+            "entry_price": 0.05,
+            "quantity": 1,
+            "paper_only": True,
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+            "broker_action": False,
+        }
+        fake_close = {
+            "status": "PAPER_OPTION_CLOSED",
+            "entry_event_id": 101,
+            "ticker": "SOFI",
+            "contract_symbol": "SOFI260612P00015000",
+            "pnl_dollars": 3.0,
+            "return_pct": 0.6,
+            "learning_classification": {"classification": "GOOD_SIGNAL"},
+            "paper_only": True,
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        fake_summary = {
+            "status": "PAPER_LEDGER_READY",
+            "entry_count": 1,
+            "closed_count": 1,
+            "open_count": 0,
+            "win_rate": 1.0,
+            "total_pnl_dollars": 3.0,
+            "average_pnl_dollars": 3.0,
+            "open_entries": [],
+            "recent_closes": [
+                {
+                    "entry_event_id": 101,
+                    "ticker": "SOFI",
+                    "contract_symbol": "SOFI260612P00015000",
+                    "pnl_dollars": 3.0,
+                    "return_pct": 0.6,
+                    "classification": "GOOD_SIGNAL",
+                }
+            ],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints._log_manual_option_paper_entry", return_value=fake_entry), patch(
+            "app.fallback_endpoints._close_manual_option_paper_trade", return_value=fake_close
+        ), patch("app.fallback_endpoints._summarize_manual_option_paper_trades", return_value=fake_summary):
+            entry = client.post("/paper/options/entry", json={"ticket": {"status": "MANUAL_PREFLIGHT_READY"}, "fill_price": 0.05})
+            close = client.post("/paper/options/close", json={"entry_id": 101, "exit_price": 0.08})
+            summary = client.get("/paper/options/summary", headers={"accept": "text/html"})
+
+        self.assertEqual(entry.status_code, 200)
+        self.assertEqual(entry.json()["result"]["status"], "PAPER_OPTION_ENTRY_OPEN")
+        self.assertFalse(entry.json()["can_place_order_from_this_mcp"])
+        self.assertEqual(close.status_code, 200)
+        self.assertEqual(close.json()["result"]["status"], "PAPER_OPTION_CLOSED")
+        self.assertFalse(close.json()["can_cancel_order_from_this_mcp"])
+        self.assertEqual(summary.status_code, 200)
+        self.assertIn("Paper Option Ledger", summary.text)
+        self.assertIn("SOFI260612P00015000", summary.text)

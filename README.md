@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.09-session-loop
+2026.06.09-paper-ledger
 ```
 
 ## Render Environment
@@ -70,6 +70,12 @@ Market readiness and review harvest tools make the live-market workflow repeatab
 
 Session loop tools connect the workflow for live-market use. Use `get_market_session_playbook` or `/ops/session-playbook` before the session to get a timed operating checklist. After a harvest has produced ranked candidates, use `run_latest_harvest_followup` or `/ops/harvest-followup` to check outcomes from the latest harvest, summarize results, and classify lessons through the mistake engine. Follow-up labels remain research-only; rule proposals are not auto-applied.
 
+The ops command center gives one live workflow page for tomorrow. Use `get_ops_command_center` or `/ops/command-center` to read the latest readiness, harvest, follow-up, learning labels, action links, and manual trade gate. It reads recent logs only; it does not run scans by itself and cannot create broker action.
+
+Manual preflight tickets combine broker-visible option snapshots with the existing options-quality and risk gates. Use `build_manual_trade_preflight_ticket` or `/review/manual-preflight` after the broker screen confirms the contract, bid/ask, volume, open interest, DTE, strike, and ask price. The result is either `MANUAL_PREFLIGHT_READY` or `NO_TRADE_PLAN`; it still cannot place, submit, modify, simulate, or cancel orders.
+
+Paper option ledger tools let you study manual or hypothetical option decisions without touching a broker. Use `log_manual_option_paper_entry` after a paper/manual fill reference, then `close_manual_option_paper_trade` when you want to record the exit. The ledger calculates P/L, records the close, and sends the outcome into the mistake engine for learning labels. Use `summarize_manual_option_paper_trades` or `/paper/options/summary` to view open entries, recent closes, win rate, and paper P/L. These records do not prove a broker order existed and cannot place, submit, modify, simulate, or cancel orders.
+
 Off-hours research tools keep the system productive when U.S. options liquidity is stale or closed. Use `get_offhours_research_plan` and `run_global_research_scan` for underlying-only studies across crypto and global instruments. These scans do not validate U.S. options chains and must not be treated as broker action. Use them to find patterns worth logging and checking later with the mistake engine.
 
 The off-hours scanner treats unavailable volume as unknown instead of bearish. If high/low range data is unusable, it falls back to close-to-close movement expansion so crypto/global feeds can still be studied without pretending missing RVOL is truly weak.
@@ -90,9 +96,11 @@ These routes call the same review-only services as the MCP tools. They exist so 
 
 ```text
 GET /safety
-GET /health/full?expected_build_version=2026.06.09-session-loop
+GET /health/full?expected_build_version=2026.06.09-paper-ledger
 GET /scan/scalp?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
 GET /scan/market?mode=conservative_review_only&tickers=SPY,QQQ,KO,PG
+GET /ops/command-center?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50
+GET /ops/command-center?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&format=html
 GET /ops/session-playbook?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50
 GET /ops/session-playbook?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&format=html
 GET /ops/market-readiness?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
@@ -104,6 +112,12 @@ GET /review/options?ticker=SMCI&direction=put&mode=scalp_review
 GET /review/options?ticker=SOFI&direction=put&mode=scalp_review&max_contract_price=1.00
 GET /review/options?ticker=SMCI&direction=put&mode=scalp_review&format=html
 GET /review/options?ticker=SMCI&direction=put&mode=scalp_review&format=json
+GET /review/manual-preflight?ticker=SOFI&contract_symbol=SOFI260612P00015000&direction=put&bid=0.04&ask=0.045&volume=500&open_interest=2000&dte=3&strike=15&account_value=50
+POST /review/manual-preflight
+POST /paper/options/entry
+POST /paper/options/close
+GET /paper/options/summary
+GET /paper/options/summary?format=html
 POST /review/broker-option-snapshot
 POST /review/log-decision
 GET /review/outcome?ticker=SMCI&direction=put&entry_reference=41.46&review_timestamp=2026-06-09T14:46:19Z
@@ -124,12 +138,16 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.09-session-loop
+GET /debug/scan-schema?expected_build_version=2026.06.09-paper-ledger
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
 
 Opening `/review/options` in a normal browser returns a cleaner HTML view with status, gates, selected contract, warnings, rejected-contract diagnostics, and raw JSON. Add `format=json` when you want machine-readable output.
+
+Opening `/review/manual-preflight` with broker-visible contract fields returns a manual ticket view with options gate, risk gate, blocking reasons, warnings, and a checklist. It is the last review-only check before any separate manual broker action.
+
+Opening `/paper/options/summary` shows the paper option ledger: open paper entries, recent closes, paper P/L, and learning labels. Use it to study what would have happened after a manual/paper idea without creating a broker action.
 
 Opening `/learning/dashboard` in a normal browser shows recent learning labels, recurring mistake tags, and any rule proposals with enough evidence. It is a research dashboard only.
 
@@ -142,6 +160,8 @@ Opening `/scan/scalp` or `/scan/market` now returns compact evidence packets on 
 Opening `/ops/review-harvest` in a browser returns a ranked review-only harvest page. It is the fastest live workflow for tomorrow: scan, validate stock candidates, validate options chains, rank small-account acceptable setups, show warnings, and produce follow-up outcome checks.
 
 Opening `/ops/session-playbook` returns a timed review-only operating checklist for pre-market checks, opening stabilization, harvest windows, afternoon decision review, and after-action learning. Opening `/ops/harvest-followup` grades the latest harvest's ranked candidates and sends the outcomes into the learning classifier when `classify=true`.
+
+Opening `/ops/command-center` returns the simplest live operations view: latest readiness, latest harvest, latest follow-up, latest learning labels, links for the next step, and the manual trade gate. It is meant to stay open during the trading window.
 
 Opening `/debug/scan-schema` returns a static example candidate with `key_signals.evidence_scorecard`, `evidence_packet`, `missing_modules`, `penalty_reasons`, `confidence_band`, `known_blindspots`, and `why_not_ranked`. It does not call market data or create a trade plan.
 
@@ -184,7 +204,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.09-session-loop",
+  "build_version": "2026.06.09-paper-ledger",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false

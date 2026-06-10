@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-from app.mcp_server import _get_market_session_playbook, _market_readiness_check, _run_latest_harvest_followup, _run_review_harvest
+from app.mcp_server import _get_market_session_playbook, _get_ops_command_center, _market_readiness_check, _run_latest_harvest_followup, _run_review_harvest
 
 
 class FakeEvents:
@@ -24,6 +24,9 @@ class FakeEvents:
     def recent(self, event_type: str | None = None, limit: int = 100) -> list[dict]:
         rows = [row for row in self.rows if event_type is None or row["event_type"] == event_type]
         return list(reversed(rows))[:limit]
+
+    def count(self, event_type: str | None = None) -> int:
+        return len([row for row in self.rows if event_type is None or row["event_type"] == event_type])
 
 
 class FakeScanner:
@@ -195,6 +198,24 @@ class MarketHarvestTests(unittest.TestCase):
         self.assertEqual(result["status"], "NO_HARVEST_TO_FOLLOW_UP")
         self.assertEqual(result["outcomes"], [])
         self.assertFalse(result["can_place_order_from_this_mcp"])
+
+    def test_command_center_moves_from_readiness_to_followup(self) -> None:
+        container = self.container()
+
+        first = _get_ops_command_center(container, ["SOFI"], 50)
+        self.assertEqual(first["status"], "NEEDS_MARKET_READINESS")
+        self.assertEqual(first["next_action"]["endpoint"], "/ops/market-readiness")
+
+        _market_readiness_check(container, ["SOFI"], 5)
+        second = _get_ops_command_center(container, ["SOFI"], 50)
+        self.assertEqual(second["status"], "READY_FOR_HARVEST")
+        self.assertEqual(second["next_action"]["endpoint"], "/ops/review-harvest")
+
+        _run_review_harvest(container, ["SOFI"], "scalp_review", 5, 3, None)
+        third = _get_ops_command_center(container, ["SOFI"], 50)
+        self.assertEqual(third["status"], "HARVEST_READY_NEEDS_FOLLOWUP")
+        self.assertEqual(third["next_action"]["endpoint"], "/ops/harvest-followup")
+        self.assertFalse(third["can_place_order_from_this_mcp"])
 
 
 if __name__ == "__main__":
