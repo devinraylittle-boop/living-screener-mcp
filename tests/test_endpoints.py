@@ -28,6 +28,10 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("version", tools.json()["tools"])
         self.assertIn("get_build_version", tools.json()["tools"])
         self.assertIn("run_scalp_scan", tools.json()["tools"])
+        self.assertIn("market_readiness_check", tools.json()["tools"])
+        self.assertIn("run_review_harvest", tools.json()["tools"])
+        self.assertIn("get_market_session_playbook", tools.json()["tools"])
+        self.assertIn("run_latest_harvest_followup", tools.json()["tools"])
         self.assertIn("review_candidate_for_options", tools.json()["tools"])
         self.assertIn("validate_broker_option_snapshot", tools.json()["tools"])
         self.assertIn("log_review_decision", tools.json()["tools"])
@@ -201,6 +205,103 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(dashboard.status_code, 200)
         self.assertIn("Learning Dashboard", dashboard.text)
 
+    def test_market_ops_endpoints_are_review_only(self) -> None:
+        fake_readiness = {
+            "status": "MARKET_REVIEW_READY",
+            "candidate_count": 2,
+            "valid_row_count": 5,
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        fake_harvest = {
+            "status": "REVIEW_HARVEST_READY",
+            "mode": "scalp_review",
+            "reviewed_count": 2,
+            "eligible_count": 1,
+            "watch_only_count": 1,
+            "ranked_candidates": [
+                {
+                    "ticker": "SOFI",
+                    "status": "REVIEW_ONLY_OPTIONS_READY",
+                    "direction": "short",
+                    "score": 86,
+                    "priority_score": 82,
+                    "friction_adjusted_score": 88,
+                    "contract": "SOFI260612P00015000",
+                    "ask": 0.08,
+                    "max_loss_dollars": 8,
+                    "memory_signal": "NO_MEMORY_YET",
+                }
+            ],
+            "watch_only": [],
+            "followup_checks": [{"ticker": "SOFI", "check_after_minutes": [15, 30, 60]}],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        fake_playbook = {
+            "status": "SESSION_PLAYBOOK_READY",
+            "generated_at": "2026-06-09T20:00:00+00:00",
+            "universe": ["SOFI", "SMCI"],
+            "account_value_reference": 50,
+            "small_account_contract_cap": 1.0,
+            "session_blocks": [
+                {
+                    "central_time": "08:50-10:15",
+                    "label": "First review harvest",
+                    "intent": "Run harvest loops.",
+                    "actions": ["/ops/review-harvest"],
+                    "pass_condition": "Clean candidate.",
+                    "fail_condition": "No clean candidate.",
+                }
+            ],
+            "manual_trade_gate": ["Build and safety confirmed."],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        fake_followup = {
+            "status": "HARVEST_FOLLOWUP_COMPLETE",
+            "harvest_event_id": 1,
+            "checks_requested": 1,
+            "checks_completed": 1,
+            "classify": True,
+            "outcomes": [{"ticker": "SOFI", "verdict": "HELPED", "current_return_pct": 0.004}],
+            "classifications": [{"ticker": "SOFI", "classification": "GOOD_SIGNAL", "reason": "Worked.", "lesson_tags": ["wide_spread"]}],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints._market_readiness_check", return_value=fake_readiness), patch(
+            "app.fallback_endpoints._run_review_harvest", return_value=fake_harvest
+        ), patch("app.fallback_endpoints._get_market_session_playbook", return_value=fake_playbook), patch(
+            "app.fallback_endpoints._run_latest_harvest_followup", return_value=fake_followup
+        ):
+            readiness = client.get("/ops/market-readiness?tickers=SOFI,SMCI")
+            harvest_json = client.get("/ops/review-harvest?tickers=SOFI,SMCI")
+            harvest_html = client.get("/ops/review-harvest?tickers=SOFI,SMCI", headers={"accept": "text/html"})
+            playbook_html = client.get("/ops/session-playbook?tickers=SOFI,SMCI", headers={"accept": "text/html"})
+            followup_html = client.get("/ops/harvest-followup?limit=5&classify=true", headers={"accept": "text/html"})
+
+        self.assertEqual(readiness.status_code, 200)
+        self.assertEqual(readiness.json()["result"]["status"], "MARKET_REVIEW_READY")
+        self.assertFalse(readiness.json()["can_place_order_from_this_mcp"])
+        self.assertEqual(harvest_json.status_code, 200)
+        self.assertEqual(harvest_json.json()["result"]["status"], "REVIEW_HARVEST_READY")
+        self.assertEqual(harvest_json.json()["result"]["eligible_count"], 1)
+        self.assertFalse(harvest_json.json()["can_cancel_order_from_this_mcp"])
+        self.assertEqual(harvest_html.status_code, 200)
+        self.assertIn("Review Harvest", harvest_html.text)
+        self.assertIn("SOFI260612P00015000", harvest_html.text)
+        self.assertEqual(playbook_html.status_code, 200)
+        self.assertIn("Market Session Playbook", playbook_html.text)
+        self.assertIn("First review harvest", playbook_html.text)
+        self.assertEqual(followup_html.status_code, 200)
+        self.assertIn("Harvest Follow-Up", followup_html.text)
+        self.assertIn("GOOD_SIGNAL", followup_html.text)
+
     def test_offhours_and_crypto_fallbacks_are_review_only(self) -> None:
         fake_global_scan = {
             "status": "GLOBAL_RESEARCH_SCAN_COMPLETE",
@@ -317,10 +418,10 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.09-setup-memory")
+        full = client.get("/health/full?expected_build_version=2026.06.09-session-loop")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.09-setup-memory")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.09-session-loop")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -329,6 +430,10 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(mismatch.json()["result"]["status"], "BUILD_MISMATCH")
         self.assertEqual(manifest.status_code, 200)
         self.assertEqual(manifest.json()["result"]["status"], "TOOL_MANIFEST_READY")
+        self.assertTrue(manifest.json()["result"]["required_tools"]["market_readiness_check"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["run_review_harvest"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["get_market_session_playbook"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["run_latest_harvest_followup"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["summarize_evidence_packets"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["compare_setup_memory"])
         self.assertEqual(schema.status_code, 200)
@@ -341,4 +446,10 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(options_preview["small_account_review"]["friction_band"], "LOW_FRICTION")
         setup_preview = schema.json()["result"]["setup_memory_schema_preview"]
         self.assertEqual(setup_preview["status"], "SETUP_MEMORY_READY")
+        harvest_preview = schema.json()["result"]["review_harvest_schema_preview"]
+        self.assertEqual(harvest_preview["status"], "REVIEW_HARVEST_READY")
+        playbook_preview = schema.json()["result"]["session_playbook_schema_preview"]
+        self.assertEqual(playbook_preview["status"], "SESSION_PLAYBOOK_READY")
+        followup_preview = schema.json()["result"]["harvest_followup_schema_preview"]
+        self.assertEqual(followup_preview["status"], "HARVEST_FOLLOWUP_COMPLETE")
         self.assertFalse(schema.json()["can_place_order_from_this_mcp"])

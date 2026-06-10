@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.09-setup-memory
+2026.06.09-session-loop
 ```
 
 ## Render Environment
@@ -66,6 +66,10 @@ The mistake engine turns those outcomes into research labels. Use `log_research_
 
 Setup memory compares new review-only candidates against prior logged reviews and learning labels. Every options review now includes `setup_memory`, with a setup fingerprint, similarity summaries, and a `memory_signal` such as `NO_MEMORY_YET`, `SIMILAR_REVIEW_HISTORY_FOUND`, `SIMILAR_EDGE_SEEN_BEFORE`, or `SIMILAR_RISK_SEEN_BEFORE`. This is advisory context only; it cannot approve a trade or alter active gates by itself.
 
+Market readiness and review harvest tools make the live-market workflow repeatable. Use `market_readiness_check` or `/ops/market-readiness` to verify data quality and whether stock candidates exist. Use `run_review_harvest` or `/ops/review-harvest` to run a scalp scan, options-review only valid directional stock candidates, rank only setups that pass `SMALL_ACCOUNT_SCALP_ACCEPTABLE`, and return follow-up outcome checks for 15m/30m/60m review. Harvest output is still review-only and cannot create, place, simulate, submit, modify, or cancel orders.
+
+Session loop tools connect the workflow for live-market use. Use `get_market_session_playbook` or `/ops/session-playbook` before the session to get a timed operating checklist. After a harvest has produced ranked candidates, use `run_latest_harvest_followup` or `/ops/harvest-followup` to check outcomes from the latest harvest, summarize results, and classify lessons through the mistake engine. Follow-up labels remain research-only; rule proposals are not auto-applied.
+
 Off-hours research tools keep the system productive when U.S. options liquidity is stale or closed. Use `get_offhours_research_plan` and `run_global_research_scan` for underlying-only studies across crypto and global instruments. These scans do not validate U.S. options chains and must not be treated as broker action. Use them to find patterns worth logging and checking later with the mistake engine.
 
 The off-hours scanner treats unavailable volume as unknown instead of bearish. If high/low range data is unusable, it falls back to close-to-close movement expansion so crypto/global feeds can still be studied without pretending missing RVOL is truly weak.
@@ -86,9 +90,16 @@ These routes call the same review-only services as the MCP tools. They exist so 
 
 ```text
 GET /safety
-GET /health/full?expected_build_version=2026.06.09-setup-memory
+GET /health/full?expected_build_version=2026.06.09-session-loop
 GET /scan/scalp?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
 GET /scan/market?mode=conservative_review_only&tickers=SPY,QQQ,KO,PG
+GET /ops/session-playbook?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50
+GET /ops/session-playbook?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&format=html
+GET /ops/market-readiness?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
+GET /ops/review-harvest?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25&review_top_n=8
+GET /ops/review-harvest?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&format=html
+GET /ops/harvest-followup?limit=5&classify=true
+GET /ops/harvest-followup?limit=5&classify=true&format=html
 GET /review/options?ticker=SMCI&direction=put&mode=scalp_review
 GET /review/options?ticker=SOFI&direction=put&mode=scalp_review&max_contract_price=1.00
 GET /review/options?ticker=SMCI&direction=put&mode=scalp_review&format=html
@@ -113,7 +124,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.09-setup-memory
+GET /debug/scan-schema?expected_build_version=2026.06.09-session-loop
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -127,6 +138,10 @@ Opening `/research/global-scan` in a normal browser with `format=html` or an HTM
 Opening `/research/blueprint`, `/research/features`, or `/research/scoring-model` shows the Trading Monster research map in a readable format. These are planning and explanation pages only; they do not change active gates by themselves.
 
 Opening `/scan/scalp` or `/scan/market` now returns compact evidence packets on each row. Use `/research/evidence-summary` to see recurring data-confidence problems such as missing catalyst context, missing relative strength, derived quotes, stale candles, or weak relative volume.
+
+Opening `/ops/review-harvest` in a browser returns a ranked review-only harvest page. It is the fastest live workflow for tomorrow: scan, validate stock candidates, validate options chains, rank small-account acceptable setups, show warnings, and produce follow-up outcome checks.
+
+Opening `/ops/session-playbook` returns a timed review-only operating checklist for pre-market checks, opening stabilization, harvest windows, afternoon decision review, and after-action learning. Opening `/ops/harvest-followup` grades the latest harvest's ranked candidates and sends the outcomes into the learning classifier when `classify=true`.
 
 Opening `/debug/scan-schema` returns a static example candidate with `key_signals.evidence_scorecard`, `evidence_packet`, `missing_modules`, `penalty_reasons`, `confidence_band`, `known_blindspots`, and `why_not_ranked`. It does not call market data or create a trade plan.
 
@@ -169,7 +184,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.09-setup-memory",
+  "build_version": "2026.06.09-session-loop",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false
