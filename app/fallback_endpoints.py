@@ -2745,6 +2745,11 @@ async def fallback_validate_broker_snapshot(request: Request) -> JSONResponse:
     return JSONResponse(_review_only_envelope({"result": result}))
 
 
+async def fallback_options_data_status(request: Request) -> JSONResponse:
+    result = container.options.options_data_status()
+    return JSONResponse(_review_only_envelope({"result": result}))
+
+
 async def fallback_log_review_decision(request: Request) -> JSONResponse:
     payload = await request.json()
     result = container.review_outcomes.log_review_decision(payload)

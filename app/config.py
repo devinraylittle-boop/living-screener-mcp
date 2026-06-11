@@ -68,6 +68,12 @@ class Settings:
     min_option_days_to_expiration: int = 1
     max_option_days_to_expiration: int = 45
     max_option_contracts_returned: int = 12
+    options_data_provider: str = "manual"
+    options_realtime_required: bool = True
+    max_option_quote_age_seconds: int = 60
+    marketdata_api_key: str = ""
+    tradier_access_token: str = ""
+    tradier_base_url: str = "https://api.tradier.com/v1"
     finnhub_api_key: str = ""
     polygon_api_key: str = ""
 
@@ -136,6 +142,12 @@ def get_settings() -> Settings:
         min_option_days_to_expiration=_int("MIN_OPTION_DAYS_TO_EXPIRATION", 1),
         max_option_days_to_expiration=_int("MAX_OPTION_DAYS_TO_EXPIRATION", 45),
         max_option_contracts_returned=_int("MAX_OPTION_CONTRACTS_RETURNED", 12),
+        options_data_provider=os.getenv("OPTIONS_DATA_PROVIDER", "manual").strip().lower(),
+        options_realtime_required=_bool("OPTIONS_REALTIME_REQUIRED", True),
+        max_option_quote_age_seconds=_int("MAX_OPTION_QUOTE_AGE_SECONDS", 60),
+        marketdata_api_key=os.getenv("MARKETDATA_API_KEY", os.getenv("MARKETDATA_TOKEN", "")),
+        tradier_access_token=os.getenv("TRADIER_ACCESS_TOKEN", ""),
+        tradier_base_url=os.getenv("TRADIER_BASE_URL", "https://api.tradier.com/v1").rstrip("/"),
         finnhub_api_key=os.getenv("FINNHUB_API_KEY", ""),
         polygon_api_key=os.getenv("POLYGON_API_KEY", ""),
     )

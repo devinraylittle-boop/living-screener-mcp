@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, date, datetime
 from typing import Any
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from app.config import Settings
 from app.storage.repositories import EventRepository
@@ -15,32 +18,91 @@ class OptionsService:
     def validate_chain(self, ticker: str, direction: str = "call", max_contract_price: float | None = None) -> dict:
         symbol = ticker.upper()
         side = "puts" if direction.lower() in {"put", "puts", "short"} else "calls"
+        provider_status = self.options_data_status()
+        provider = provider_status["configured_provider"]
         try:
-            contracts = self._load_yfinance_chain(symbol, side)
+            contracts, chain_provider = self._load_provider_chain(symbol, side)
         except Exception as exc:
-            return self._log_no_trade(symbol, [f"Options-chain provider failed safely: {type(exc).__name__}."], side)
+            return self._log_no_trade(
+                symbol,
+                [f"Options-chain provider failed safely: {type(exc).__name__}."],
+                side,
+                chain_provider=provider,
+                options_truth_status=provider_status,
+            )
 
         if not contracts:
-            return self._log_no_trade(symbol, ["Options-chain data missing or unavailable."], side)
+            return self._log_no_trade(
+                symbol,
+                ["Options-chain data missing or unavailable."],
+                side,
+                chain_provider=chain_provider,
+                options_truth_status=provider_status,
+            )
 
         candidates = [self._score_contract(contract, max_contract_price) for contract in contracts]
         accepted = [contract for contract in candidates if contract["quality_status"] == "ACCEPTABLE"]
         rejected = [contract for contract in candidates if contract["quality_status"] != "ACCEPTABLE"]
         best_rejected = sorted(rejected, key=self._rejected_sort_key)[: self.settings.max_option_contracts_returned]
+        truth_gate = self._options_truth_gate(chain_provider=chain_provider, broker_snapshot_validated=False)
         result = {
             "ticker": symbol,
             "direction": "put" if side == "puts" else "call",
             "status": "OPTIONS_CHAIN_ACCEPTABLE" if accepted else "NO_TRADE_PLAN",
             "review_only": True,
             "can_place_order_from_this_mcp": False,
-            "chain_provider": "yfinance",
+            "chain_provider": chain_provider,
+            "options_data_status": provider_status,
+            "real_money_options_truth_gate": truth_gate,
             "quality_gate": self._quality_gate_summary(candidates),
             "accepted_contracts": accepted[: self.settings.max_option_contracts_returned],
             "rejected_sample": rejected[: self.settings.max_option_contracts_returned],
             "best_rejected_contracts": best_rejected,
-            "notes": "Review-only options quality check. This MCP cannot place orders.",
+            "notes": self._chain_notes(chain_provider, truth_gate),
         }
         return self.events.log("options_chain_validation", result)
+
+    def options_data_status(self) -> dict[str, Any]:
+        provider = (self.settings.options_data_provider or "manual").strip().lower()
+        if provider in {"marketdata", "marketdata.app", "market_data"}:
+            normalized = "marketdata"
+            automated_ready = bool(self.settings.marketdata_api_key)
+            provider_label = "MarketData.app"
+        elif provider == "tradier":
+            normalized = "tradier"
+            automated_ready = bool(self.settings.tradier_access_token)
+            provider_label = "Tradier"
+        elif provider in {"yfinance", "yahoo"}:
+            normalized = "yfinance"
+            automated_ready = False
+            provider_label = "yfinance preliminary"
+        else:
+            normalized = "manual"
+            automated_ready = False
+            provider_label = "manual broker snapshot"
+        return {
+            "schema_version": "options_data_status_v1",
+            "configured_provider": normalized,
+            "provider_label": provider_label,
+            "options_realtime_required": self.settings.options_realtime_required,
+            "max_option_quote_age_seconds": self.settings.max_option_quote_age_seconds,
+            "has_marketdata_api_key": bool(self.settings.marketdata_api_key),
+            "has_tradier_access_token": bool(self.settings.tradier_access_token),
+            "automated_realtime_options_available": automated_ready,
+            "real_money_options_truth_status": "AUTOMATED_OPTIONS_TRUTH_READY" if automated_ready else "BROKER_SNAPSHOT_REQUIRED",
+            "broker_snapshot_required": not automated_ready,
+            "yfinance_chain_is_preliminary": True,
+            "supported_automated_providers": ["marketdata", "tradier"],
+            "manual_sources_allowed": ["broker_visible_option_snapshot"],
+            "blocked_sources_for_real_money_truth": ["yfinance", "robinhood_level_2_equity_only", "stale_screenshots"],
+            "next_step": (
+                "Automated options truth is configured; validate quote freshness and chain liquidity."
+                if automated_ready
+                else "Use manual broker snapshot validation or configure MARKETDATA_API_KEY/TRADIER_ACCESS_TOKEN before treating options as real-money ready."
+            ),
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+        }
 
     def validate_broker_snapshot(self, snapshot: dict[str, Any], max_contract_price: float | None = None) -> dict:
         symbol = str(snapshot.get("ticker") or snapshot.get("underlying") or "").upper()
@@ -154,6 +216,8 @@ class OptionsService:
             "review_only": True,
             "can_place_order_from_this_mcp": False,
             "chain_provider": "broker_snapshot_manual",
+            "options_data_status": self.options_data_status(),
+            "real_money_options_truth_gate": self._options_truth_gate("broker_snapshot_manual", accepted),
             "max_contract_price_used": max_contract_price,
             "quality_gate": self._quality_gate_from_reasons(scored["reasons"]),
             "option_snapshot_v2": option_snapshot_v2,
@@ -165,6 +229,166 @@ class OptionsService:
             "notes": "Manual broker-visible snapshot validation only. This MCP cannot place orders and does not store broker credentials.",
         }
         return self.events.log("broker_options_snapshot_validation", result)
+
+    def _load_provider_chain(self, ticker: str, side: str) -> tuple[list[dict[str, Any]], str]:
+        provider = (self.settings.options_data_provider or "manual").strip().lower()
+        if provider in {"marketdata", "marketdata.app", "market_data"}:
+            if not self.settings.marketdata_api_key:
+                raise RuntimeError("MARKETDATA_API_KEY missing")
+            return self._load_marketdata_chain(ticker, side), "marketdata"
+        if provider == "tradier":
+            if not self.settings.tradier_access_token:
+                raise RuntimeError("TRADIER_ACCESS_TOKEN missing")
+            return self._load_tradier_chain(ticker, side), "tradier"
+        return self._load_yfinance_chain(ticker, side), "yfinance_preliminary"
+
+    def _load_marketdata_chain(self, ticker: str, side: str) -> list[dict[str, Any]]:
+        side_name = "put" if side == "puts" else "call"
+        query = urlencode({"side": side_name})
+        url = f"https://api.marketdata.app/v1/options/chain/{ticker}/?{query}"
+        payload = self._get_json(url, {"Authorization": f"Bearer {self.settings.marketdata_api_key}", "Accept": "application/json"}, {200, 203})
+        return [
+            contract
+            for contract in self._normalize_marketdata_chain(ticker, payload)
+            if (contract.get("side") or side_name) == side_name
+            and self.settings.min_option_days_to_expiration <= int(contract.get("days_to_expiration") or 0) <= self.settings.max_option_days_to_expiration
+        ]
+
+    def _load_tradier_chain(self, ticker: str, side: str) -> list[dict[str, Any]]:
+        contracts: list[dict[str, Any]] = []
+        side_name = "put" if side == "puts" else "call"
+        for expiration in self._tradier_expirations(ticker):
+            dte = self._days_to_expiration(expiration)
+            if dte is None or dte < self.settings.min_option_days_to_expiration or dte > self.settings.max_option_days_to_expiration:
+                continue
+            query = urlencode({"symbol": ticker, "expiration": expiration, "greeks": "true"})
+            url = f"{self.settings.tradier_base_url}/markets/options/chains?{query}"
+            payload = self._get_json(url, {"Authorization": f"Bearer {self.settings.tradier_access_token}", "Accept": "application/json"}, {200})
+            contracts.extend(
+                contract
+                for contract in self._normalize_tradier_chain(ticker, expiration, dte, payload)
+                if (contract.get("side") or side_name) == side_name
+            )
+            if len(contracts) >= self.settings.max_option_contracts_returned * 10:
+                break
+        return contracts
+
+    def _tradier_expirations(self, ticker: str) -> list[str]:
+        query = urlencode({"symbol": ticker, "includeAllRoots": "false", "strikes": "false"})
+        url = f"{self.settings.tradier_base_url}/markets/options/expirations?{query}"
+        payload = self._get_json(url, {"Authorization": f"Bearer {self.settings.tradier_access_token}", "Accept": "application/json"}, {200})
+        expirations = ((payload.get("expirations") or {}).get("date") if isinstance(payload, dict) else None) or []
+        if isinstance(expirations, str):
+            return [expirations]
+        return [str(item) for item in expirations if item]
+
+    def _get_json(self, url: str, headers: dict[str, str], success_codes: set[int]) -> dict[str, Any]:
+        request = Request(url, headers=headers)
+        with urlopen(request, timeout=12) as response:
+            if response.status not in success_codes:
+                raise RuntimeError(f"HTTP {response.status}")
+            return json.loads(response.read().decode("utf-8"))
+
+    def _normalize_marketdata_chain(self, ticker: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        symbols = payload.get("optionSymbol")
+        if isinstance(symbols, list):
+            return [self._marketdata_contract_from_columns(ticker, payload, index) for index in range(len(symbols))]
+        if isinstance(payload.get("data"), list):
+            return [self._marketdata_contract_from_row(ticker, row) for row in payload["data"] if isinstance(row, dict)]
+        if isinstance(payload.get("option"), list):
+            return [self._marketdata_contract_from_row(ticker, row) for row in payload["option"] if isinstance(row, dict)]
+        return []
+
+    def _marketdata_contract_from_columns(self, ticker: str, payload: dict[str, Any], index: int) -> dict[str, Any]:
+        def pick(name: str, default: Any = None) -> Any:
+            values = payload.get(name)
+            return values[index] if isinstance(values, list) and index < len(values) else default
+
+        expiration = self._date_from_epoch_or_iso(pick("expiration"))
+        bid = self._float(pick("bid")) or 0.0
+        ask = self._float(pick("ask")) or 0.0
+        dte = self._int(pick("dte")) or self._days_to_expiration(expiration) or 0
+        return {
+            "contract_symbol": str(pick("optionSymbol") or ""),
+            "ticker": str(pick("underlying") or ticker).upper(),
+            "side": str(pick("side") or "").lower(),
+            "expiration": expiration,
+            "days_to_expiration": dte,
+            "strike": self._float(pick("strike")),
+            "bid": bid,
+            "ask": ask,
+            "bid_size": self._int(pick("bidSize")),
+            "ask_size": self._int(pick("askSize")),
+            "last_price": self._float(pick("last")) or 0.0,
+            "midpoint": self._float(pick("mid")) or (round((bid + ask) / 2, 4) if bid > 0 and ask > 0 else None),
+            "volume": self._int(pick("volume")) or 0,
+            "open_interest": self._int(pick("openInterest")) or self._int(pick("open_interest")) or 0,
+            "implied_volatility": self._float(pick("iv")),
+            "max_loss_dollars": round(ask * 100, 2) if ask > 0 else None,
+            "break_even": None,
+            "quote_age_seconds": self._quote_age_from_updated(pick("updated")),
+            "source": "marketdata",
+        }
+
+    def _marketdata_contract_from_row(self, ticker: str, row: dict[str, Any]) -> dict[str, Any]:
+        bid = self._float(row.get("bid")) or 0.0
+        ask = self._float(row.get("ask")) or 0.0
+        expiration = self._date_from_epoch_or_iso(row.get("expiration"))
+        return {
+            "contract_symbol": str(row.get("optionSymbol") or row.get("symbol") or ""),
+            "ticker": str(row.get("underlying") or ticker).upper(),
+            "side": str(row.get("side") or "").lower(),
+            "expiration": expiration,
+            "days_to_expiration": self._int(row.get("dte")) or self._days_to_expiration(expiration) or 0,
+            "strike": self._float(row.get("strike")),
+            "bid": bid,
+            "ask": ask,
+            "bid_size": self._int(row.get("bidSize") or row.get("bid_size")),
+            "ask_size": self._int(row.get("askSize") or row.get("ask_size")),
+            "last_price": self._float(row.get("last")) or self._float(row.get("lastPrice")) or 0.0,
+            "midpoint": self._float(row.get("mid")) or (round((bid + ask) / 2, 4) if bid > 0 and ask > 0 else None),
+            "volume": self._int(row.get("volume")) or 0,
+            "open_interest": self._int(row.get("openInterest") or row.get("open_interest")) or 0,
+            "implied_volatility": self._float(row.get("iv") or row.get("impliedVolatility")),
+            "max_loss_dollars": round(ask * 100, 2) if ask > 0 else None,
+            "break_even": None,
+            "quote_age_seconds": self._quote_age_from_updated(row.get("updated")),
+            "source": "marketdata",
+        }
+
+    def _normalize_tradier_chain(self, ticker: str, expiration: str, dte: int, payload: dict[str, Any]) -> list[dict[str, Any]]:
+        options = ((payload.get("options") or {}).get("option") if isinstance(payload, dict) else None) or []
+        if isinstance(options, dict):
+            options = [options]
+        contracts: list[dict[str, Any]] = []
+        for row in options:
+            if not isinstance(row, dict):
+                continue
+            bid = self._float(row.get("bid")) or 0.0
+            ask = self._float(row.get("ask")) or 0.0
+            contracts.append(
+                {
+                    "contract_symbol": str(row.get("symbol") or ""),
+                    "ticker": ticker.upper(),
+                    "side": str(row.get("option_type") or "").lower(),
+                    "expiration": expiration,
+                    "days_to_expiration": dte,
+                    "strike": self._float(row.get("strike")),
+                    "bid": bid,
+                    "ask": ask,
+                    "bid_size": self._int(row.get("bidsize")),
+                    "ask_size": self._int(row.get("asksize")),
+                    "last_price": self._float(row.get("last")) or 0.0,
+                    "midpoint": round((bid + ask) / 2, 4) if bid > 0 and ask > 0 else self._float(row.get("last")),
+                    "volume": self._int(row.get("volume")) or 0,
+                    "open_interest": self._int(row.get("open_interest")) or 0,
+                    "implied_volatility": self._float((row.get("greeks") or {}).get("mid_iv") if isinstance(row.get("greeks"), dict) else None),
+                    "max_loss_dollars": round(ask * 100, 2) if ask > 0 else None,
+                    "break_even": None,
+                    "source": "tradier",
+                }
+            )
+        return contracts
 
     def _load_yfinance_chain(self, ticker: str, side: str) -> list[dict[str, Any]]:
         import yfinance as yf
@@ -231,6 +455,9 @@ class OptionsService:
             reasons.append("Adjusted/non-standard contract requires separate OCC/manual review.")
         if contract.get("event_flags"):
             reasons.append("Event flag present; manual event-risk review required.")
+        quote_age = contract.get("quote_age_seconds")
+        if quote_age is not None and float(quote_age) > self.settings.max_option_quote_age_seconds:
+            reasons.append("Option quote is stale.")
         if contract["days_to_expiration"] < self.settings.min_option_days_to_expiration:
             reasons.append("Expiration is too close.")
         if contract["days_to_expiration"] > self.settings.max_option_days_to_expiration:
@@ -266,6 +493,34 @@ class OptionsService:
             "max_loss_dollars": contract.get("max_loss_dollars"),
             "reason_codes": reasons,
         }
+
+    def _options_truth_gate(self, chain_provider: str, broker_snapshot_validated: bool) -> dict[str, Any]:
+        realtime_provider = chain_provider in {"marketdata", "tradier"}
+        manual_snapshot = chain_provider == "broker_snapshot_manual"
+        ready = realtime_provider or (manual_snapshot and broker_snapshot_validated)
+        return {
+            "schema_version": "real_money_options_truth_gate_v1",
+            "status": "REAL_MONEY_OPTIONS_TRUTH_READY" if ready else "BROKER_SNAPSHOT_REQUIRED",
+            "chain_provider": chain_provider,
+            "automated_realtime_provider": realtime_provider,
+            "broker_snapshot_validated": bool(broker_snapshot_validated),
+            "preliminary_only": chain_provider in {"yfinance", "yfinance_preliminary"},
+            "allowed_for_review_ranking": True,
+            "allowed_for_real_money_without_fresh_broker_snapshot": ready,
+            "reason": (
+                "Automated realtime options provider or fresh broker-visible snapshot is available."
+                if ready
+                else "This options chain may support research/review, but real-money readiness requires MarketData/Tradier or a fresh broker-visible snapshot."
+            ),
+        }
+
+    def _chain_notes(self, chain_provider: str, truth_gate: dict[str, Any]) -> list[str]:
+        notes = ["Review-only options quality check. This MCP cannot place orders."]
+        if chain_provider == "yfinance_preliminary":
+            notes.append("yfinance options data is preliminary and not sufficient as real-money options truth.")
+        if truth_gate.get("status") != "REAL_MONEY_OPTIONS_TRUTH_READY":
+            notes.append("Before any manual broker action, validate a fresh broker-visible option snapshot or configure MarketData/Tradier.")
+        return notes
 
     def _snapshot_mismatch_codes(
         self,
@@ -309,14 +564,25 @@ class OptionsService:
             flags.append("adjusted_contract")
         return sorted(set(flags))
 
-    def _log_no_trade(self, ticker: str, reasons: list[str], side: str) -> dict:
+    def _log_no_trade(
+        self,
+        ticker: str,
+        reasons: list[str],
+        side: str,
+        chain_provider: str = "yfinance_preliminary",
+        options_truth_status: dict[str, Any] | None = None,
+    ) -> dict:
+        truth_status = options_truth_status or self.options_data_status()
+        truth_gate = self._options_truth_gate(chain_provider, False)
         result = {
             "ticker": ticker,
             "direction": "put" if side == "puts" else "call",
             "status": "NO_TRADE_PLAN",
             "review_only": True,
             "can_place_order_from_this_mcp": False,
-            "chain_provider": "yfinance",
+            "chain_provider": chain_provider,
+            "options_data_status": truth_status,
+            "real_money_options_truth_gate": truth_gate,
             "quality_gate": {
                 "bid_ask_spread": False,
                 "volume": False,
@@ -328,6 +594,7 @@ class OptionsService:
             "rejected_sample": [],
             "best_rejected_contracts": [],
             "reasons": reasons,
+            "notes": self._chain_notes(chain_provider, truth_gate),
         }
         return self.events.log("options_chain_validation", result)
 
@@ -339,7 +606,7 @@ class OptionsService:
             "expiration_risk": not any(reason in reasons for reason in ["Expiration is too close.", "Expiration is too far for this review profile."]),
             "max_loss": not any(reason in reasons for reason in ["Max loss is unavailable.", "Ask exceeds configured max contract price."]),
             "contract_identity": not any(reason in reasons for reason in ["BROKER_CONTRACT_MISMATCH", "DISPLAYED_SYMBOL_MISMATCH", "ADJUSTED_CONTRACT", "Adjusted/non-standard contract requires separate OCC/manual review."]),
-            "freshness": "STALE_OPTION_QUOTE" not in reasons,
+            "freshness": not any(reason in reasons for reason in ["STALE_OPTION_QUOTE", "Option quote is stale."]),
         }
 
     def _quality_gate_summary(self, scored_contracts: list[dict[str, Any]]) -> dict:
@@ -400,6 +667,40 @@ class OptionsService:
             return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)
         except ValueError:
             return None
+
+    def _date_from_epoch_or_iso(self, value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(float(value), tz=UTC).date().isoformat()
+        raw = str(value).strip()
+        if not raw:
+            return None
+        try:
+            if raw.isdigit():
+                return datetime.fromtimestamp(float(raw), tz=UTC).date().isoformat()
+            return date.fromisoformat(raw[:10]).isoformat()
+        except ValueError:
+            return None
+
+    def _days_to_expiration(self, value: Any) -> int | None:
+        expiration = self._date_from_epoch_or_iso(value)
+        if not expiration:
+            return None
+        try:
+            return (date.fromisoformat(expiration) - datetime.now(UTC).date()).days
+        except ValueError:
+            return None
+
+    def _quote_age_from_updated(self, value: Any) -> float | None:
+        if value is None:
+            return None
+        try:
+            updated = datetime.fromtimestamp(float(value), tz=UTC)
+            return round((datetime.now(UTC) - updated).total_seconds(), 3)
+        except Exception:
+            parsed = self._parse_timestamp(value)
+            return round((datetime.now(UTC) - parsed).total_seconds(), 3) if parsed else None
 
     def _parse_expiration(self, value: str) -> date | None:
         try:

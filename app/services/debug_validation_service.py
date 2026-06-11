@@ -48,6 +48,8 @@ class DebugValidationService:
                 "trading_day_alerts": "trading_day_alerts_v1",
                 "session_risk_guard": "session_risk_guard_v1",
                 "failure_mode_audit": "failure_mode_audit_v1",
+                "options_data_status": "options_data_status_v1",
+                "real_money_options_truth_gate": "real_money_options_truth_gate_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -70,6 +72,7 @@ class DebugValidationService:
                 "/trade/manual-form",
                 "/trade/manual-action",
                 "/trade/pending-recheck",
+                "/options/data-status",
                 "/risk/session",
                 "/risk/failure-mode-audit",
             ],
@@ -106,10 +109,12 @@ class DebugValidationService:
                 "manual_snapshot_form_route": True,
                 "manual_broker_action_route": True,
                 "pending_recheck_route": True,
+                "options_data_status_route": True,
                 "session_risk_guard_route": True,
                 "failure_mode_audit_route": True,
             },
             "safety": self._safety(),
+            "options_data_status": self.container.options.options_data_status(),
         }
 
     async def tool_manifest(self, listed_tools: list[Any]) -> dict[str, Any]:
@@ -255,7 +260,7 @@ class DebugValidationService:
             ],
             "confidence_band": "MEDIUM",
             "known_blindspots": [
-                "No OPRA-grade options chain in this build.",
+                "Automated options truth requires MarketData/Tradier configuration; otherwise use broker snapshot validation.",
                 "No structured catalyst/news feed in this build.",
                 "No sector-relative strength module yet; SPY-relative strength is diagnostic only until backtested.",
                 "No L2/order-flow feed yet.",
@@ -272,6 +277,7 @@ class DebugValidationService:
             "schema_version": "debug_static_v1",
             "example_candidate": example,
             "options_review_schema_preview": self._options_review_schema_preview(),
+            "options_data_status_schema_preview": self.container.options.options_data_status(),
             "setup_memory_schema_preview": self._setup_memory_schema_preview(),
             "review_harvest_schema_preview": self._review_harvest_schema_preview(),
             "session_playbook_schema_preview": self._session_playbook_schema_preview(),
@@ -948,6 +954,7 @@ class DebugValidationService:
             "summarize_manual_option_paper_trades",
             "get_session_risk_guard",
             "get_failure_mode_audit",
+            "get_options_data_status",
             "export_journal_checkpoint",
             "restore_journal_checkpoint",
             "get_trading_monster_blueprint",

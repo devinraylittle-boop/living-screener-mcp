@@ -45,6 +45,11 @@ async def safe_config(request):
             "min_option_open_interest": settings.min_option_open_interest,
             "min_option_days_to_expiration": settings.min_option_days_to_expiration,
             "max_option_days_to_expiration": settings.max_option_days_to_expiration,
+            "options_data_provider": settings.options_data_provider,
+            "options_realtime_required": settings.options_realtime_required,
+            "max_option_quote_age_seconds": settings.max_option_quote_age_seconds,
+            "has_marketdata_api_key": bool(settings.marketdata_api_key),
+            "has_tradier_access_token": bool(settings.tradier_access_token),
             "has_finnhub_api_key": bool(settings.finnhub_api_key),
             "has_polygon_api_key": bool(settings.polygon_api_key),
             "has_screener_auth_token": bool(settings.screener_auth_token),
@@ -55,7 +60,19 @@ async def safe_config(request):
 
 async def version(request):
     settings: Settings = request.app.state.settings
-    return JSONResponse({"service": settings.app_name, "build_version": BUILD_VERSION, "market_data_provider": settings.market_data_provider, "has_finnhub_api_key": bool(settings.finnhub_api_key), "review_only": settings.review_only, "can_place_order_from_this_mcp": False})
+    return JSONResponse(
+        {
+            "service": settings.app_name,
+            "build_version": BUILD_VERSION,
+            "market_data_provider": settings.market_data_provider,
+            "options_data_provider": settings.options_data_provider,
+            "has_finnhub_api_key": bool(settings.finnhub_api_key),
+            "has_marketdata_api_key": bool(settings.marketdata_api_key),
+            "has_tradier_access_token": bool(settings.tradier_access_token),
+            "review_only": settings.review_only,
+            "can_place_order_from_this_mcp": False,
+        }
+    )
 
 
 async def tools(request):

@@ -38,6 +38,7 @@ from app.fallback_endpoints import (
     fallback_morning_autopilot,
     fallback_observer_followup,
     fallback_offhours_plan,
+    fallback_options_data_status,
     fallback_options_review,
     fallback_paper_option_close,
     fallback_paper_option_entry,
@@ -94,6 +95,7 @@ def create_app():
     app.add_route("/ops/market-open-observer", fallback_market_open_observer, methods=["GET"])
     app.add_route("/ops/observer-followup", fallback_observer_followup, methods=["GET"])
     app.add_route("/review/options", fallback_options_review, methods=["GET"])
+    app.add_route("/options/data-status", fallback_options_data_status, methods=["GET"])
     app.add_route("/review/manual-preflight", fallback_manual_preflight, methods=["GET", "POST"])
     app.add_route("/trade/manual-form", fallback_manual_snapshot_form, methods=["GET"])
     app.add_route("/trade/manual-desk", fallback_manual_trade_desk, methods=["GET", "POST"])

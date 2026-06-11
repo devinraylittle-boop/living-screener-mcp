@@ -58,7 +58,11 @@ def _version_payload() -> dict:
         "service": settings.app_name,
         "build_version": BUILD_VERSION,
         "market_data_provider": settings.market_data_provider,
+        "options_data_provider": settings.options_data_provider,
+        "options_truth_status": container.options.options_data_status()["real_money_options_truth_status"],
         "has_finnhub_api_key": bool(settings.finnhub_api_key),
+        "has_marketdata_api_key": bool(settings.marketdata_api_key),
+        "has_tradier_access_token": bool(settings.tradier_access_token),
         "review_only": True,
         "can_place_order_from_this_mcp": False,
         "can_cancel_order_from_this_mcp": False,
@@ -178,6 +182,11 @@ def analyze_ticker(ticker: str, mode: str | None = None) -> dict:
 @mcp.tool
 def validate_options_chain(ticker: str, direction: str = "call", max_contract_price: float | None = None) -> dict:
     return container.options.validate_chain(ticker, direction, max_contract_price)
+
+
+@mcp.tool
+def get_options_data_status() -> dict:
+    return container.options.options_data_status()
 
 
 @mcp.tool
