@@ -2947,6 +2947,141 @@ def _journal_checkpoint_restore_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Journal Checkpoint Restore", body, payload)
 
 
+def _journal_vault_status(limit: int = 500) -> dict[str, Any]:
+    limit = max(1, min(int(limit or 500), 2000))
+    events = container.events.recent(None, limit)
+    checkpoints = container.events.recent("journal_checkpoint_export", 5)
+    restores = container.events.recent("journal_checkpoint_restore", 5)
+    counts = Counter(str(event.get("event_type") or "unknown") for event in events)
+    latest_event_id = max([int(event.get("id") or 0) for event in events], default=0)
+    latest_checkpoint = checkpoints[0] if checkpoints else None
+    latest_restore = restores[0] if restores else None
+    return {
+        "status": "JOURNAL_VAULT_READY",
+        "build_version": BUILD_VERSION,
+        "schema_version": "journal_vault_v1",
+        "event_count": len(events),
+        "latest_event_id": latest_event_id,
+        "event_type_counts": dict(counts),
+        "latest_checkpoint": {
+            "id": latest_checkpoint.get("id"),
+            "timestamp": latest_checkpoint.get("timestamp"),
+            "exported_event_count": (latest_checkpoint.get("payload") or {}).get("exported_event_count"),
+            "latest_event_id": (latest_checkpoint.get("payload") or {}).get("latest_event_id"),
+        } if latest_checkpoint else None,
+        "latest_restore": {
+            "id": latest_restore.get("id"),
+            "timestamp": latest_restore.get("timestamp"),
+            "restored_count": (latest_restore.get("payload") or {}).get("restored_count"),
+            "skipped_duplicate_count": (latest_restore.get("payload") or {}).get("skipped_duplicate_count"),
+        } if latest_restore else None,
+        "recommended_workflow": [
+            "Before uploading or redeploying: open the export link and save/copy the JSON checkpoint.",
+            "After Render redeploys: paste the checkpoint JSON into this vault restore box.",
+            "Then run the paper follow-up or alerts pages again so learning continues from restored evidence.",
+        ],
+        "links": {
+            "export_checkpoint_json": "/journal/checkpoint?limit=1000&format=json",
+            "export_checkpoint_html": "/journal/checkpoint?limit=1000&format=html",
+            "paper_followup": "/paper/exploration/followup?limit_runs=5&max_items=80&classify=true&format=html",
+            "day_alerts": "/ops/day-alerts?limit=50&format=html",
+        },
+        "cash_gate_status": {
+            "cash_gates_changed": False,
+            "real_money_allowed_from_this_output": False,
+        },
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+
+
+def _journal_vault_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    count_rows = []
+    for event_type, count in sorted((result.get("event_type_counts") or {}).items()):
+        count_rows.append(
+            "<tr>"
+            f"<td>{escape(str(event_type))}</td>"
+            f"<td>{escape(str(count))}</td>"
+            "</tr>"
+        )
+    link_rows = []
+    for key, value in (result.get("links") or {}).items():
+        link_rows.append(
+            "<tr>"
+            f"<td>{escape(str(key).replace('_', ' ').title())}</td>"
+            f"<td><a href=\"{escape(str(value))}\">{escape(str(value))}</a></td>"
+            "</tr>"
+        )
+    latest_checkpoint = result.get("latest_checkpoint") or {}
+    latest_restore = result.get("latest_restore") or {}
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Journal Vault</h1>
+    <p>Preserve paper, review, outcome, and learning memory across Render redeploys. Review-only; no broker access.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Events In Memory", result.get("event_count")),
+    ("Latest Event ID", result.get("latest_event_id")),
+    ("Latest Checkpoint", latest_checkpoint.get("timestamp")),
+    ("Checkpoint Event Count", latest_checkpoint.get("exported_event_count")),
+    ("Latest Restore", latest_restore.get("timestamp")),
+    ("Restored Count", latest_restore.get("restored_count")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Before Deploy</h2>
+<p>Open the JSON export link, keep that text somewhere safe, then deploy. This is the memory snapshot.</p>
+<p><a href="/journal/checkpoint?limit=1000&format=json">Export checkpoint JSON</a></p>
+<h2>After Deploy Restore</h2>
+<p>Paste the checkpoint JSON below, then press restore. Duplicate events are skipped.</p>
+<textarea id="checkpointText" style="width:100%;min-height:260px;font-family:monospace;"></textarea>
+<p><button onclick="restoreCheckpoint()">Restore pasted checkpoint</button></p>
+<pre id="restoreResult">No restore submitted yet.</pre>
+<script>
+async function restoreCheckpoint() {{
+  const text = document.getElementById('checkpointText').value;
+  const out = document.getElementById('restoreResult');
+  try {{
+    const response = await fetch('/journal/vault', {{
+      method: 'POST',
+      headers: {{'content-type': 'application/json'}},
+      body: JSON.stringify({{checkpoint_text: text}})
+    }});
+    const data = await response.json();
+    out.textContent = JSON.stringify(data.result || data, null, 2);
+  }} catch (err) {{
+    out.textContent = String(err);
+  }}
+}}
+</script>
+<h2>Memory Counts</h2>
+<table>
+  <thead><tr><th>Event Type</th><th>Count</th></tr></thead>
+  <tbody>{''.join(count_rows) if count_rows else '<tr><td colspan="2">No journal events in memory.</td></tr>'}</tbody>
+</table>
+<h2>Links</h2>
+<table>
+  <thead><tr><th>Action</th><th>Link</th></tr></thead>
+  <tbody>{''.join(link_rows)}</tbody>
+</table>
+<h2>Workflow</h2>
+{_list(result.get("recommended_workflow") or [])}
+<h2>Hard Rule</h2>
+{_list([
+    "Journal memory is evidence, not broker truth.",
+    "Restoring memory does not approve any trade.",
+    "This page cannot place, submit, simulate, modify, or cancel broker orders.",
+])}
+"""
+    return _html_page("Journal Vault", body, payload)
+
+
 def _blueprint_html(payload: dict[str, Any], title: str) -> HTMLResponse:
     result = payload.get("result") or {}
     sections = []
@@ -3809,6 +3944,34 @@ async def fallback_journal_checkpoint(request: Request) -> JSONResponse | HTMLRe
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _journal_checkpoint_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_journal_vault(request: Request) -> JSONResponse | HTMLResponse:
+    if request.method == "POST":
+        try:
+            body = await request.json()
+        except Exception:
+            raw = (await request.body()).decode("utf-8", errors="ignore")
+            body = {"checkpoint_text": raw}
+        checkpoint = body.get("checkpoint") if isinstance(body.get("checkpoint"), dict) else None
+        if checkpoint is None:
+            raw_text = str(body.get("checkpoint_text") or "").strip()
+            try:
+                checkpoint = json.loads(raw_text)
+            except Exception:
+                checkpoint = {"events": "bad"}
+        result = _restore_journal_checkpoint(container, checkpoint, "journal_vault_restore", 2000)
+        payload = _review_only_envelope({"result": result})
+        if _wants_html(request):
+            return _journal_checkpoint_restore_html(payload)
+        return JSONResponse(payload)
+
+    limit = _int_or_default(request.query_params.get("limit"), 500)
+    result = _journal_vault_status(limit)
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _journal_vault_html(payload)
     return JSONResponse(payload)
 
 
