@@ -1,8 +1,8 @@
 {
     "service":  "Living Screener MCP",
-    "release_folder":  "living-screener-mcp-paper-exploration-20260611-103500",
-    "target_build_version":  "2026.06.11-paper-exploration-v2",
-    "expected_live_tool_count":  81,
+    "release_folder":  "living-screener-mcp-autonomous-firewall-20260611-113000",
+    "target_build_version":  "2026.06.11-autonomous-firewall",
+    "expected_live_tool_count":  84,
     "safety_invariants":  {
                               "review_only":  true,
                               "place_orders":  false,
@@ -36,12 +36,15 @@
     "live_validation_endpoints":  [
                                       "/version",
                                       "/tools",
-                                      "/health/full?expected_build_version=2026.06.11-paper-exploration-v2",
+                                      "/health/full?expected_build_version=2026.06.11-autonomous-firewall",
                                       "/ops/autonomous-morning-scan?format=html",
                                       "/ops/event-radar?format=html",
                                       "/ops/broad-opportunity-scan?format=html",
                                       "/ops/data-truth-cockpit?format=html",
                                       "/ops/system-communication-audit?format=html",
+                                      "/ops/strategy-modules?format=html",
+                                      "/ops/shared-intelligence?format=html",
+                                      "/ops/autonomous-launch-decision?account_value=100\u0026intended_cash=100\u0026format=html",
                                       "/ops/event-volatility-playbook?format=html",
                                       "/ops/event-volatility-scan?format=html",
                                       "/truth/source-status",

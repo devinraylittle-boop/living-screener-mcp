@@ -1,6 +1,6 @@
 # Scheduler Pinger
 
-Build: `2026.06.11-paper-exploration-v2`
+Build: `2026.06.11-autonomous-firewall`
 
 This package adds two ways to keep Living Screener awake and logging review-only scan evidence.
 
@@ -63,13 +63,13 @@ After deployment:
 ```text
 /version
 /tools
-/health/full?expected_build_version=2026.06.11-paper-exploration-v2
+/health/full?expected_build_version=2026.06.11-autonomous-firewall
 /ops/autonomous-morning-scan?format=html
 ```
 
 Expected:
 
-- Build version: `2026.06.11-paper-exploration-v2`
+- Build version: `2026.06.11-autonomous-firewall`
 - Tool count: `81`
 - Full health: `OK`
 - Autonomous scan returns a review-only status and a next refresh interval.

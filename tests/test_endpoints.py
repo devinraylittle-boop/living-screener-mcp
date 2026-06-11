@@ -37,6 +37,9 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("run_broad_opportunity_scan", tools.json()["tools"])
         self.assertIn("get_data_truth_cockpit", tools.json()["tools"])
         self.assertIn("get_system_communication_audit", tools.json()["tools"])
+        self.assertIn("get_strategy_module_registry", tools.json()["tools"])
+        self.assertIn("get_shared_intelligence_layer", tools.json()["tools"])
+        self.assertIn("get_autonomous_launch_decision", tools.json()["tools"])
         self.assertIn("market_readiness_check", tools.json()["tools"])
         self.assertIn("run_review_harvest", tools.json()["tools"])
         self.assertIn("get_market_session_playbook", tools.json()["tools"])
@@ -524,7 +527,7 @@ class EndpointTests(unittest.TestCase):
     def test_tomorrow_operator_brief_endpoint_can_render_human_readable_html(self) -> None:
         fake_brief = {
             "status": "OPERATOR_READY_TO_START",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "next_action": "Open launch, morning autopilot, and day monitor.",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -549,7 +552,7 @@ class EndpointTests(unittest.TestCase):
                 {
                     "step": "1. Confirm deployment",
                     "target_time_ct": "Before open",
-                    "link": "/health/full?expected_build_version=2026.06.11-paper-exploration-v2",
+                    "link": "/health/full?expected_build_version=2026.06.11-autonomous-firewall",
                     "pass_condition": "OK and build matches.",
                 }
             ],
@@ -584,7 +587,7 @@ class EndpointTests(unittest.TestCase):
     def test_root_route_opens_operator_brief(self) -> None:
         fake_brief = {
             "status": "OPERATOR_READY_TO_START",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "next_action": "Open launch, morning autopilot, and day monitor.",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -614,7 +617,7 @@ class EndpointTests(unittest.TestCase):
     def test_root_defaults_to_human_readable_operator_brief(self) -> None:
         fake_brief = {
             "status": "OPERATOR_READY_TO_START",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "generated_at": "2026-06-10T12:00:00+00:00",
             "account_value_reference": 50.0,
             "safety": {"review_only": True},
@@ -644,7 +647,7 @@ class EndpointTests(unittest.TestCase):
     def test_go_live_rehearsal_endpoint_can_render_human_readable_html(self) -> None:
         fake_rehearsal = {
             "status": "GO_LIVE_REHEARSAL_READY",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "next_action": "Deploy and validate this build.",
             "include_market_check": False,
             "operator_brief": {
@@ -697,7 +700,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_trade_desk_endpoint_can_render_human_readable_html(self) -> None:
         fake_trade_desk = {
             "status": "MANUAL_TRADE_DESK_READY",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "ticker": "SOFI",
             "direction": "put",
             "contract_symbol": "SOFI260612P00015000",
@@ -773,7 +776,7 @@ class EndpointTests(unittest.TestCase):
     def test_market_open_observer_endpoint_logs_evidence_without_broker_action(self) -> None:
         fake_observer = {
             "status": "OBSERVER_STOCK_CANDIDATES",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "mode": "market_open_observer",
             "cadence_minutes": 5,
             "candidate_count": 1,
@@ -829,7 +832,7 @@ class EndpointTests(unittest.TestCase):
     def test_observer_followup_endpoint_can_render_missed_move_learning(self) -> None:
         fake_followup = {
             "status": "OBSERVER_FOLLOWUP_LEARNING_NEEDED",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "mode": "observer_followup",
             "source_observation_count": 2,
             "items_checked": 3,
@@ -880,7 +883,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_broker_action_endpoint_records_pending_recheck_card(self) -> None:
         fake_action = {
             "status": "MANUAL_ACTION_PENDING_RECHECK_REQUIRED",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "ticker": "SOFI",
             "contract_symbol": "SOFI260612P00015000",
             "action_type": "pending_buy",
@@ -960,7 +963,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_launch_endpoint_renders_go_no_go_map(self) -> None:
         fake_launch = {
             "status": "LAUNCH_START_HERE",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "mode": "trading_day_launch_checklist",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -976,7 +979,7 @@ class EndpointTests(unittest.TestCase):
                 {
                     "phase": "Build and safety",
                     "go_condition": "Build matches expected version.",
-                    "primary_link": "/health/full?expected_build_version=2026.06.11-paper-exploration-v2",
+                    "primary_link": "/health/full?expected_build_version=2026.06.11-autonomous-firewall",
                     "stop_if": "Wrong build.",
                 },
                 {
@@ -1009,7 +1012,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_heartbeat_endpoint_renders_safe_cadence_tick(self) -> None:
         fake_heartbeat = {
             "status": "HEARTBEAT_NO_TRADE_PLAN",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "mode": "trading_day_heartbeat",
             "phase": {"phase": "active", "forced": True, "now_et": "2026-06-10T11:00:00-04:00"},
             "universe": ["SOFI", "SMCI"],
@@ -1046,7 +1049,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_alerts_endpoint_renders_attention_queue(self) -> None:
         fake_alerts = {
             "status": "ALERTS_MANUAL_REVIEW_READY",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "top_level": "REVIEW",
             "alert_count": 1,
             "alerts": [
@@ -1195,12 +1198,12 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.11-paper-exploration-v2")
-        full_html = client.get("/health/full?expected_build_version=2026.06.11-paper-exploration-v2&format=html")
+        full = client.get("/health/full?expected_build_version=2026.06.11-autonomous-firewall")
+        full_html = client.get("/health/full?expected_build_version=2026.06.11-autonomous-firewall&format=html")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         release = client.get("/release-manifest")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.11-paper-exploration-v2")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.11-autonomous-firewall")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -1212,8 +1215,8 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(mismatch.json()["result"]["status"], "BUILD_MISMATCH")
         self.assertEqual(release.status_code, 200)
         self.assertEqual(release.json()["status"], "RELEASE_MANIFEST_READY")
-        self.assertEqual(release.json()["manifest"]["target_build_version"], "2026.06.11-paper-exploration-v2")
-        self.assertEqual(release.json()["manifest"]["expected_live_tool_count"], 81)
+        self.assertEqual(release.json()["manifest"]["target_build_version"], "2026.06.11-autonomous-firewall")
+        self.assertEqual(release.json()["manifest"]["expected_live_tool_count"], 84)
         self.assertIn("tools/start_tomorrow.ps1", release.json()["manifest"]["operator_helpers"])
         self.assertEqual(manifest.status_code, 200)
         self.assertEqual(manifest.json()["result"]["status"], "TOOL_MANIFEST_READY")
@@ -1224,6 +1227,9 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_broad_opportunity_scan"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_data_truth_cockpit"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_system_communication_audit"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["get_strategy_module_registry"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["get_shared_intelligence_layer"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["get_autonomous_launch_decision"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_review_harvest"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_market_session_playbook"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_latest_harvest_followup"])
@@ -1278,7 +1284,7 @@ class EndpointTests(unittest.TestCase):
     def test_event_volatility_endpoints_are_readable_and_review_only(self) -> None:
         fake_scan = {
             "status": "EVENT_STOCK_REVIEW_ONLY",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "event_name": "spacex_ipo",
             "direct_symbol": "SPCX",
             "direct_symbol_status": "NOT_RETURNED_BY_DATA_PROVIDER_YET",
@@ -1305,7 +1311,7 @@ class EndpointTests(unittest.TestCase):
         }
         fake_broad = {
             "status": "BROAD_STOCK_REVIEW_ONLY",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "universe_count": 30,
             "stock_candidate_count": 1,
             "options_review_count": 0,
@@ -1333,7 +1339,7 @@ class EndpointTests(unittest.TestCase):
         }
         fake_truth = {
             "status": "DATA_TRUTH_EQUITY_READY_OPTIONS_MANUAL",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "market_data_health": {
                 "status": "MARKET_DATA_HEALTHY",
                 "provider": "finnhub",
@@ -1352,7 +1358,7 @@ class EndpointTests(unittest.TestCase):
         }
         fake_audit = {
             "status": "SYSTEM_COMMUNICATION_AUDIT_READY",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "recent_event_count": 3,
             "recent_event_type_counts": {"scan": 1, "review": 2},
             "communication_map": [{"system": "scanner", "writes": ["evidence"], "read_by": ["learning"], "clutter_control": "Lane labels."}],
@@ -1417,7 +1423,7 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(audit_html.status_code, 200)
         self.assertIn("System Communication Audit", audit_html.text)
         self.assertIn("Clutter Limits", audit_html.text)
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.11-paper-exploration-v2")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.11-autonomous-firewall")
         self.assertEqual(schema.status_code, 200)
         followup_preview = schema.json()["result"]["harvest_followup_schema_preview"]
         self.assertEqual(followup_preview["status"], "HARVEST_FOLLOWUP_COMPLETE")
@@ -1648,10 +1654,92 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(summary.status_code, 200)
         self.assertIn("Paper Exploration Summary", summary.text)
 
+    def test_autonomous_firewall_endpoints_are_review_only(self) -> None:
+        fake_registry = {
+            "status": "STRATEGY_MODULE_REGISTRY_READY",
+            "build_version": "2026.06.11-autonomous-firewall",
+            "module_count": 1,
+            "modules": [
+                {
+                    "module": "clean_liquid_options_scalp",
+                    "status": "REVIEW_ONLY",
+                    "paper_enabled": True,
+                    "cash_autonomous_enabled": False,
+                    "reason": "Broker truth required before cash.",
+                }
+            ],
+            "live_performance_memory": {"sample_size": 0},
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        fake_intelligence = {
+            "status": "SHARED_INTELLIGENCE_READY",
+            "build_version": "2026.06.11-autonomous-firewall",
+            "signal_count": 1,
+            "actionable_count": 0,
+            "supporting_count": 1,
+            "suppressed_count": 0,
+            "conflict_count": 0,
+            "actionable_signals": [],
+            "supporting_confirmations": [
+                {
+                    "ticker": "SOFI",
+                    "source_module": "paper_exploration",
+                    "signal_type": "paper_trial",
+                    "directional_bias": "short",
+                    "intelligence_score": 66,
+                    "final_use": "SUPPORTING_CONFIRMATION",
+                }
+            ],
+            "noise_filter_rules": ["Unknown information never becomes confidence."],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        fake_decision = {
+            "status": "AUTONOMOUS_FIREWALL_READY",
+            "build_version": "2026.06.11-autonomous-firewall",
+            "final_launch_decision": "DELAY_LAUNCH",
+            "account_value_reference": 100,
+            "intended_cash_reference": 100,
+            "capability_decision": {
+                "autonomous_scanning_enabled": True,
+                "autonomous_paper_exploration_enabled": True,
+                "autonomous_real_money_execution_enabled": False,
+            },
+            "blockers": ["This MCP has no broker execution capability; autonomous real-money execution cannot be enabled here."],
+            "warnings": ["Paper/live sample size is still thin."],
+            "minimum_before_cash_autonomy": ["Separate broker tool confirms account, buying power, positions, and open orders."],
+            "operator_read": "Autonomous scanning and paper learning are enabled.",
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+            "broker_action": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints._get_strategy_module_registry", return_value=fake_registry), patch(
+            "app.fallback_endpoints._get_shared_intelligence_layer", return_value=fake_intelligence
+        ), patch("app.fallback_endpoints._get_autonomous_launch_decision", return_value=fake_decision):
+            registry = client.get("/ops/strategy-modules?format=html")
+            intelligence = client.get("/ops/shared-intelligence?tickers=SOFI&format=html")
+            decision = client.get("/ops/autonomous-launch-decision?account_value=100&intended_cash=100&format=html")
+            decision_json = client.get("/ops/autonomous-launch-decision?account_value=100&intended_cash=100")
+
+        self.assertEqual(registry.status_code, 200)
+        self.assertIn("Strategy Module Registry", registry.text)
+        self.assertEqual(intelligence.status_code, 200)
+        self.assertIn("Shared Intelligence Layer", intelligence.text)
+        self.assertEqual(decision.status_code, 200)
+        self.assertIn("Autonomous Launch Decision", decision.text)
+        self.assertIn("DELAY_LAUNCH", decision.text)
+        self.assertFalse(decision_json.json()["can_place_order_from_this_mcp"])
+        self.assertFalse(decision_json.json()["result"]["capability_decision"]["autonomous_real_money_execution_enabled"])
+
     def test_session_risk_guard_endpoint_is_review_only(self) -> None:
         fake_risk = {
             "status": "SESSION_RISK_CLEAR",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "account_value_reference": 50,
             "proposed_risk_dollars": 5,
             "per_trade_cap_dollars": 5,
@@ -1699,9 +1787,9 @@ class EndpointTests(unittest.TestCase):
         }
         fake_restore = {
             "status": "CHECKPOINT_RESTORE_READY",
-            "build_version": "2026.06.11-paper-exploration-v2",
+            "build_version": "2026.06.11-autonomous-firewall",
             "source_label": "unit_test",
-            "checkpoint_build_version": "2026.06.11-paper-exploration-v2",
+            "checkpoint_build_version": "2026.06.11-autonomous-firewall",
             "requested_event_count": 1,
             "restored_count": 1,
             "skipped_duplicate_count": 0,
