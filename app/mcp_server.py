@@ -180,6 +180,62 @@ def get_real_cash_proof_gate(
 
 
 @mcp.tool
+def get_broker_proof_bridge(
+    account_value: float = 100.0,
+    intended_cash: float = 100.0,
+    ticker: str = "",
+    contract_symbol: str = "",
+    account_last4: str = "",
+    account_type: str = "",
+    broker_account_confirmed: bool = False,
+    buying_power_confirmed: bool = False,
+    buying_power: float | None = None,
+    open_orders_checked: bool = False,
+    open_order_count: int | None = None,
+    open_positions_checked: bool = False,
+    open_position_count: int | None = None,
+    duplicate_order_active: bool = False,
+    order_preview_confirmed: bool = False,
+    preview_order_type: str = "limit",
+    preview_side: str = "buy",
+    preview_quantity: int = 1,
+    preview_limit_price: float | None = None,
+    preview_max_loss: float | None = None,
+    options_snapshot_validated: bool = False,
+    options_snapshot_age_seconds: float | None = None,
+    broker_source: str = "operator_supplied",
+    separate_broker_executor_proven: bool = False,
+) -> dict:
+    return _get_broker_proof_bridge(
+        container,
+        account_value,
+        intended_cash,
+        ticker,
+        contract_symbol,
+        account_last4,
+        account_type,
+        broker_account_confirmed,
+        buying_power_confirmed,
+        buying_power,
+        open_orders_checked,
+        open_order_count,
+        open_positions_checked,
+        open_position_count,
+        duplicate_order_active,
+        order_preview_confirmed,
+        preview_order_type,
+        preview_side,
+        preview_quantity,
+        preview_limit_price,
+        preview_max_loss,
+        options_snapshot_validated,
+        options_snapshot_age_seconds,
+        broker_source,
+        separate_broker_executor_proven,
+    )
+
+
+@mcp.tool
 def market_readiness_check(tickers: list[str] | None = None, max_candidates: int = 25) -> dict:
     return _market_readiness_check(container, tickers, max_candidates)
 
@@ -1654,6 +1710,129 @@ def _get_real_cash_proof_gate(
         "broker_action": False,
     }
     return service_container.events.log("real_cash_proof_gate", payload)
+
+
+def _get_broker_proof_bridge(
+    service_container,
+    account_value: float,
+    intended_cash: float,
+    ticker: str,
+    contract_symbol: str,
+    account_last4: str,
+    account_type: str,
+    broker_account_confirmed: bool,
+    buying_power_confirmed: bool,
+    buying_power: float | None,
+    open_orders_checked: bool,
+    open_order_count: int | None,
+    open_positions_checked: bool,
+    open_position_count: int | None,
+    duplicate_order_active: bool,
+    order_preview_confirmed: bool,
+    preview_order_type: str,
+    preview_side: str,
+    preview_quantity: int,
+    preview_limit_price: float | None,
+    preview_max_loss: float | None,
+    options_snapshot_validated: bool,
+    options_snapshot_age_seconds: float | None,
+    broker_source: str,
+    separate_broker_executor_proven: bool,
+) -> dict:
+    account_value = _float_or_zero(account_value) or 100.0
+    intended_cash = _float_or_zero(intended_cash) or account_value
+    ticker = str(ticker or "").upper().strip()
+    contract_symbol = str(contract_symbol or "").upper().strip()
+    account_last4 = str(account_last4 or "").strip()
+    account_type = str(account_type or "").strip()
+    broker_source = str(broker_source or "operator_supplied").strip().lower()
+    order_type = str(preview_order_type or "").strip().lower()
+    side = str(preview_side or "").strip().lower()
+    qty = max(0, int(preview_quantity or 0))
+    limit_price = _float_or_zero(preview_limit_price)
+    max_loss = _float_or_zero(preview_max_loss)
+    buying_power_value = _float_or_zero(buying_power)
+    snapshot_age = _float_or_zero(options_snapshot_age_seconds)
+    machine_verified = broker_source in {"machine_verified", "robinhood_mcp_verified", "broker_api_verified"}
+    required_cash = max(max_loss, min(intended_cash, account_value))
+    open_orders_count_valid = open_order_count is not None and int(open_order_count) >= 0
+    open_positions_count_valid = open_position_count is not None and int(open_position_count) >= 0
+
+    broker_items = [
+        _proof_item("broker", "Broker account selected", "PROVEN" if broker_account_confirmed and account_last4 else "MISSING", account_last4 or "missing account identifier", ["manual_cash_review", "autonomous_execution"]),
+        _proof_item("broker", "Broker account type recorded", "PROVEN" if account_type else "WARNING", account_type or "account type missing", ["manual_cash_review"]),
+        _proof_item("broker", "Buying power numeric and sufficient", "PROVEN" if buying_power_confirmed and buying_power_value >= required_cash else "MISSING", f"buying_power={buying_power_value}; required_reference={round(required_cash, 2)}", ["manual_cash_review", "autonomous_execution"]),
+        _proof_item("broker", "Open orders checked", "PROVEN" if open_orders_checked and open_orders_count_valid else "MISSING", f"open_order_count={open_order_count}", ["manual_cash_review", "autonomous_execution"]),
+        _proof_item("broker", "Open positions checked", "PROVEN" if open_positions_checked and open_positions_count_valid else "MISSING", f"open_position_count={open_position_count}", ["manual_cash_review", "autonomous_execution"]),
+        _proof_item("broker", "No duplicate active order", "PROVEN" if not duplicate_order_active and open_orders_checked else "BLOCKED", f"duplicate_order_active={duplicate_order_active}", ["manual_cash_review", "autonomous_execution"]),
+        _proof_item("broker", "Limit-order preview confirmed", "PROVEN" if order_preview_confirmed and order_type == "limit" and qty > 0 and limit_price > 0 and max_loss > 0 else "MISSING", f"type={order_type}; qty={qty}; limit={limit_price}; max_loss={max_loss}", ["manual_cash_review", "autonomous_execution"]),
+        _proof_item("options", "Fresh options snapshot validated", "PROVEN" if options_snapshot_validated and snapshot_age > 0 and snapshot_age <= 60 else "MISSING", f"validated={options_snapshot_validated}; age_seconds={snapshot_age}", ["manual_cash_review", "autonomous_execution"]),
+        _proof_item("execution", "Broker proof source is machine verified", "PROVEN" if machine_verified else "WARNING", broker_source, ["autonomous_execution"]),
+        _proof_item("execution", "Separate broker executor proven", "PROVEN" if separate_broker_executor_proven else "BLOCKED", "required for autonomous execution; not required for manual review", ["autonomous_execution"]),
+    ]
+    manual_blockers = [
+        item for item in broker_items
+        if "manual_cash_review" in item["required_for"] and item["status"] in {"MISSING", "BLOCKED"}
+    ]
+    autonomy_blockers = [
+        item for item in broker_items
+        if "autonomous_execution" in item["required_for"] and item["status"] in {"MISSING", "BLOCKED", "WARNING"}
+    ]
+    proof_gate_query = (
+        f"account_value={account_value}&intended_cash={intended_cash}"
+        f"&broker_account_confirmed={str(broker_account_confirmed).lower()}"
+        f"&buying_power_confirmed={str(bool(buying_power_confirmed and buying_power_value >= required_cash)).lower()}"
+        f"&open_orders_checked={str(bool(open_orders_checked and open_orders_count_valid)).lower()}"
+        f"&open_positions_checked={str(bool(open_positions_checked and open_positions_count_valid)).lower()}"
+        f"&no_duplicate_order_confirmed={str(bool(not duplicate_order_active and open_orders_checked)).lower()}"
+        f"&order_preview_confirmed={str(bool(order_preview_confirmed and order_type == 'limit' and qty > 0 and limit_price > 0 and max_loss > 0)).lower()}"
+        f"&options_snapshot_validated={str(bool(options_snapshot_validated and snapshot_age > 0 and snapshot_age <= 60)).lower()}"
+        f"&separate_broker_executor_proven={str(bool(separate_broker_executor_proven and machine_verified)).lower()}"
+    )
+    payload = {
+        "status": "BROKER_PROOF_AUTONOMY_READY" if not autonomy_blockers else "BROKER_PROOF_MANUAL_READY" if not manual_blockers else "BROKER_PROOF_INCOMPLETE",
+        "build_version": BUILD_VERSION,
+        "schema_version": "broker_proof_bridge_v1",
+        "generated_at": utc_now(),
+        "ticker": ticker,
+        "contract_symbol": contract_symbol,
+        "account_value_reference": account_value,
+        "intended_cash_reference": intended_cash,
+        "broker_source": broker_source,
+        "machine_verified": machine_verified,
+        "broker_snapshot": {
+            "account_last4": account_last4,
+            "account_type": account_type,
+            "buying_power": buying_power_value,
+            "open_order_count": open_order_count,
+            "open_position_count": open_position_count,
+        },
+        "order_preview": {
+            "type": order_type,
+            "side": side,
+            "quantity": qty,
+            "limit_price": limit_price,
+            "max_loss": max_loss,
+            "duplicate_order_active": duplicate_order_active,
+        },
+        "proof_items": broker_items,
+        "manual_cash_blockers": manual_blockers,
+        "autonomous_execution_blockers": autonomy_blockers,
+        "decisions": {
+            "manual_real_cash_review": "BROKER_PROOF_READY" if not manual_blockers else "BROKER_PROOF_BLOCKED",
+            "fully_autonomous_real_cash_execution": "BROKER_AUTONOMY_PROOF_READY" if not autonomy_blockers else "BROKER_AUTONOMY_BLOCKED",
+            "can_feed_real_cash_proof_gate": not manual_blockers,
+        },
+        "proof_gate_link": f"/ops/real-cash-proof-gate?{proof_gate_query}",
+        "proof_gate_link_html": f"/ops/real-cash-proof-gate?{proof_gate_query}&format=html",
+        "next_step": "If manual proof is ready, open the proof gate link. If autonomy remains blocked, do not build execution until broker source is machine verified and a separate executor/order-preview loop is proven.",
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_allowed": False,
+        "broker_action": False,
+    }
+    return service_container.events.log("broker_proof_bridge", payload)
 
 
 def _intelligence_signals_from_event(event: dict[str, Any], payload: dict[str, Any], universe_filter: set[str]) -> list[dict[str, Any]]:

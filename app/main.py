@@ -17,6 +17,7 @@ from app.fallback_endpoints import (
     fallback_autonomous_morning_scan,
     fallback_autonomous_launch_decision,
     fallback_real_cash_proof_gate,
+    fallback_broker_proof_bridge,
     fallback_evidence_summary,
     fallback_event_radar,
     fallback_event_volatility_playbook,
@@ -118,6 +119,7 @@ def create_app():
     app.add_route("/ops/autonomous-morning-scan", fallback_autonomous_morning_scan, methods=["GET"])
     app.add_route("/ops/autonomous-launch-decision", fallback_autonomous_launch_decision, methods=["GET"])
     app.add_route("/ops/real-cash-proof-gate", fallback_real_cash_proof_gate, methods=["GET"])
+    app.add_route("/ops/broker-proof-bridge", fallback_broker_proof_bridge, methods=["GET"])
     app.add_route("/ops/strategy-modules", fallback_strategy_module_registry, methods=["GET"])
     app.add_route("/ops/shared-intelligence", fallback_shared_intelligence_layer, methods=["GET"])
     app.add_route("/ops/morning-autopilot", fallback_morning_autopilot, methods=["GET"])

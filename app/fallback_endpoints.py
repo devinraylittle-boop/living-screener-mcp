@@ -25,6 +25,7 @@ from app.mcp_server import (
     _get_system_communication_audit,
     _get_autonomous_launch_decision,
     _get_real_cash_proof_gate,
+    _get_broker_proof_bridge,
     _get_failure_mode_audit,
     _get_tomorrow_operator_brief,
     _get_trading_day_launch_checklist,
@@ -269,9 +270,9 @@ def _field_grid(items: list[tuple[str, Any]]) -> str:
 
 def _status_class(status: str | None) -> str:
     value = (status or "").upper()
-    if value in {"PROVEN", "PROVEN_READY", "REAL_CASH_PROOF_READY", "REVIEW_ONLY_OPTIONS_READY", "SMALL_ACCOUNT_SCALP_ACCEPTABLE", "OPTIONS_CHAIN_ACCEPTABLE", "EVENT_VOLATILITY_PLAYBOOK_READY", "EVENT_OPTIONS_READY", "EVENT_RADAR_READY", "BROAD_OPTIONS_READY", "DATA_TRUTH_READY", "SYSTEM_COMMUNICATION_AUDIT_READY"}:
+    if value in {"BROKER_PROOF_MANUAL_READY", "BROKER_PROOF_AUTONOMY_READY", "BROKER_PROOF_READY", "BROKER_AUTONOMY_PROOF_READY", "PROVEN", "PROVEN_READY", "REAL_CASH_PROOF_READY", "REVIEW_ONLY_OPTIONS_READY", "SMALL_ACCOUNT_SCALP_ACCEPTABLE", "OPTIONS_CHAIN_ACCEPTABLE", "EVENT_VOLATILITY_PLAYBOOK_READY", "EVENT_OPTIONS_READY", "EVENT_RADAR_READY", "BROAD_OPTIONS_READY", "DATA_TRUTH_READY", "SYSTEM_COMMUNICATION_AUDIT_READY"}:
         return "ok"
-    if value in {"MISSING", "BLOCKED", "REAL_CASH_BLOCKED", "AUTONOMOUS_EXECUTION_BLOCKED", "BLOCKED_BY_DATA", "NO_TRADE_PLAN", "NO_SMALL_ACCOUNT_CONTRACT", "EVENT_NO_TRADE_PLAN", "BROAD_NO_TRADE_PLAN", "DATA_TRUTH_BLOCKED"}:
+    if value in {"BROKER_PROOF_INCOMPLETE", "BROKER_PROOF_BLOCKED", "BROKER_AUTONOMY_BLOCKED", "MISSING", "BLOCKED", "REAL_CASH_BLOCKED", "AUTONOMOUS_EXECUTION_BLOCKED", "BLOCKED_BY_DATA", "NO_TRADE_PLAN", "NO_SMALL_ACCOUNT_CONTRACT", "EVENT_NO_TRADE_PLAN", "BROAD_NO_TRADE_PLAN", "DATA_TRUTH_BLOCKED"}:
         return "bad"
     return "warn"
 
@@ -2550,6 +2551,43 @@ def _real_cash_proof_gate_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Real-Cash Proof Gate", body, payload)
 
 
+def _broker_proof_bridge_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    rows = []
+    for item in result.get("proof_items") or []:
+        rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('category')))}</td>"
+            f"<td>{escape(str(item.get('name')))}</td>"
+            f"<td><span class=\"badge {escape(_status_class(str(item.get('status'))))}\">{escape(str(item.get('status')))}</span></td>"
+            f"<td>{escape(str(item.get('evidence')))}</td>"
+            "</tr>"
+        )
+    decisions = result.get("decisions") or {}
+    body = f"""
+      <div class="topbar">
+        <div>
+          <h1>Broker Proof Bridge</h1>
+          <p>Turns broker/account/order-preview facts into strict proof items before they are allowed into the real-cash proof gate.</p>
+        </div>
+        <span class="badge {escape(_status_class(str(result.get("status"))))}">{escape(str(result.get("status")))}</span>
+      </div>
+      {_field_grid([
+          ("Manual Review", decisions.get("manual_real_cash_review")),
+          ("Autonomous Execution", decisions.get("fully_autonomous_real_cash_execution")),
+          ("Machine Verified", result.get("machine_verified")),
+          ("Ticker", result.get("ticker")),
+          ("Contract", result.get("contract_symbol")),
+          ("Proof Gate", result.get("proof_gate_link_html")),
+      ])}
+      <h2>Broker Proof Items</h2>
+      <table><thead><tr><th>Category</th><th>Proof</th><th>Status</th><th>Evidence</th></tr></thead><tbody>{"".join(rows)}</tbody></table>
+      <h2>Next Step</h2>
+      <p>{escape(str(result.get("next_step") or ""))}</p>
+    """
+    return _html_page("Broker Proof Bridge", body, payload)
+
+
 def _paper_option_position_watch_html(payload: dict[str, Any]) -> HTMLResponse:
     result = payload.get("result") or {}
     close_request = result.get("close_request") or {}
@@ -3526,6 +3564,41 @@ async def fallback_real_cash_proof_gate(request: Request) -> JSONResponse | HTML
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _real_cash_proof_gate_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_broker_proof_bridge(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _get_broker_proof_bridge(
+        container,
+        _float_or_none(params.get("account_value")) or 100.0,
+        _float_or_none(params.get("intended_cash")) or 100.0,
+        params.get("ticker") or "",
+        params.get("contract_symbol") or "",
+        params.get("account_last4") or "",
+        params.get("account_type") or "",
+        _truthy(params.get("broker_account_confirmed")),
+        _truthy(params.get("buying_power_confirmed")),
+        _float_or_none(params.get("buying_power")),
+        _truthy(params.get("open_orders_checked")),
+        _int_or_default(params.get("open_order_count"), -1) if params.get("open_order_count") is not None else None,
+        _truthy(params.get("open_positions_checked")),
+        _int_or_default(params.get("open_position_count"), -1) if params.get("open_position_count") is not None else None,
+        _truthy(params.get("duplicate_order_active")),
+        _truthy(params.get("order_preview_confirmed")),
+        params.get("preview_order_type") or "limit",
+        params.get("preview_side") or "buy",
+        _int_or_default(params.get("preview_quantity"), 1),
+        _float_or_none(params.get("preview_limit_price")),
+        _float_or_none(params.get("preview_max_loss")),
+        _truthy(params.get("options_snapshot_validated")),
+        _float_or_none(params.get("options_snapshot_age_seconds")),
+        params.get("broker_source") or "operator_supplied",
+        _truthy(params.get("separate_broker_executor_proven")),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _broker_proof_bridge_html(payload)
     return JSONResponse(payload)
 
 
