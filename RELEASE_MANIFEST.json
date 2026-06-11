@@ -1,8 +1,8 @@
 {
   "service": "Living Screener MCP",
-  "release_folder": "living-screener-mcp-truth-layer-20260610-210000",
-  "target_build_version": "2026.06.10-truth-layer",
-  "expected_live_tool_count": 67,
+  "release_folder": "living-screener-mcp-options-provider-20260610-223000",
+  "target_build_version": "2026.06.10-options-provider",
+  "expected_live_tool_count": 68,
   "safety_invariants": {
     "review_only": true,
     "place_orders": false,
@@ -36,7 +36,7 @@
   "live_validation_endpoints": [
     "/version",
     "/tools",
-    "/health/full?expected_build_version=2026.06.10-truth-layer",
+    "/health/full?expected_build_version=2026.06.10-options-provider",
     "/",
     "/ops/go-live-rehearsal?account_value=50&format=html",
     "/trade/manual-form?format=html",

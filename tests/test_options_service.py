@@ -53,6 +53,25 @@ class OptionsServiceTests(unittest.TestCase):
         self.assertTrue(result["review_only"])
         self.assertFalse(result["can_place_order_from_this_mcp"])
 
+    def test_options_data_status_defaults_to_manual_snapshot_required(self) -> None:
+        with TempContainer() as container:
+            service = OptionsService(container.settings, container.events)
+            result = service.options_data_status()
+
+        self.assertEqual(result["schema_version"], "options_data_status_v1")
+        self.assertEqual(result["configured_provider"], "manual")
+        self.assertEqual(result["real_money_options_truth_status"], "BROKER_SNAPSHOT_REQUIRED")
+        self.assertTrue(result["broker_snapshot_required"])
+        self.assertFalse(result["automated_realtime_options_available"])
+
+    def test_realtime_truth_gate_accepts_marketdata_provider(self) -> None:
+        with TempContainer() as container:
+            service = OptionsService(container.settings, container.events)
+            result = service._options_truth_gate("marketdata", False)
+
+        self.assertEqual(result["status"], "REAL_MONEY_OPTIONS_TRUTH_READY")
+        self.assertTrue(result["allowed_for_real_money_without_fresh_broker_snapshot"])
+
     def test_broker_snapshot_validation_accepts_clean_small_contract(self) -> None:
         with TempContainer() as container:
             service = OptionsService(container.settings, container.events)

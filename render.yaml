@@ -49,6 +49,16 @@ services:
         value: "1"
       - key: MAX_OPTION_DAYS_TO_EXPIRATION
         value: "45"
+      - key: OPTIONS_DATA_PROVIDER
+        value: "manual"
+      - key: OPTIONS_REALTIME_REQUIRED
+        value: "true"
+      - key: MAX_OPTION_QUOTE_AGE_SECONDS
+        value: "60"
+      - key: MARKETDATA_API_KEY
+        sync: false
+      - key: TRADIER_ACCESS_TOKEN
+        sync: false
       - key: FINNHUB_API_KEY
         sync: false
       - key: SCREENER_AUTH_TOKEN
