@@ -31,6 +31,8 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("version", tools.json()["tools"])
         self.assertIn("get_build_version", tools.json()["tools"])
         self.assertIn("run_scalp_scan", tools.json()["tools"])
+        self.assertIn("get_event_volatility_playbook", tools.json()["tools"])
+        self.assertIn("run_event_volatility_scan", tools.json()["tools"])
         self.assertIn("market_readiness_check", tools.json()["tools"])
         self.assertIn("run_review_harvest", tools.json()["tools"])
         self.assertIn("get_market_session_playbook", tools.json()["tools"])
@@ -515,7 +517,7 @@ class EndpointTests(unittest.TestCase):
     def test_tomorrow_operator_brief_endpoint_can_render_human_readable_html(self) -> None:
         fake_brief = {
             "status": "OPERATOR_READY_TO_START",
-            "build_version": "2026.06.11-cash-paper-split",
+            "build_version": "2026.06.11-event-volatility",
             "next_action": "Open launch, morning autopilot, and day monitor.",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -540,7 +542,7 @@ class EndpointTests(unittest.TestCase):
                 {
                     "step": "1. Confirm deployment",
                     "target_time_ct": "Before open",
-                    "link": "/health/full?expected_build_version=2026.06.11-cash-paper-split",
+                    "link": "/health/full?expected_build_version=2026.06.11-event-volatility",
                     "pass_condition": "OK and build matches.",
                 }
             ],
@@ -575,7 +577,7 @@ class EndpointTests(unittest.TestCase):
     def test_root_route_opens_operator_brief(self) -> None:
         fake_brief = {
             "status": "OPERATOR_READY_TO_START",
-            "build_version": "2026.06.11-cash-paper-split",
+            "build_version": "2026.06.11-event-volatility",
             "next_action": "Open launch, morning autopilot, and day monitor.",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -605,7 +607,7 @@ class EndpointTests(unittest.TestCase):
     def test_root_defaults_to_human_readable_operator_brief(self) -> None:
         fake_brief = {
             "status": "OPERATOR_READY_TO_START",
-            "build_version": "2026.06.11-cash-paper-split",
+            "build_version": "2026.06.11-event-volatility",
             "generated_at": "2026-06-10T12:00:00+00:00",
             "account_value_reference": 50.0,
             "safety": {"review_only": True},
@@ -635,7 +637,7 @@ class EndpointTests(unittest.TestCase):
     def test_go_live_rehearsal_endpoint_can_render_human_readable_html(self) -> None:
         fake_rehearsal = {
             "status": "GO_LIVE_REHEARSAL_READY",
-            "build_version": "2026.06.11-cash-paper-split",
+            "build_version": "2026.06.11-event-volatility",
             "next_action": "Deploy and validate this build.",
             "include_market_check": False,
             "operator_brief": {
@@ -688,7 +690,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_trade_desk_endpoint_can_render_human_readable_html(self) -> None:
         fake_trade_desk = {
             "status": "MANUAL_TRADE_DESK_READY",
-            "build_version": "2026.06.11-cash-paper-split",
+            "build_version": "2026.06.11-event-volatility",
             "ticker": "SOFI",
             "direction": "put",
             "contract_symbol": "SOFI260612P00015000",
@@ -764,7 +766,7 @@ class EndpointTests(unittest.TestCase):
     def test_market_open_observer_endpoint_logs_evidence_without_broker_action(self) -> None:
         fake_observer = {
             "status": "OBSERVER_STOCK_CANDIDATES",
-            "build_version": "2026.06.11-cash-paper-split",
+            "build_version": "2026.06.11-event-volatility",
             "mode": "market_open_observer",
             "cadence_minutes": 5,
             "candidate_count": 1,
@@ -820,7 +822,7 @@ class EndpointTests(unittest.TestCase):
     def test_observer_followup_endpoint_can_render_missed_move_learning(self) -> None:
         fake_followup = {
             "status": "OBSERVER_FOLLOWUP_LEARNING_NEEDED",
-            "build_version": "2026.06.11-cash-paper-split",
+            "build_version": "2026.06.11-event-volatility",
             "mode": "observer_followup",
             "source_observation_count": 2,
             "items_checked": 3,
@@ -871,7 +873,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_broker_action_endpoint_records_pending_recheck_card(self) -> None:
         fake_action = {
             "status": "MANUAL_ACTION_PENDING_RECHECK_REQUIRED",
-            "build_version": "2026.06.11-cash-paper-split",
+            "build_version": "2026.06.11-event-volatility",
             "ticker": "SOFI",
             "contract_symbol": "SOFI260612P00015000",
             "action_type": "pending_buy",
@@ -951,7 +953,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_launch_endpoint_renders_go_no_go_map(self) -> None:
         fake_launch = {
             "status": "LAUNCH_START_HERE",
-            "build_version": "2026.06.11-cash-paper-split",
+            "build_version": "2026.06.11-event-volatility",
             "mode": "trading_day_launch_checklist",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -967,7 +969,7 @@ class EndpointTests(unittest.TestCase):
                 {
                     "phase": "Build and safety",
                     "go_condition": "Build matches expected version.",
-                    "primary_link": "/health/full?expected_build_version=2026.06.11-cash-paper-split",
+                    "primary_link": "/health/full?expected_build_version=2026.06.11-event-volatility",
                     "stop_if": "Wrong build.",
                 },
                 {
@@ -1000,7 +1002,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_heartbeat_endpoint_renders_safe_cadence_tick(self) -> None:
         fake_heartbeat = {
             "status": "HEARTBEAT_NO_TRADE_PLAN",
-            "build_version": "2026.06.11-cash-paper-split",
+            "build_version": "2026.06.11-event-volatility",
             "mode": "trading_day_heartbeat",
             "phase": {"phase": "active", "forced": True, "now_et": "2026-06-10T11:00:00-04:00"},
             "universe": ["SOFI", "SMCI"],
@@ -1037,7 +1039,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_alerts_endpoint_renders_attention_queue(self) -> None:
         fake_alerts = {
             "status": "ALERTS_MANUAL_REVIEW_READY",
-            "build_version": "2026.06.11-cash-paper-split",
+            "build_version": "2026.06.11-event-volatility",
             "top_level": "REVIEW",
             "alert_count": 1,
             "alerts": [
@@ -1186,12 +1188,12 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.11-cash-paper-split")
-        full_html = client.get("/health/full?expected_build_version=2026.06.11-cash-paper-split&format=html")
+        full = client.get("/health/full?expected_build_version=2026.06.11-event-volatility")
+        full_html = client.get("/health/full?expected_build_version=2026.06.11-event-volatility&format=html")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         release = client.get("/release-manifest")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.11-cash-paper-split")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.11-event-volatility")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -1203,12 +1205,14 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(mismatch.json()["result"]["status"], "BUILD_MISMATCH")
         self.assertEqual(release.status_code, 200)
         self.assertEqual(release.json()["status"], "RELEASE_MANIFEST_READY")
-        self.assertEqual(release.json()["manifest"]["target_build_version"], "2026.06.11-cash-paper-split")
-        self.assertEqual(release.json()["manifest"]["expected_live_tool_count"], 72)
+        self.assertEqual(release.json()["manifest"]["target_build_version"], "2026.06.11-event-volatility")
+        self.assertEqual(release.json()["manifest"]["expected_live_tool_count"], 74)
         self.assertIn("tools/start_tomorrow.ps1", release.json()["manifest"]["operator_helpers"])
         self.assertEqual(manifest.status_code, 200)
         self.assertEqual(manifest.json()["result"]["status"], "TOOL_MANIFEST_READY")
         self.assertTrue(manifest.json()["result"]["required_tools"]["market_readiness_check"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["get_event_volatility_playbook"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["run_event_volatility_scan"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_review_harvest"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_market_session_playbook"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_latest_harvest_followup"])
@@ -1259,6 +1263,58 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(harvest_preview["status"], "REVIEW_HARVEST_READY")
         playbook_preview = schema.json()["result"]["session_playbook_schema_preview"]
         self.assertEqual(playbook_preview["status"], "SESSION_PLAYBOOK_READY")
+
+    def test_event_volatility_endpoints_are_readable_and_review_only(self) -> None:
+        fake_scan = {
+            "status": "EVENT_STOCK_REVIEW_ONLY",
+            "build_version": "2026.06.11-event-volatility",
+            "event_name": "spacex_ipo",
+            "direct_symbol": "SPCX",
+            "direct_symbol_status": "NOT_RETURNED_BY_DATA_PROVIDER_YET",
+            "stock_candidate_count": 1,
+            "options_review_count": 0,
+            "max_contract_price_used": 1.0,
+            "ranked_options_candidates": [],
+            "stock_review_candidates": [
+                {
+                    "ticker": "SPCX",
+                    "lane": "DIRECT_IPO_STOCK_REVIEW",
+                    "stock_direction": "long",
+                    "stock_score": 80,
+                    "relative_volume": 3.2,
+                    "vwap_state": "above",
+                    "why_not_ranked": ["Direct IPO symbol is stock-review only until options are validated."],
+                }
+            ],
+            "watch_only_or_rejected": [],
+            "next_action": "Track stock lanes and rerun.",
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        client = TestClient(create_app())
+        playbook_json = client.get("/ops/event-volatility-playbook")
+        playbook_html = client.get("/ops/event-volatility-playbook?format=html")
+        with patch("app.fallback_endpoints._run_event_volatility_scan", return_value=fake_scan):
+            scan_json = client.get("/ops/event-volatility-scan?tickers=SPCX,TSLA,HOOD")
+            scan_html = client.get("/ops/event-volatility-scan?tickers=SPCX,TSLA,HOOD&format=html")
+
+        self.assertEqual(playbook_json.status_code, 200)
+        self.assertEqual(playbook_json.json()["result"]["status"], "EVENT_VOLATILITY_PLAYBOOK_READY")
+        self.assertIn("SPCX", playbook_json.json()["result"]["universe"])
+        self.assertTrue(playbook_json.json()["result"]["stock_lane_allowed"] if "stock_lane_allowed" in playbook_json.json()["result"] else True)
+        self.assertFalse(playbook_json.json()["can_place_order_from_this_mcp"])
+        self.assertEqual(playbook_html.status_code, 200)
+        self.assertIn("Event Volatility Playbook", playbook_html.text)
+        self.assertIn("DIRECT_IPO_STOCK_REVIEW", playbook_html.text)
+        self.assertEqual(scan_json.status_code, 200)
+        self.assertEqual(scan_json.json()["result"]["status"], "EVENT_STOCK_REVIEW_ONLY")
+        self.assertFalse(scan_json.json()["can_place_order_from_this_mcp"])
+        self.assertEqual(scan_html.status_code, 200)
+        self.assertIn("Event Volatility Scan", scan_html.text)
+        self.assertIn("DIRECT_IPO_STOCK_REVIEW", scan_html.text)
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.11-event-volatility")
+        self.assertEqual(schema.status_code, 200)
         followup_preview = schema.json()["result"]["harvest_followup_schema_preview"]
         self.assertEqual(followup_preview["status"], "HARVEST_FOLLOWUP_COMPLETE")
         command_center_preview = schema.json()["result"]["ops_command_center_schema_preview"]
@@ -1415,7 +1471,7 @@ class EndpointTests(unittest.TestCase):
     def test_session_risk_guard_endpoint_is_review_only(self) -> None:
         fake_risk = {
             "status": "SESSION_RISK_CLEAR",
-            "build_version": "2026.06.11-cash-paper-split",
+            "build_version": "2026.06.11-event-volatility",
             "account_value_reference": 50,
             "proposed_risk_dollars": 5,
             "per_trade_cap_dollars": 5,
@@ -1463,9 +1519,9 @@ class EndpointTests(unittest.TestCase):
         }
         fake_restore = {
             "status": "CHECKPOINT_RESTORE_READY",
-            "build_version": "2026.06.11-cash-paper-split",
+            "build_version": "2026.06.11-event-volatility",
             "source_label": "unit_test",
-            "checkpoint_build_version": "2026.06.11-cash-paper-split",
+            "checkpoint_build_version": "2026.06.11-event-volatility",
             "requested_event_count": 1,
             "restored_count": 1,
             "skipped_duplicate_count": 0,

@@ -82,7 +82,7 @@ class ScannerTests(unittest.TestCase):
         self.assertIn("evidence_scorecard", candidate["key_signals"])
         self.assertIn("missing_or_planned_modules", candidate["key_signals"]["evidence_scorecard"])
         self.assertIn("evidence_packet", candidate)
-        self.assertEqual(candidate["evidence_packet"]["build_version"], "2026.06.11-cash-paper-split")
+        self.assertEqual(candidate["evidence_packet"]["build_version"], "2026.06.11-event-volatility")
         self.assertIn("provider_lineage", candidate["evidence_packet"])
         self.assertIn("relative_strength", candidate["key_signals"])
 

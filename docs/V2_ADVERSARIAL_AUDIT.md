@@ -1,6 +1,6 @@
 # Living Screener MCP V2.0 Adversarial Audit
 
-Build reviewed: `2026.06.11-cash-paper-split`
+Build reviewed: `2026.06.11-event-volatility`
 
 ## 1. Executive Summary
 

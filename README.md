@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.11-cash-paper-split
+2026.06.11-event-volatility
 ```
 
 ## Render Environment
@@ -45,6 +45,8 @@ Use `review_candidate_for_options` when a stock candidate appears. It runs the s
 Pending buy orders should be reconsidered after 60 seconds. Use `review_pending_buy_order` with the ticker, submitted timestamp, and limit price. It cannot cancel or replace anything; it returns whether the pending buy is still valid for review or needs reconsideration.
 
 Use `run_scalp_scan` for a broader review-only moving-equities scan. It uses a larger liquid/options-friendly universe and scores absolute movement, recent momentum, relative volume, and VWAP alignment. This mode is wider, but it still only produces review candidates; options and pending-order gates remain separate.
+
+Event-volatility mode is for IPO/catalyst mornings where the direct symbol may be tradable before options are listed. Use `get_event_volatility_playbook` to inspect the rules, then `run_event_volatility_scan` to split names into direct IPO stock review, sympathy options review, stock fallback, and index volatility lanes. It ranks options only when stock setup, options-chain quality, and `SMALL_ACCOUNT_SCALP_ACCEPTABLE` all pass; otherwise it keeps the idea in stock review or PASS.
 
 Scalp reviews use score threshold `65` as the primary quality gate. Relative volume below `SCALP_MIN_RELATIVE_VOLUME` is reported as a caution/priority warning, not an automatic rejection, because backtests did not support RVOL 1.15 as a hard disqualifier. RVOL now reports a `relative_volume_status`; it prefers same-time-of-day volume comparison when available and returns `null` instead of pretending unavailable RVOL is truly `0.0`.
 
@@ -134,7 +136,9 @@ These routes call the same review-only services as the MCP tools. They exist so 
 GET /safety
 GET /
 GET /release-manifest
-GET /health/full?expected_build_version=2026.06.11-cash-paper-split
+GET /health/full?expected_build_version=2026.06.11-event-volatility
+GET /ops/event-volatility-playbook?format=html
+GET /ops/event-volatility-scan?format=html
 GET /scan/scalp?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
 GET /scan/market?mode=conservative_review_only&tickers=SPY,QQQ,KO,PG
 GET /ops/trading-day-launch?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25
@@ -206,7 +210,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.11-cash-paper-split
+GET /debug/scan-schema?expected_build_version=2026.06.11-event-volatility
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -225,7 +229,7 @@ If Render is still building, run the watcher instead:
 .\tools\watch_deploy.ps1
 ```
 
-It polls `/version` every 30 seconds. When `2026.06.11-cash-paper-split` appears, it automatically runs `validate_live.ps1`.
+It polls `/version` every 30 seconds. When `2026.06.11-event-volatility` appears, it automatically runs `validate_live.ps1`.
 
 On market morning, after validation passes, run:
 
@@ -334,7 +338,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.11-cash-paper-split",
+  "build_version": "2026.06.11-event-volatility",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false

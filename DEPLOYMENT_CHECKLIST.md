@@ -90,7 +90,7 @@ Minimum live checks:
 
 ```text
 /version -> build_version 2026.06.10-manual-snapshot-form
-/tools -> tool_count 66
+/tools -> tool_count 74
 /release-manifest -> target_build_version 2026.06.10-manual-snapshot-form
 /health/full?expected_build_version=2026.06.10-manual-snapshot-form -> status OK
 / -> Tomorrow Operator Brief
