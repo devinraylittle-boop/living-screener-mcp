@@ -1,6 +1,6 @@
 # Living Screener MCP V2.0 Adversarial Audit
 
-Build reviewed: `2026.06.11-event-radar-broad-scan`
+Build reviewed: `2026.06.11-data-truth-cockpit`
 
 ## 1. Executive Summary
 
