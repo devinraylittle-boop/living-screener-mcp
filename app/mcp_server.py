@@ -190,6 +190,21 @@ def get_options_data_status() -> dict:
 
 
 @mcp.tool
+def get_truth_source_status() -> dict:
+    return container.market_truth.truth_source_status()
+
+
+@mcp.tool
+def check_market_data_health(tickers: list[str] | None = None, max_tickers: int = 10) -> dict:
+    return container.market_truth.check_market_data_health(tickers, max_tickers)
+
+
+@mcp.tool
+def get_catalyst_context(ticker: str, lookback_days: int = 3, lookahead_days: int = 7) -> dict:
+    return container.market_truth.get_catalyst_context(ticker, lookback_days, lookahead_days)
+
+
+@mcp.tool
 def validate_broker_option_snapshot(snapshot: dict[str, Any], max_contract_price: float | None = None) -> dict:
     return container.options.validate_broker_snapshot(snapshot, max_contract_price)
 

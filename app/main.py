@@ -32,6 +32,7 @@ from app.fallback_endpoints import (
     fallback_manual_snapshot_form,
     fallback_manual_trade_desk,
     fallback_market_open_observer,
+    fallback_market_data_health,
     fallback_market_scan,
     fallback_market_readiness,
     fallback_health_full,
@@ -56,7 +57,9 @@ from app.fallback_endpoints import (
     fallback_tomorrow_operator_brief,
     fallback_trading_day_launch,
     fallback_trading_day_heartbeat,
+    fallback_truth_source_status,
     fallback_validate_broker_snapshot,
+    fallback_catalyst_context,
 )
 from app.health import health, safe_config, tools, version
 from app.logging_config import configure_logging
@@ -80,6 +83,8 @@ def create_app():
     app.add_route("/scan/market", fallback_market_scan, methods=["GET"])
     app.add_route("/scan/scalp", fallback_scalp_scan, methods=["GET"])
     app.add_route("/ops/market-readiness", fallback_market_readiness, methods=["GET"])
+    app.add_route("/truth/source-status", fallback_truth_source_status, methods=["GET"])
+    app.add_route("/market/data-health", fallback_market_data_health, methods=["GET"])
     app.add_route("/ops/review-harvest", fallback_review_harvest, methods=["GET"])
     app.add_route("/ops/session-playbook", fallback_session_playbook, methods=["GET"])
     app.add_route("/ops/harvest-followup", fallback_harvest_followup, methods=["GET"])
@@ -116,6 +121,7 @@ def create_app():
     app.add_route("/learning/setup-memory", fallback_setup_memory, methods=["POST"])
     app.add_route("/learning/dashboard", fallback_learning_dashboard, methods=["GET"])
     app.add_route("/research/offhours", fallback_offhours_plan, methods=["GET"])
+    app.add_route("/research/catalyst-context", fallback_catalyst_context, methods=["GET"])
     app.add_route("/research/global-scan", fallback_global_research_scan, methods=["GET"])
     app.add_route("/research/blueprint", fallback_premove_blueprint, methods=["GET"])
     app.add_route("/research/features", fallback_feature_registry, methods=["GET"])

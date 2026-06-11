@@ -9,6 +9,7 @@ from app.services.evidence_packet_service import EvidencePacketService
 from app.services.global_research_service import GlobalResearchService
 from app.services.journal_service import JournalService
 from app.services.learning_service import LearningService
+from app.services.market_truth_service import MarketTruthService
 from app.services.options_service import OptionsService
 from app.services.pending_order_service import PendingOrderService
 from app.services.premove_blueprint_service import PreMoveBlueprintService
@@ -33,6 +34,7 @@ class ServiceContainer:
         self.risk = RiskService(self.settings, self.events)
         self.journal = JournalService(self.events)
         self.options = OptionsService(self.settings, self.events)
+        self.market_truth = MarketTruthService(self.settings, self.events, self.market_data, self.options)
         self.pending_orders = PendingOrderService(self.settings, self.events, self.scanner, self.options)
         self.backtest = BacktestService(self.events, self.settings)
         self.crypto_paper = CryptoPaperService(self.events)

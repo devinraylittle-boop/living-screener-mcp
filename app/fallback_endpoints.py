@@ -2750,6 +2750,34 @@ async def fallback_options_data_status(request: Request) -> JSONResponse:
     return JSONResponse(_review_only_envelope({"result": result}))
 
 
+async def fallback_truth_source_status(request: Request) -> JSONResponse:
+    del request
+    result = container.market_truth.truth_source_status()
+    return JSONResponse(_review_only_envelope({"result": result}))
+
+
+async def fallback_market_data_health(request: Request) -> JSONResponse:
+    params = request.query_params
+    result = container.market_truth.check_market_data_health(
+        _tickers(params.get("tickers")),
+        _int_or_default(params.get("max_tickers"), 10),
+    )
+    return JSONResponse(_review_only_envelope({"result": result}))
+
+
+async def fallback_catalyst_context(request: Request) -> JSONResponse:
+    params = request.query_params
+    ticker = (params.get("ticker") or "").strip().upper()
+    if not ticker:
+        return JSONResponse(_review_only_envelope({"error": "ticker is required"}), status_code=400)
+    result = container.market_truth.get_catalyst_context(
+        ticker,
+        _int_or_default(params.get("lookback_days"), 3),
+        _int_or_default(params.get("lookahead_days"), 7),
+    )
+    return JSONResponse(_review_only_envelope({"result": result}))
+
+
 async def fallback_log_review_decision(request: Request) -> JSONResponse:
     payload = await request.json()
     result = container.review_outcomes.log_review_decision(payload)

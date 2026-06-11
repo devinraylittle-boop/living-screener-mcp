@@ -50,6 +50,9 @@ class DebugValidationService:
                 "failure_mode_audit": "failure_mode_audit_v1",
                 "options_data_status": "options_data_status_v1",
                 "real_money_options_truth_gate": "real_money_options_truth_gate_v1",
+                "truth_source_status": "truth_source_status_v1",
+                "market_data_health": "market_data_health_v1",
+                "catalyst_context": "catalyst_context_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -73,6 +76,9 @@ class DebugValidationService:
                 "/trade/manual-action",
                 "/trade/pending-recheck",
                 "/options/data-status",
+                "/truth/source-status",
+                "/market/data-health",
+                "/research/catalyst-context",
                 "/risk/session",
                 "/risk/failure-mode-audit",
             ],
@@ -110,11 +116,15 @@ class DebugValidationService:
                 "manual_broker_action_route": True,
                 "pending_recheck_route": True,
                 "options_data_status_route": True,
+                "truth_source_status_route": True,
+                "market_data_health_route": True,
+                "catalyst_context_route": True,
                 "session_risk_guard_route": True,
                 "failure_mode_audit_route": True,
             },
             "safety": self._safety(),
             "options_data_status": self.container.options.options_data_status(),
+            "truth_source_status_schema_preview": self._truth_source_status_schema_preview(),
         }
 
     async def tool_manifest(self, listed_tools: list[Any]) -> dict[str, Any]:
@@ -278,6 +288,9 @@ class DebugValidationService:
             "example_candidate": example,
             "options_review_schema_preview": self._options_review_schema_preview(),
             "options_data_status_schema_preview": self.container.options.options_data_status(),
+            "truth_source_status_schema_preview": self._truth_source_status_schema_preview(),
+            "market_data_health_schema_preview": self._market_data_health_schema_preview(),
+            "catalyst_context_schema_preview": self._catalyst_context_schema_preview(),
             "setup_memory_schema_preview": self._setup_memory_schema_preview(),
             "review_harvest_schema_preview": self._review_harvest_schema_preview(),
             "session_playbook_schema_preview": self._session_playbook_schema_preview(),
@@ -335,6 +348,66 @@ class DebugValidationService:
                 },
             },
             "notes": "Static schema preview only. It does not run an options review or create a trade plan.",
+        }
+
+    def _truth_source_status_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "TRUTH_SOURCE_STATUS_READY",
+            "schema_version": "truth_source_status_v1",
+            "market_data": {
+                "provider": "finnhub",
+                "feed_type": "equity_quote_and_candle_review",
+                "cash_ready": True,
+            },
+            "options_data": {
+                "schema_version": "options_data_status_v1",
+                "real_money_options_truth_status": "BROKER_SNAPSHOT_REQUIRED",
+            },
+            "cash_readiness": {
+                "cash_ready": False,
+                "reason": "Real-money readiness still requires in-session market health, catalyst context, and fresh options truth or broker snapshot.",
+            },
+            "blocked_for_cash_without": [
+                "fresh market data health check",
+                "fresh catalyst context",
+                "REAL_MONEY_OPTIONS_TRUTH_READY or fresh broker snapshot",
+                "manual risk guard",
+                "manual approval outside MCP",
+            ],
+            "notes": "Static truth-source preview only. It does not run a scan or create a trade plan.",
+        }
+
+    def _market_data_health_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "MARKET_DATA_HEALTHY",
+            "schema_version": "market_data_health_v1",
+            "provider": "finnhub",
+            "healthy_count": 1,
+            "degraded_count": 0,
+            "rows": [
+                {
+                    "ticker": "EXAMPLE",
+                    "status": "HEALTHY",
+                    "quote_age_seconds": 5.0,
+                    "candle_age_seconds": 120.0,
+                    "blocking_reasons": [],
+                }
+            ],
+            "cash_ready": True,
+            "notes": "Static market-health preview only. The live route checks quote and candle freshness without broker action.",
+        }
+
+    def _catalyst_context_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "CATALYST_CONTEXT_CLEAR",
+            "schema_version": "catalyst_context_v1",
+            "ticker": "EXAMPLE",
+            "news_count": 2,
+            "earnings_count": 0,
+            "risk_items": [],
+            "blocking_reasons": [],
+            "cash_ready": True,
+            "notes": "Static catalyst preview only. The live route fails closed if catalyst data is missing or risky.",
         }
 
     def _setup_memory_schema_preview(self) -> dict[str, Any]:
@@ -955,6 +1028,9 @@ class DebugValidationService:
             "get_session_risk_guard",
             "get_failure_mode_audit",
             "get_options_data_status",
+            "get_truth_source_status",
+            "check_market_data_health",
+            "get_catalyst_context",
             "export_journal_checkpoint",
             "restore_journal_checkpoint",
             "get_trading_monster_blueprint",
@@ -971,6 +1047,8 @@ class DebugValidationService:
         return {name: name in available for name in required}
 
     def _category(self, name: str) -> str:
+        if "truth" in name or "health" in name or "catalyst" in name:
+            return "truth_validation"
         if "harvest" in name or "readiness" in name or "observer" in name or "playbook" in name or "command_center" in name or "launch" in name or "brief" in name or "rehearsal" in name or "heartbeat" in name or "autopilot" in name or "cycle" in name or "preflight" in name or "desk" in name or "manual_broker" in name or "paper" in name or "journal" in name or "checkpoint" in name:
             return "market_operations"
         if "evidence" in name or "blueprint" in name or "feature" in name or "scoring" in name:
@@ -1024,6 +1102,12 @@ class DebugValidationService:
             return "Read-only journal checkpoint/export for preserving local review and learning evidence."
         if "failure_mode" in name:
             return "Read-only control audit mapping known trading-bot failure modes to current safeguards and gaps."
+        if "truth" in name:
+            return "Read-only source readiness summary for market data, options truth, and cash-readiness blockers."
+        if "health" in name:
+            return "Read-only data freshness check for quote and candle health."
+        if "catalyst" in name:
+            return "Read-only catalyst/news/earnings guard; missing or risky context fails closed."
         if "scan" in name:
             return "Review-only scan; no execution path."
         return "Review-only tool."
