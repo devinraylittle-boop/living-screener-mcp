@@ -53,6 +53,7 @@ class DebugValidationService:
                 "truth_source_status": "truth_source_status_v1",
                 "market_data_health": "market_data_health_v1",
                 "catalyst_context": "catalyst_context_v1",
+                "autonomous_morning_scan": "autonomous_morning_scan_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -68,6 +69,7 @@ class DebugValidationService:
                 "/ops/day-heartbeat",
                 "/ops/day-monitor",
                 "/ops/day-alerts",
+                "/ops/autonomous-morning-scan",
                 "/paper/options/summary",
                 "/paper/options/watch",
                 "/journal/checkpoint",
@@ -106,6 +108,7 @@ class DebugValidationService:
                 "trading_day_heartbeat_route": True,
                 "day_monitor_route": True,
                 "trading_day_alerts_route": True,
+                "autonomous_morning_scan_route": True,
                 "manual_preflight_route": True,
                 "paper_option_ledger_routes": True,
                 "paper_option_position_watch_route": True,
@@ -291,6 +294,7 @@ class DebugValidationService:
             "truth_source_status_schema_preview": self._truth_source_status_schema_preview(),
             "market_data_health_schema_preview": self._market_data_health_schema_preview(),
             "catalyst_context_schema_preview": self._catalyst_context_schema_preview(),
+            "autonomous_morning_scan_schema_preview": self._autonomous_morning_scan_schema_preview(),
             "setup_memory_schema_preview": self._setup_memory_schema_preview(),
             "review_harvest_schema_preview": self._review_harvest_schema_preview(),
             "session_playbook_schema_preview": self._session_playbook_schema_preview(),
@@ -408,6 +412,35 @@ class DebugValidationService:
             "blocking_reasons": [],
             "cash_ready": True,
             "notes": "Static catalyst preview only. The live route fails closed if catalyst data is missing or risky.",
+        }
+
+    def _autonomous_morning_scan_schema_preview(self) -> dict[str, Any]:
+        return {
+            "status": "AUTONOMOUS_ACTIVE_SCAN_RUNNING",
+            "schema_version": "autonomous_morning_scan_v1",
+            "phase": {"phase": "active", "forced": False},
+            "truth_source": {"status": "TRUTH_SOURCE_STATUS_READY"},
+            "market_data_health": {"status": "MARKET_DATA_HEALTHY", "healthy_count": 8, "degraded_count": 0},
+            "catalyst_context": {
+                "checked_count": 5,
+                "clear_count": 5,
+                "blocked_or_unavailable_count": 0,
+                "blocks": [],
+            },
+            "heartbeat": {"status": "HEARTBEAT_NO_TRADE_PLAN"},
+            "cash_readiness": {
+                "truth_cash_ready": False,
+                "market_data_cash_ready": True,
+                "catalyst_blocks_clear": True,
+                "manual_broker_snapshot_still_required_for_options": True,
+                "autonomous_cash_trading_allowed": False,
+            },
+            "next_refresh_seconds": 300,
+            "hard_stops": [
+                "No broker order can be placed, modified, submitted, simulated, or canceled by this MCP.",
+                "No options cash review without fresh broker-visible bid, ask, volume, open interest, DTE, strike, and max loss.",
+            ],
+            "notes": "Static autonomous-morning preview only. The live route runs one review-only cycle and cannot execute broker actions.",
         }
 
     def _setup_memory_schema_preview(self) -> dict[str, Any]:
@@ -1015,6 +1048,7 @@ class DebugValidationService:
             "run_trading_day_heartbeat",
             "summarize_trading_day_alerts",
             "run_morning_readiness_autopilot",
+            "run_autonomous_morning_scan",
             "run_live_review_cycle",
             "run_market_open_observer",
             "run_observer_followup",
@@ -1049,7 +1083,7 @@ class DebugValidationService:
     def _category(self, name: str) -> str:
         if "truth" in name or "health" in name or "catalyst" in name:
             return "truth_validation"
-        if "harvest" in name or "readiness" in name or "observer" in name or "playbook" in name or "command_center" in name or "launch" in name or "brief" in name or "rehearsal" in name or "heartbeat" in name or "autopilot" in name or "cycle" in name or "preflight" in name or "desk" in name or "manual_broker" in name or "paper" in name or "journal" in name or "checkpoint" in name:
+        if "harvest" in name or "readiness" in name or "observer" in name or "playbook" in name or "command_center" in name or "launch" in name or "brief" in name or "rehearsal" in name or "heartbeat" in name or "autopilot" in name or "autonomous" in name or "cycle" in name or "preflight" in name or "desk" in name or "manual_broker" in name or "paper" in name or "journal" in name or "checkpoint" in name:
             return "market_operations"
         if "evidence" in name or "blueprint" in name or "feature" in name or "scoring" in name:
             return "research_validation"
@@ -1084,6 +1118,8 @@ class DebugValidationService:
             return "Review-only go-live rehearsal; checks workflow readiness and required URLs without broker action."
         if "autopilot" in name:
             return "Review-only morning readiness summary; checks data readiness, ledger state, and next safe action."
+        if "autonomous" in name:
+            return "Review-only phase-aware scan loop; observes, logs, and returns the next refresh interval without broker action."
         if "cycle" in name:
             return "Review-only live market cycle; runs readiness and harvest gates without broker action."
         if "followup" in name and "observer" in name:

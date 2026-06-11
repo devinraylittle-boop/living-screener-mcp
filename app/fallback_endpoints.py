@@ -25,6 +25,7 @@ from app.mcp_server import (
     _market_readiness_check,
     _review_candidate_for_options,
     _restore_journal_checkpoint,
+    _run_autonomous_morning_scan,
     _run_go_live_rehearsal,
     _run_live_review_cycle,
     _run_market_open_observer,
@@ -1136,6 +1137,86 @@ def _trading_day_heartbeat_html(payload: dict[str, Any], auto_refresh: bool = Fa
 {_list(result.get("notes") or [])}
 """
     return _html_page("Trading Day Heartbeat", body, payload, extra_head=extra_head)
+
+
+def _autonomous_morning_scan_html(payload: dict[str, Any], auto_refresh: bool = False) -> HTMLResponse:
+    result = payload.get("result") or {}
+    phase = result.get("phase") or {}
+    health = result.get("market_data_health") or {}
+    truth = result.get("truth_source") or {}
+    catalysts = result.get("catalyst_context") or {}
+    heartbeat = result.get("heartbeat") or {}
+    refresh_seconds = max(60, min(int(result.get("next_refresh_seconds") or 300), 1800))
+    extra_head = f'<meta http-equiv="refresh" content="{refresh_seconds}">' if auto_refresh else ""
+    monitor_banner = (
+        f"<p><strong>Autonomous monitor:</strong> this page refreshes every {refresh_seconds} seconds while the tab stays open.</p>"
+        if auto_refresh
+        else ""
+    )
+    link_rows = []
+    for label, url in (result.get("action_links") or {}).items():
+        link_rows.append(
+            "<tr>"
+            f"<td>{escape(str(label).replace('_', ' ').title())}</td>"
+            f"<td><a href=\"{escape(str(url))}\">{escape(str(url))}</a></td>"
+            "</tr>"
+        )
+    block_rows = []
+    for item in catalysts.get("blocks") or []:
+        block_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('status') or ''))}</td>"
+            f"<td>{escape('; '.join(str(reason) for reason in item.get('blocking_reasons', [])))}</td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Autonomous Morning Scan</h1>
+    <p>Phase-aware review-only scanner loop. It observes, logs, and escalates manual-review candidates without broker action.</p>
+    {monitor_banner}
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Phase", phase.get("phase")),
+    ("ET Time", phase.get("now_et")),
+    ("Next Refresh Seconds", result.get("next_refresh_seconds")),
+    ("Next Action", result.get("next_action")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+    ("Can Cancel Orders", payload.get("can_cancel_order_from_this_mcp")),
+])}
+<h2>Truth And Data Gates</h2>
+{_field_grid([
+    ("Truth Source", truth.get("status")),
+    ("Market Data", health.get("status")),
+    ("Healthy Rows", health.get("healthy_count")),
+    ("Degraded Rows", health.get("degraded_count")),
+    ("Catalyst Checked", catalysts.get("checked_count")),
+    ("Catalyst Blocks", catalysts.get("blocked_or_unavailable_count")),
+    ("Heartbeat", heartbeat.get("status")),
+])}
+<h2>Cash Readiness</h2>
+{_field_grid([(str(key).replace('_', ' ').title(), value) for key, value in (result.get("cash_readiness") or {}).items()])}
+<h2>Catalyst Blocks</h2>
+<table>
+  <thead><tr><th>Ticker</th><th>Status</th><th>Reasons</th></tr></thead>
+  <tbody>{''.join(block_rows) if block_rows else '<tr><td colspan="3">None.</td></tr>'}</tbody>
+</table>
+<h2>Hard Stops</h2>
+{_list(result.get("hard_stops") or [])}
+<h2>Action Links</h2>
+<table>
+  <thead><tr><th>Action</th><th>Link</th></tr></thead>
+  <tbody>{''.join(link_rows)}</tbody>
+</table>
+<h2>Notes</h2>
+{_list(result.get("notes") or [])}
+"""
+    return _html_page("Autonomous Morning Scan", body, payload, extra_head=extra_head)
 
 
 def _trading_day_alerts_html(payload: dict[str, Any]) -> HTMLResponse:
@@ -2365,6 +2446,24 @@ async def fallback_morning_autopilot(request: Request) -> JSONResponse | HTMLRes
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _morning_autopilot_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_autonomous_morning_scan(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _run_autonomous_morning_scan(
+        container,
+        _tickers(params.get("tickers")),
+        _float_or_none(params.get("account_value")) or 50.0,
+        _int_or_default(params.get("max_candidates"), 25),
+        _int_or_default(params.get("review_top_n"), 8),
+        _float_or_none(params.get("max_contract_price")),
+        params.get("force_phase"),
+        _int_or_default(params.get("catalyst_top_n"), 5),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _autonomous_morning_scan_html(payload, auto_refresh=not _truthy(params.get("no_refresh")))
     return JSONResponse(payload)
 
 

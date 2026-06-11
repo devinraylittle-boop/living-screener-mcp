@@ -153,6 +153,28 @@ def run_morning_readiness_autopilot(tickers: list[str] | None = None, account_va
 
 
 @mcp.tool
+def run_autonomous_morning_scan(
+    tickers: list[str] | None = None,
+    account_value: float = 50.0,
+    max_candidates: int = 25,
+    review_top_n: int = 8,
+    max_contract_price: float | None = None,
+    force_phase: str | None = None,
+    catalyst_top_n: int = 5,
+) -> dict:
+    return _run_autonomous_morning_scan(
+        container,
+        tickers,
+        account_value,
+        max_candidates,
+        review_top_n,
+        max_contract_price,
+        force_phase,
+        catalyst_top_n,
+    )
+
+
+@mcp.tool
 def run_live_review_cycle(
     tickers: list[str] | None = None,
     account_value: float = 50.0,
@@ -1538,6 +1560,146 @@ def _run_morning_readiness_autopilot(service_container, tickers: list[str] | Non
         ],
     }
     return service_container.events.log("morning_readiness_autopilot", payload)
+
+
+def _run_autonomous_morning_scan(
+    service_container,
+    tickers: list[str] | None,
+    account_value: float,
+    max_candidates: int,
+    review_top_n: int,
+    max_contract_price: float | None,
+    force_phase: str | None,
+    catalyst_top_n: int,
+) -> dict:
+    max_candidates = max(1, min(int(max_candidates or 25), 50))
+    review_top_n = max(1, min(int(review_top_n or 8), 20))
+    catalyst_top_n = max(0, min(int(catalyst_top_n or 0), 12))
+    account_ref = _float_or_zero(account_value) or 50.0
+    universe = _resolve_universe(service_container, tickers)
+    ticker_query = ",".join(universe)
+    phase_info = _market_phase(force_phase)
+    phase = str(phase_info.get("phase") or "offhours")
+    effective_contract_cap = max_contract_price
+    if effective_contract_cap is None:
+        effective_contract_cap = service_container.settings.scalp_max_contract_price
+
+    truth = service_container.market_truth.truth_source_status()
+    health = service_container.market_truth.check_market_data_health(universe, min(len(universe), 12) or 1)
+    catalysts = [
+        service_container.market_truth.get_catalyst_context(symbol, 3, 7)
+        for symbol in universe[:catalyst_top_n]
+    ]
+    catalyst_blocks = [
+        {
+            "ticker": item.get("ticker"),
+            "status": item.get("status"),
+            "blocking_reasons": item.get("blocking_reasons") or [],
+            "risk_items": item.get("risk_items") or [],
+        }
+        for item in catalysts
+        if item.get("status") != "CATALYST_CONTEXT_CLEAR"
+    ]
+
+    heartbeat = _run_trading_day_heartbeat(
+        service_container,
+        universe,
+        account_ref,
+        max_candidates,
+        review_top_n,
+        effective_contract_cap,
+        force_phase,
+    )
+    heartbeat_status = heartbeat.get("status")
+    health_status = health.get("status")
+    truth_cash_ready = bool((truth.get("cash_readiness") or {}).get("cash_ready"))
+    health_cash_ready = bool(health.get("cash_ready"))
+    has_catalyst_block = bool(catalyst_blocks)
+
+    if heartbeat_status == "HEARTBEAT_PENDING_RECHECK_REQUIRED":
+        status = "AUTONOMOUS_PENDING_RECHECK_REQUIRED"
+        next_action = "Stop new scans until the pending buy is rechecked after 60 seconds."
+    elif phase in {"premarket", "opening", "active", "late"} and health_status == "MARKET_DATA_HEALTH_BLOCKED":
+        status = "AUTONOMOUS_DATA_BLOCKED"
+        next_action = "Keep the loop alive, but do not rank options or permit manual cash review until market data health clears."
+    elif has_catalyst_block:
+        status = "AUTONOMOUS_CATALYST_REVIEW_REQUIRED"
+        next_action = "Review catalyst blocks before trusting any candidate from the affected symbols."
+    elif heartbeat_status == "HEARTBEAT_MANUAL_REVIEW_READY":
+        status = "AUTONOMOUS_MANUAL_REVIEW_READY"
+        next_action = "Manually inspect the top candidate in broker and use manual trade desk with fresh broker-visible fields."
+    elif phase == "premarket":
+        status = "AUTONOMOUS_PREMARKET_OBSERVING"
+        next_action = "Continue premarket readiness scans; do not review options until regular-session data and spreads are usable."
+    elif phase == "opening":
+        status = "AUTONOMOUS_OPENING_OBSERVER_ACTIVE"
+        next_action = "Keep recording evidence during the opening window; avoid early spread traps."
+    elif phase in {"active", "late"}:
+        status = "AUTONOMOUS_ACTIVE_SCAN_RUNNING"
+        next_action = "Continue live review cycles; only escalate candidates that pass stock, small-account, risk, catalyst, and broker-snapshot gates."
+    else:
+        status = "AUTONOMOUS_OFFHOURS_LEARNING"
+        next_action = "Use observer follow-up and learning summaries while regular-session options liquidity is unavailable."
+
+    refresh_seconds = int(heartbeat.get("next_refresh_seconds") or _heartbeat_next_refresh_seconds(phase, False))
+    payload = {
+        "status": status,
+        "schema_version": "autonomous_morning_scan_v1",
+        "build_version": BUILD_VERSION,
+        "mode": "autonomous_morning_scan",
+        "generated_at": utc_now(),
+        "phase": phase_info,
+        "universe": universe,
+        "account_value_reference": account_ref,
+        "max_candidates": max_candidates,
+        "review_top_n": review_top_n,
+        "max_contract_price_used": effective_contract_cap,
+        "truth_source": _compact_event(truth),
+        "market_data_health": _compact_event(health),
+        "catalyst_context": {
+            "checked_count": len(catalysts),
+            "clear_count": sum(1 for item in catalysts if item.get("status") == "CATALYST_CONTEXT_CLEAR"),
+            "blocked_or_unavailable_count": len(catalyst_blocks),
+            "blocks": catalyst_blocks,
+        },
+        "heartbeat": _compact_event(heartbeat),
+        "cash_readiness": {
+            "truth_cash_ready": truth_cash_ready,
+            "market_data_cash_ready": health_cash_ready,
+            "catalyst_blocks_clear": not has_catalyst_block,
+            "manual_broker_snapshot_still_required_for_options": True,
+            "autonomous_cash_trading_allowed": False,
+        },
+        "next_action": next_action,
+        "next_refresh_seconds": refresh_seconds,
+        "action_links": {
+            "self": f"/ops/autonomous-morning-scan?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&review_top_n={review_top_n}&max_contract_price={effective_contract_cap}&catalyst_top_n={catalyst_top_n}&format=html",
+            "truth_source": "/truth/source-status",
+            "market_data_health": f"/market/data-health?tickers={ticker_query}&max_tickers=12",
+            "day_heartbeat": f"/ops/day-heartbeat?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&review_top_n={review_top_n}&max_contract_price={effective_contract_cap}&format=html",
+            "live_review_cycle": f"/ops/live-review-cycle?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&review_top_n={review_top_n}&max_contract_price={effective_contract_cap}&format=html",
+            "manual_trade_desk": "/trade/manual-desk",
+            "journal_checkpoint": "/journal/checkpoint?limit=500&format=json",
+        },
+        "hard_stops": [
+            "No broker order can be placed, modified, submitted, simulated, or canceled by this MCP.",
+            "No market orders.",
+            "No manual cash review while market data health is blocked.",
+            "No manual cash review on symbols with unresolved catalyst blocks.",
+            "No options cash review without fresh broker-visible bid, ask, volume, open interest, DTE, strike, and max loss.",
+            "No stale pending buy trusted after 60 seconds without recheck.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "broker_action": False,
+        "notes": [
+            "Autonomous means repeated review-only observation and logging, not autonomous trading.",
+            "Each call runs one safe phase-aware scan cycle and returns the next refresh interval.",
+            "Use a browser auto-refresh tab, uptime monitor, or external scheduler to call this endpoint repeatedly.",
+        ],
+    }
+    return service_container.events.log("autonomous_morning_scan", payload)
 
 
 def _run_live_review_cycle(
