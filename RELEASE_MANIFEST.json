@@ -1,8 +1,8 @@
 {
   "service": "Living Screener MCP",
-  "release_folder": "living-screener-mcp-manual-snapshot-form-20260610-090000",
-  "target_build_version": "2026.06.10-manual-snapshot-form",
-  "expected_live_tool_count": 66,
+  "release_folder": "living-screener-mcp-failure-mode-audit-20260610-193000",
+  "target_build_version": "2026.06.10-failure-mode-audit",
+  "expected_live_tool_count": 67,
   "safety_invariants": {
     "review_only": true,
     "place_orders": false,
@@ -36,10 +36,11 @@
   "live_validation_endpoints": [
     "/version",
     "/tools",
-    "/health/full?expected_build_version=2026.06.10-manual-snapshot-form",
+    "/health/full?expected_build_version=2026.06.10-failure-mode-audit",
     "/",
     "/ops/go-live-rehearsal?account_value=50&format=html",
-    "/trade/manual-form?format=html"
+    "/trade/manual-form?format=html",
+    "/risk/failure-mode-audit?format=html"
   ],
   "operator_helpers": [
     "tools/validate_live.ps1",

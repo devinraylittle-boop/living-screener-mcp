@@ -1,6 +1,6 @@
 param(
     [string]$BaseUrl = "https://living-screener-mcp.onrender.com",
-    [string]$ExpectedBuild = "2026.06.10-manual-snapshot-form",
+    [string]$ExpectedBuild = "2026.06.10-failure-mode-audit",
     [int]$AccountValue = 50,
     [int]$TimeoutSeconds = 20
 )
@@ -56,6 +56,7 @@ $checks = @(
     Invoke-Check -Name "Root operator brief" -Path "/" -MustContain "Tomorrow Operator Brief"
     Invoke-Check -Name "Go-live rehearsal" -Path "/ops/go-live-rehearsal?account_value=$AccountValue&format=html" -MustContain "Go-Live Rehearsal"
     Invoke-Check -Name "Manual snapshot form" -Path "/trade/manual-form?format=html" -MustContain "Manual Snapshot Form"
+    Invoke-Check -Name "Failure-mode audit" -Path "/risk/failure-mode-audit?format=html" -MustContain "Failure-Mode Audit"
 )
 
 $checks | Format-Table Name,StatusCode,Pass,Note -AutoSize
