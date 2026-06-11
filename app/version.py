@@ -1,1 +1,1 @@
-BUILD_VERSION = "2026.06.11-data-truth-cockpit"
+BUILD_VERSION = "2026.06.11-paper-exploration"

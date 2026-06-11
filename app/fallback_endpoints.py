@@ -37,9 +37,12 @@ from app.mcp_server import (
     _run_market_open_observer,
     _run_morning_readiness_autopilot,
     _run_observer_followup,
+    _run_paper_exploration,
+    _run_paper_exploration_followup,
     _run_trading_day_heartbeat,
     _run_latest_harvest_followup,
     _run_review_harvest,
+    _summarize_paper_exploration,
     _summarize_trading_day_alerts,
     _summarize_manual_option_paper_trades,
     _watch_manual_option_position,
@@ -2299,6 +2302,102 @@ def _paper_option_summary_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Paper Option Ledger", body, payload)
 
 
+def _paper_exploration_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    trial_rows = []
+    for item in result.get("trials") or []:
+        trial_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('stock_direction') or ''))}</td>"
+            f"<td>{escape(str(item.get('stock_score') or ''))}</td>"
+            f"<td>{escape(str(item.get('paper_quality') or item.get('status') or ''))}</td>"
+            f"<td>{escape(str(item.get('contract_symbol') or ''))}</td>"
+            f"<td>{escape(str(item.get('entry_price') or item.get('ask') or ''))}</td>"
+            f"<td>{escape(str(item.get('max_loss_dollars') or ''))}</td>"
+            f"<td>{escape(str(item.get('review_reason') or ''))}</td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Paper Exploration</h1>
+    <p>Aggressive paper-only trial generator. Bad trades are allowed here for data mining; cash gates are not changed.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Exploration Level", result.get("exploration_level")),
+    ("Opened Entries", result.get("opened_entry_count")),
+    ("Reviewed", result.get("review_count")),
+    ("No Direction", result.get("blocked_no_direction_count")),
+    ("No Price", result.get("blocked_no_price_count")),
+    ("Cash Gates Changed", (result.get("cash_gate_status") or {}).get("cash_gates_changed")),
+])}
+<h2>Quality Counts</h2>
+<pre>{escape(json.dumps(result.get("quality_counts") or {}, indent=2, default=str))}</pre>
+<h2>Trials</h2>
+<table>
+  <thead><tr><th>Ticker</th><th>Dir.</th><th>Score</th><th>Paper Quality</th><th>Contract</th><th>Entry</th><th>Max Loss</th><th>Reason</th></tr></thead>
+  <tbody>{''.join(trial_rows) if trial_rows else '<tr><td colspan="8">No paper trials opened.</td></tr>'}</tbody>
+</table>
+<h2>Hard Rule</h2>
+{_list([
+    "Paper exploration is intentionally noisy.",
+    "Losses here are research labels, not evidence that cash gates failed.",
+    "This endpoint cannot place, submit, simulate, modify, or cancel broker orders.",
+])}
+"""
+    return _html_page("Paper Exploration", body, payload)
+
+
+def _paper_exploration_summary_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    latest = result.get("latest_followup") or {}
+    link_rows = []
+    for key, value in (result.get("links") or {}).items():
+        link_rows.append(
+            "<tr>"
+            f"<td>{escape(str(key))}</td>"
+            f"<td><a href=\"{escape(str(value))}\">{escape(str(value))}</a></td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Paper Exploration Summary</h1>
+    <p>Shows whether the aggressive paper-only lane is creating useful samples.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Runs", result.get("run_count")),
+    ("Trials", result.get("trial_count")),
+    ("Opened Entries", result.get("opened_entry_count")),
+    ("Latest Followup", latest.get("status")),
+    ("Followup Helped", latest.get("helped_count")),
+    ("Followup Hurt", latest.get("hurt_count")),
+    ("Cash Gates Changed", (result.get("cash_gate_status") or {}).get("cash_gates_changed")),
+])}
+<h2>Quality Counts</h2>
+<pre>{escape(json.dumps(result.get("quality_counts") or {}, indent=2, default=str))}</pre>
+<h2>Top Tickers</h2>
+<pre>{escape(json.dumps(result.get("top_tickers") or {}, indent=2, default=str))}</pre>
+<h2>Links</h2>
+<table>
+  <thead><tr><th>Action</th><th>Link</th></tr></thead>
+  <tbody>{''.join(link_rows) if link_rows else '<tr><td colspan="2">No links available.</td></tr>'}</tbody>
+</table>
+<h2>Notes</h2>
+{_list([str(result.get("notes") or "")])}
+"""
+    return _html_page("Paper Exploration Summary", body, payload)
+
+
 def _paper_option_position_watch_html(payload: dict[str, Any]) -> HTMLResponse:
     result = payload.get("result") or {}
     close_request = result.get("close_request") or {}
@@ -3179,6 +3278,46 @@ async def fallback_paper_option_entry(request: Request) -> JSONResponse:
         str(body.get("notes") or ""),
     )
     return JSONResponse(_review_only_envelope({"result": result}))
+
+
+async def fallback_paper_exploration_run(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _run_paper_exploration(
+        container,
+        _tickers(params.get("tickers")),
+        _int_or_default(params.get("max_candidates"), 50),
+        _int_or_default(params.get("max_trials"), 20),
+        _float_or_none(params.get("max_contract_price")),
+        (params.get("include_passes") or "true").strip().lower() not in {"0", "false", "no"},
+        params.get("exploration_level") or "aggressive",
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _paper_exploration_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_paper_exploration_followup(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _run_paper_exploration_followup(
+        container,
+        _int_or_default(params.get("limit_runs"), 5),
+        _int_or_default(params.get("max_items"), 80),
+        (params.get("classify") or "true").strip().lower() not in {"0", "false", "no"},
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _paper_exploration_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_paper_exploration_summary(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _summarize_paper_exploration(container, _int_or_default(params.get("limit"), 100))
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _paper_exploration_summary_html(payload)
+    return JSONResponse(payload)
 
 
 async def fallback_paper_option_close(request: Request) -> JSONResponse:

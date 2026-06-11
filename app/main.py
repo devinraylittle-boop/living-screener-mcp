@@ -48,6 +48,9 @@ from app.fallback_endpoints import (
     fallback_options_data_status,
     fallback_options_review,
     fallback_paper_option_close,
+    fallback_paper_exploration_followup,
+    fallback_paper_exploration_run,
+    fallback_paper_exploration_summary,
     fallback_paper_option_entry,
     fallback_paper_option_summary,
     fallback_paper_option_watch,
@@ -123,6 +126,9 @@ def create_app():
     app.add_route("/risk/session", fallback_session_risk_guard, methods=["GET"])
     app.add_route("/risk/failure-mode-audit", fallback_failure_mode_audit, methods=["GET"])
     app.add_route("/review/broker-option-snapshot", fallback_validate_broker_snapshot, methods=["POST"])
+    app.add_route("/paper/exploration/run", fallback_paper_exploration_run, methods=["GET"])
+    app.add_route("/paper/exploration/followup", fallback_paper_exploration_followup, methods=["GET"])
+    app.add_route("/paper/exploration/summary", fallback_paper_exploration_summary, methods=["GET"])
     app.add_route("/paper/options/entry", fallback_paper_option_entry, methods=["POST"])
     app.add_route("/paper/options/close", fallback_paper_option_close, methods=["POST"])
     app.add_route("/paper/options/watch", fallback_paper_option_watch, methods=["GET", "POST"])

@@ -302,6 +302,23 @@ def log_manual_option_paper_entry(ticket: dict[str, Any], fill_price: float, qua
 
 
 @mcp.tool
+def run_paper_exploration(
+    tickers: list[str] | None = None,
+    max_candidates: int = 50,
+    max_trials: int = 20,
+    max_contract_price: float | None = None,
+    include_passes: bool = True,
+    exploration_level: str = "aggressive",
+) -> dict:
+    return _run_paper_exploration(container, tickers, max_candidates, max_trials, max_contract_price, include_passes, exploration_level)
+
+
+@mcp.tool
+def run_paper_exploration_followup(limit_runs: int = 5, max_items: int = 80, classify: bool = True) -> dict:
+    return _run_paper_exploration_followup(container, limit_runs, max_items, classify)
+
+
+@mcp.tool
 def close_manual_option_paper_trade(entry_id: int | None = None, contract_symbol: str | None = None, exit_price: float = 0.0, exit_reason: str = "manual_close", notes: str = "") -> dict:
     return _close_manual_option_paper_trade(container, entry_id, contract_symbol, exit_price, exit_reason, notes)
 
@@ -333,6 +350,11 @@ def get_failure_mode_audit() -> dict:
 @mcp.tool
 def summarize_manual_option_paper_trades(limit: int = 100) -> dict:
     return _summarize_manual_option_paper_trades(container, limit)
+
+
+@mcp.tool
+def summarize_paper_exploration(limit: int = 100) -> dict:
+    return _summarize_paper_exploration(container, limit)
 
 
 @mcp.tool
@@ -3678,6 +3700,379 @@ def _get_failure_mode_audit(service_container) -> dict:
         ],
     }
     return service_container.events.log("failure_mode_audit", payload)
+
+
+def _run_paper_exploration(
+    service_container,
+    tickers: list[str] | None,
+    max_candidates: int,
+    max_trials: int,
+    max_contract_price: float | None,
+    include_passes: bool,
+    exploration_level: str,
+) -> dict:
+    max_candidates = max(1, min(int(max_candidates or 50), 75))
+    max_trials = max(1, min(int(max_trials or 20), 40))
+    level = str(exploration_level or "aggressive").strip().lower()
+    if level not in {"balanced", "aggressive", "chaos"}:
+        level = "aggressive"
+    universe = _resolve_universe(service_container, tickers)
+    effective_contract_cap = max_contract_price
+    if effective_contract_cap is None:
+        effective_contract_cap = service_container.settings.scalp_max_contract_price
+    if level == "chaos":
+        effective_contract_cap = max(effective_contract_cap or 1.0, 2.5)
+    elif level == "aggressive":
+        effective_contract_cap = max(effective_contract_cap or 1.0, 1.5)
+
+    scan = service_container.scanner.run_market_scan("scalp_review", universe, max_candidates)
+    candidate_rows = list(scan.get("top_candidates") or [])
+    pass_rows = list(scan.get("pass_list") or []) if include_passes else []
+    row_pool = candidate_rows + pass_rows
+    row_pool.sort(key=lambda row: _float_or_zero(row.get("score")), reverse=True)
+
+    trials: list[dict[str, Any]] = []
+    opened_entries = 0
+    blocked_no_price = 0
+    blocked_no_direction = 0
+    review_count = 0
+    for row in row_pool[:max_trials]:
+        ticker = str(row.get("ticker") or "").upper()
+        direction = _paper_exploration_direction(row)
+        if not ticker or direction not in {"long", "short"}:
+            blocked_no_direction += 1
+            trials.append(_paper_exploration_trial_record(row, None, None, "NO_DIRECTION_FOR_PAPER_TRIAL", None, None))
+            continue
+
+        option_direction = "call" if direction == "long" else "put"
+        review = _review_candidate_for_options(service_container, ticker, option_direction, "scalp_review", effective_contract_cap)
+        review_count += 1
+        contract, contract_source = _paper_exploration_contract_from_review(review)
+        fill_price, price_source = _paper_exploration_fill_price(contract)
+        if not contract or fill_price <= 0:
+            blocked_no_price += 1
+            trials.append(_paper_exploration_trial_record(row, review, contract, "NO_PRICE_FOR_PAPER_ENTRY", contract_source, price_source))
+            continue
+
+        paper_quality = _paper_exploration_quality(row, review, contract, level)
+        ticket = {
+            "status": "PAPER_EXPLORATION_TRIAL",
+            "ticker": ticker,
+            "direction": option_direction,
+            "selected_contract": contract,
+            "stock_setup": row,
+            "options_review": review,
+            "paper_exploration": {
+                "schema_version": "paper_exploration_v1",
+                "level": level,
+                "paper_quality": paper_quality,
+                "contract_source": contract_source,
+                "price_source": price_source,
+                "cash_gate_unchanged": True,
+                "cash_eligible": False,
+                "why_allowed_in_paper": _paper_exploration_reason(row, review, contract, paper_quality),
+            },
+        }
+        entry = _log_manual_option_paper_entry(
+            service_container,
+            ticket,
+            fill_price,
+            1,
+            _float_or_none_value(row.get("price") or row.get("entry_reference")),
+            f"auto paper exploration: {paper_quality}; {price_source}",
+        )
+        opened_entries += 1
+        trial = _paper_exploration_trial_record(row, review, contract, "PAPER_EXPLORATION_ENTRY_OPENED", contract_source, price_source)
+        trial["entry_event_id"] = entry.get("id")
+        trial["entry_price"] = fill_price
+        trial["paper_quality"] = paper_quality
+        trials.append(trial)
+
+    quality_counts = Counter(str(item.get("paper_quality") or item.get("status") or "unknown") for item in trials)
+    payload = {
+        "status": "PAPER_EXPLORATION_TRIALS_OPENED" if opened_entries else "PAPER_EXPLORATION_NO_ENTRIES",
+        "build_version": BUILD_VERSION,
+        "schema_version": "paper_exploration_v1",
+        "mode": "paper_exploration",
+        "generated_at": utc_now(),
+        "exploration_level": level,
+        "universe": universe,
+        "max_candidates": max_candidates,
+        "max_trials": max_trials,
+        "max_contract_price_used": effective_contract_cap,
+        "include_passes": bool(include_passes),
+        "scan_summary": _scan_summary(scan),
+        "candidate_row_count": len(candidate_rows),
+        "pass_row_count": len(pass_rows),
+        "review_count": review_count,
+        "opened_entry_count": opened_entries,
+        "blocked_no_direction_count": blocked_no_direction,
+        "blocked_no_price_count": blocked_no_price,
+        "quality_counts": dict(quality_counts),
+        "trials": trials,
+        "followup_link": "/paper/exploration/followup?limit_runs=5&max_items=80&classify=true&format=html",
+        "summary_link": "/paper/exploration/summary?format=html",
+        "cash_gate_status": {
+            "cash_gates_changed": False,
+            "real_money_allowed_from_this_output": False,
+            "paper_bad_trades_allowed": True,
+            "purpose": "Increase labeled samples, including failures, without weakening live/cash gates.",
+        },
+        "review_only": True,
+        "paper_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_allowed": False,
+        "broker_action": False,
+        "notes": [
+            "Paper exploration intentionally opens low-quality research trials to learn faster.",
+            "Every trial is tagged; do not mix paper-exploration losses with cash-strategy failures.",
+            "This tool does not contact a broker and cannot place, submit, simulate, modify, or cancel orders.",
+        ],
+    }
+    return service_container.events.log("paper_exploration_run", payload)
+
+
+def _run_paper_exploration_followup(service_container, limit_runs: int, max_items: int, classify: bool) -> dict:
+    limit_runs = max(1, min(int(limit_runs or 5), 20))
+    max_items = max(1, min(int(max_items or 80), 200))
+    runs = service_container.events.recent("paper_exploration_run", limit_runs)
+    followup_items: list[dict[str, Any]] = []
+    for event in runs:
+        payload = event.get("payload") or {}
+        for trial in payload.get("trials") or []:
+            if trial.get("status") != "PAPER_EXPLORATION_ENTRY_OPENED":
+                continue
+            item = dict(trial)
+            item["source_run_event_id"] = event.get("id")
+            item["source_run_timestamp"] = event.get("timestamp")
+            followup_items.append(item)
+            if len(followup_items) >= max_items:
+                break
+        if len(followup_items) >= max_items:
+            break
+
+    outcomes: list[dict[str, Any]] = []
+    classifications: list[dict[str, Any]] = []
+    unavailable = 0
+    for item in followup_items:
+        outcome = service_container.review_outcomes.check_review_outcome(
+            {
+                "review_id": f"paper-exploration-{item.get('entry_event_id') or item.get('ticker')}",
+                "ticker": item.get("ticker"),
+                "direction": item.get("stock_direction") or "long",
+                "entry_reference": item.get("underlying_entry_reference"),
+                "review_timestamp": item.get("source_run_timestamp"),
+            },
+            {"15m": 3, "30m": 6, "60m": 12},
+        )
+        outcome["entry_event_id"] = item.get("entry_event_id")
+        outcome["paper_quality"] = item.get("paper_quality")
+        outcome["ticker"] = item.get("ticker")
+        outcomes.append(outcome)
+        if outcome.get("status") == "OUTCOME_UNAVAILABLE":
+            unavailable += 1
+        elif classify:
+            classifications.append(service_container.learning.classify_review_outcome(item, outcome))
+
+    helped = [
+        item
+        for item in outcomes
+        if _float_or_zero(item.get("directional_return") or item.get("current_return_pct")) > 0
+    ]
+    hurt = [
+        item
+        for item in outcomes
+        if _float_or_zero(item.get("directional_return") or item.get("current_return_pct")) < 0
+    ]
+    learning_summary = service_container.learning.summarize_learning(classifications, max_items) if classifications else None
+    status = "PAPER_EXPLORATION_FOLLOWUP_READY" if outcomes and unavailable < len(outcomes) else "PAPER_EXPLORATION_FOLLOWUP_WAITING"
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "schema_version": "paper_exploration_followup_v1",
+        "mode": "paper_exploration_followup",
+        "generated_at": utc_now(),
+        "source_run_count": len(runs),
+        "items_checked": len(followup_items),
+        "outcome_unavailable_count": unavailable,
+        "helped_count": len(helped),
+        "hurt_count": len(hurt),
+        "outcomes": outcomes,
+        "classifications": classifications,
+        "learning_summary": learning_summary,
+        "next_action": "Compare exploratory losses to exploratory winners before changing any real-money gate.",
+        "review_only": True,
+        "paper_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_allowed": False,
+        "broker_action": False,
+        "notes": [
+            "Follow-up grades underlying movement from paper-exploration entries.",
+            "Option P/L remains approximate unless the operator supplies broker-visible option marks.",
+            "Use this to learn what not to trade as aggressively as what to trade.",
+        ],
+    }
+    return service_container.events.log("paper_exploration_followup", payload)
+
+
+def _summarize_paper_exploration(service_container, limit: int = 100) -> dict:
+    limit = max(1, min(int(limit or 100), 500))
+    runs = service_container.events.recent("paper_exploration_run", limit)
+    followups = service_container.events.recent("paper_exploration_followup", limit)
+    trials: list[dict[str, Any]] = []
+    for event in runs:
+        for trial in (event.get("payload") or {}).get("trials") or []:
+            trials.append(trial)
+    opened = [item for item in trials if item.get("status") == "PAPER_EXPLORATION_ENTRY_OPENED"]
+    quality_counts = Counter(str(item.get("paper_quality") or item.get("status") or "unknown") for item in trials)
+    ticker_counts = Counter(str(item.get("ticker") or "UNKNOWN") for item in opened)
+    followup_payloads = [event.get("payload") or {} for event in followups]
+    payload = {
+        "status": "PAPER_EXPLORATION_SUMMARY_READY",
+        "build_version": BUILD_VERSION,
+        "schema_version": "paper_exploration_summary_v1",
+        "run_count": len(runs),
+        "trial_count": len(trials),
+        "opened_entry_count": len(opened),
+        "quality_counts": dict(quality_counts),
+        "top_tickers": dict(ticker_counts.most_common(12)),
+        "latest_followup": followup_payloads[0] if followup_payloads else None,
+        "links": {
+            "run_aggressive": "/paper/exploration/run?max_candidates=50&max_trials=20&exploration_level=aggressive&include_passes=true&format=html",
+            "run_chaos": "/paper/exploration/run?max_candidates=75&max_trials=35&exploration_level=chaos&include_passes=true&format=html",
+            "followup": "/paper/exploration/followup?limit_runs=5&max_items=80&classify=true&format=html",
+            "manual_paper_ledger": "/paper/options/summary?format=html",
+            "checkpoint": "/journal/checkpoint?limit=500&format=json",
+        },
+        "cash_gate_status": {
+            "cash_gates_changed": False,
+            "real_money_allowed_from_this_output": False,
+            "paper_bad_trades_allowed": True,
+        },
+        "review_only": True,
+        "paper_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_allowed": False,
+        "broker_action": False,
+        "notes": "Paper exploration is intentionally noisy. Treat it as data mining, not a live strategy score.",
+    }
+    return service_container.events.log("paper_exploration_summary", payload)
+
+
+def _paper_exploration_direction(row: dict[str, Any]) -> str:
+    direction = str(row.get("direction") or "").lower()
+    if direction in {"long", "short"}:
+        return direction
+    signals = row.get("key_signals") or {}
+    if signals.get("above_vwap"):
+        return "long"
+    if signals.get("below_vwap"):
+        return "short"
+    trend = _float_or_none_value(signals.get("trend_pct") or signals.get("recent_trend_pct") or signals.get("change_vs_previous_close"))
+    if trend is not None and trend > 0:
+        return "long"
+    if trend is not None and trend < 0:
+        return "short"
+    return "none"
+
+
+def _paper_exploration_contract_from_review(review: dict[str, Any] | None) -> tuple[dict[str, Any] | None, str | None]:
+    if not review:
+        return None, None
+    small = review.get("small_account_review") or {}
+    selected = small.get("selected_contract")
+    if selected:
+        return selected, "small_account_selected_contract"
+    gate = review.get("options_chain_validation") or {}
+    accepted = gate.get("accepted_contracts") or []
+    if accepted:
+        return accepted[0], "accepted_contract_cash_blocked_by_friction"
+    rejected = gate.get("best_rejected_contracts") or gate.get("rejected_contracts") or []
+    if rejected:
+        return rejected[0], "best_rejected_contract_paper_only"
+    return None, None
+
+
+def _paper_exploration_fill_price(contract: dict[str, Any] | None) -> tuple[float, str | None]:
+    if not contract:
+        return 0.0, None
+    for key, source in (("ask", "ask"), ("midpoint", "midpoint"), ("last_price", "last_price"), ("bid", "bid")):
+        value = _float_or_zero(contract.get(key))
+        if value > 0:
+            return value, source
+    return 0.0, "no_positive_price"
+
+
+def _paper_exploration_quality(row: dict[str, Any], review: dict[str, Any] | None, contract: dict[str, Any], level: str) -> str:
+    if review and review.get("status") == "REVIEW_ONLY_OPTIONS_READY":
+        return "would_have_passed_review"
+    small = (review or {}).get("small_account_review") or {}
+    if small.get("status") == "NO_TRADE_PLAN":
+        return "cash_blocked_by_small_account_friction"
+    if (review or {}).get("status") == "NO_TRADE_PLAN":
+        return "cash_blocked_by_stock_or_options_gate"
+    if (row.get("quality_gates") or {}).get("stock_setup_quality") != "VALID_CANDIDATE":
+        return "intentionally_weak_stock_probe"
+    if level == "chaos":
+        return "chaos_probe"
+    return "exploratory_probe"
+
+
+def _paper_exploration_reason(row: dict[str, Any], review: dict[str, Any] | None, contract: dict[str, Any], quality: str) -> list[str]:
+    reasons = [
+        f"Paper-only sample tagged as {quality}.",
+        "Allowed because research mode needs both winners and losers.",
+        "Not allowed for real cash unless normal cash gates pass later.",
+    ]
+    review_reason = (review or {}).get("reason")
+    if review_reason:
+        reasons.append(str(review_reason))
+    for reason in row.get("reasons") or []:
+        reasons.append(str(reason))
+    return reasons[:8]
+
+
+def _paper_exploration_trial_record(
+    row: dict[str, Any],
+    review: dict[str, Any] | None,
+    contract: dict[str, Any] | None,
+    status: str,
+    contract_source: str | None,
+    price_source: str | None,
+) -> dict[str, Any]:
+    ticker = str(row.get("ticker") or (review or {}).get("ticker") or "").upper()
+    direction = _paper_exploration_direction(row)
+    selected = contract or {}
+    return {
+        "status": status,
+        "ticker": ticker,
+        "stock_direction": direction,
+        "option_direction": "call" if direction == "long" else "put" if direction == "short" else None,
+        "stock_score": row.get("score"),
+        "stock_status": row.get("status"),
+        "stock_setup_quality": (row.get("quality_gates") or {}).get("stock_setup_quality"),
+        "underlying_entry_reference": _float_or_none_value(row.get("price") or row.get("entry_reference")),
+        "relative_volume": (row.get("key_signals") or {}).get("relative_volume"),
+        "vwap_state": "above" if (row.get("key_signals") or {}).get("above_vwap") else "below" if (row.get("key_signals") or {}).get("below_vwap") else "unknown",
+        "review_status": (review or {}).get("status"),
+        "review_reason": (review or {}).get("reason"),
+        "contract_symbol": selected.get("contract_symbol"),
+        "contract_source": contract_source,
+        "price_source": price_source,
+        "ask": selected.get("ask"),
+        "bid": selected.get("bid"),
+        "spread_pct": selected.get("spread_pct"),
+        "volume": selected.get("volume"),
+        "open_interest": selected.get("open_interest"),
+        "days_to_expiration": selected.get("days_to_expiration"),
+        "max_loss_dollars": selected.get("max_loss_dollars"),
+        "cash_eligible": False,
+        "paper_only": True,
+        "order_allowed": False,
+    }
 
 
 def _summarize_manual_option_paper_trades(service_container, limit: int = 100) -> dict:
