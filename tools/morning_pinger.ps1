@@ -1,6 +1,6 @@
 param(
     [string]$BaseUrl = "https://living-screener-mcp.onrender.com",
-    [string]$ExpectedBuild = "2026.06.11-paper-exploration",
+    [string]$ExpectedBuild = "2026.06.11-paper-exploration-v2",
     [string]$Tickers = "AMZN,SOFI,SHOP,XOM,LULU,AAPL,QQQ,IWM,MSFT,NVDA,AMD,META,AVGO,SMCI,RBLX,CVX,LLY,UNH,HOOD,TSLA",
     [int]$AccountValue = 50,
     [int]$MaxCandidates = 25,

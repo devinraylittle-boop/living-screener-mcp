@@ -1,6 +1,6 @@
 # Living Screener MCP V2.0 Adversarial Audit
 
-Build reviewed: `2026.06.11-paper-exploration`
+Build reviewed: `2026.06.11-paper-exploration-v2`
 
 ## 1. Executive Summary
 

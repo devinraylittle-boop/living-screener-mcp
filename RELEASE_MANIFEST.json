@@ -1,7 +1,7 @@
 {
     "service":  "Living Screener MCP",
     "release_folder":  "living-screener-mcp-paper-exploration-20260611-103500",
-    "target_build_version":  "2026.06.11-paper-exploration",
+    "target_build_version":  "2026.06.11-paper-exploration-v2",
     "expected_live_tool_count":  81,
     "safety_invariants":  {
                               "review_only":  true,
@@ -36,7 +36,7 @@
     "live_validation_endpoints":  [
                                       "/version",
                                       "/tools",
-                                      "/health/full?expected_build_version=2026.06.11-paper-exploration",
+                                      "/health/full?expected_build_version=2026.06.11-paper-exploration-v2",
                                       "/ops/autonomous-morning-scan?format=html",
                                       "/ops/event-radar?format=html",
                                       "/ops/broad-opportunity-scan?format=html",

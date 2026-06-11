@@ -171,6 +171,9 @@ class PaperOptionLedgerTests(unittest.TestCase):
         self.assertFalse(result["cash_gate_status"]["cash_gates_changed"])
         self.assertFalse(result["can_place_order_from_this_mcp"])
         self.assertTrue(result["paper_only"])
+        for trial in result["trials"]:
+            if trial["status"] == "PAPER_EXPLORATION_ENTRY_OPENED":
+                self.assertGreater(trial["underlying_entry_reference"], 0)
         self.assertEqual(summary["status"], "PAPER_EXPLORATION_SUMMARY_READY")
         self.assertFalse(summary["cash_gate_status"]["real_money_allowed_from_this_output"])
         self.assertIn(followup["status"], {"PAPER_EXPLORATION_FOLLOWUP_READY", "PAPER_EXPLORATION_FOLLOWUP_WAITING"})

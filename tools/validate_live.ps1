@@ -1,6 +1,6 @@
 param(
     [string]$BaseUrl = "https://living-screener-mcp.onrender.com",
-    [string]$ExpectedBuild = "2026.06.11-paper-exploration",
+    [string]$ExpectedBuild = "2026.06.11-paper-exploration-v2",
     [int]$AccountValue = 50,
     [int]$TimeoutSeconds = 20
 )
