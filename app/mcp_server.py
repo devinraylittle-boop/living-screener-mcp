@@ -91,6 +91,23 @@ def run_scalp_scan(tickers: list[str] | None = None, max_candidates: int = 25) -
 
 
 @mcp.tool
+def get_event_volatility_playbook(event_name: str = "spacex_ipo", account_value: float = 50.0) -> dict:
+    return _get_event_volatility_playbook(container, event_name, account_value)
+
+
+@mcp.tool
+def run_event_volatility_scan(
+    event_name: str = "spacex_ipo",
+    tickers: list[str] | None = None,
+    max_candidates: int = 25,
+    account_value: float = 50.0,
+    review_top_n: int = 8,
+    max_contract_price: float | None = None,
+) -> dict:
+    return _run_event_volatility_scan(container, event_name, tickers, max_candidates, account_value, review_top_n, max_contract_price)
+
+
+@mcp.tool
 def market_readiness_check(tickers: list[str] | None = None, max_candidates: int = 25) -> dict:
     return _market_readiness_check(container, tickers, max_candidates)
 
@@ -447,6 +464,333 @@ def _run_review_harvest(service_container, tickers: list[str] | None, mode: str,
         ],
     }
     return service_container.events.log("review_harvest", payload)
+
+
+def _event_volatility_universe(service_container, tickers: list[str] | None) -> list[str]:
+    configured = tickers or list(getattr(service_container.settings, "event_volatility_watchlist", ()))
+    seen: set[str] = set()
+    universe: list[str] = []
+    for ticker in configured:
+        symbol = str(ticker or "").upper().strip()
+        if symbol and symbol not in seen:
+            seen.add(symbol)
+            universe.append(symbol)
+    return universe
+
+
+def _get_event_volatility_playbook(service_container, event_name: str, account_value: float) -> dict:
+    settings = service_container.settings
+    event_key = (event_name or settings.event_theme or "event_volatility").strip().lower()
+    universe = _event_volatility_universe(service_container, None)
+    direct_symbol = str(settings.event_direct_symbol or "SPCX").upper()
+    account_value = _float_or_zero(account_value) or 50.0
+    contract_cap = settings.scalp_max_contract_price
+    payload = {
+        "status": "EVENT_VOLATILITY_PLAYBOOK_READY",
+        "build_version": BUILD_VERSION,
+        "event_name": event_key,
+        "generated_at": utc_now(),
+        "mission": "Exploit event-driven volatility only when data, direction, spread, and sizing gates agree.",
+        "direct_symbol": direct_symbol,
+        "universe": universe,
+        "account_value_reference": account_value,
+        "small_account_contract_cap": contract_cap,
+        "stock_lane_allowed": True,
+        "options_lane_allowed_only_after": [
+            "VALID_CANDIDATE stock setup",
+            "Clear direction",
+            "OPTIONS_CHAIN_ACCEPTABLE",
+            "SMALL_ACCOUNT_SCALP_ACCEPTABLE",
+            "Manual broker snapshot/preflight for real money",
+        ],
+        "lanes": [
+            {
+                "lane": "DIRECT_IPO_STOCK_REVIEW",
+                "applies_to": [direct_symbol],
+                "allowed_in_mcp": "review_only",
+                "rule": "Treat the fresh listing as stock-only review until listed options exist and a broker-visible snapshot proves live bid/ask, volume, open interest, and max loss.",
+                "do_not_do": "Do not assume same-day direct options exist; do not synthesize an option chain from stale or related-symbol data.",
+            },
+            {
+                "lane": "SYMPATHY_OPTIONS_REVIEW",
+                "applies_to": [ticker for ticker in universe if ticker != direct_symbol and not ticker.endswith(("X", "A"))],
+                "allowed_in_mcp": "review_only",
+                "rule": "Only review options after a valid directional stock setup. Rank only REVIEW_ONLY_OPTIONS_READY plus SMALL_ACCOUNT_SCALP_ACCEPTABLE.",
+                "do_not_do": "Do not rank OPTIONS_CHAIN_ACCEPTABLE alone, and do not rank stock setup alone as an options idea.",
+            },
+            {
+                "lane": "INDEX_VOLATILITY_REVIEW",
+                "applies_to": ["SPY", "QQQ", "IWM"],
+                "allowed_in_mcp": "review_only",
+                "rule": "Use indexes as cleaner volatility/liquidity proxies when single-name sympathy chains are wide, stale, or too expensive.",
+                "do_not_do": "Do not force 0DTE. Prefer no trade over decay exposure without fresh options truth.",
+            },
+            {
+                "lane": "STOCK_REVIEW_FALLBACK",
+                "applies_to": "Any valid stock setup whose options truth is missing, expensive, wide, or illiquid.",
+                "allowed_in_mcp": "review_only",
+                "rule": "Allow stock review when options are unavailable or inferior. This is a separate lane, not an options downgrade.",
+                "do_not_do": "Do not convert stock review into an option trade without fresh contract proof.",
+            },
+        ],
+        "hard_no_trade_gates": [
+            "Wrong build or failed safety config.",
+            "Regular-session quote/candle health is stale, missing, or derived from a weak proxy.",
+            "No clear direction or VWAP conflict.",
+            "Options spread, quote age, volume, open interest, DTE, or max loss fails the small-account gate.",
+            "Real-cash closed loss count reaches 3 for the day.",
+            "Manual broker snapshot is unavailable for real-money options truth.",
+        ],
+        "tomorrow_timeline_central": [
+            {"time": "07:30-08:25", "action": "Premarket observe only; collect catalysts, gaps, and sympathy leaders."},
+            {"time": "08:30-08:45", "action": "Opening noise window. Run observer; avoid ranking contracts unless data quality is excellent."},
+            {"time": "08:45-10:30", "action": "Primary review window. Run event scan, then options review only for valid directional candidates."},
+            {"time": "10:30-13:30", "action": "Selective continuation or reversal review. Prefer fewer, cleaner setups."},
+            {"time": "13:30-close", "action": "Reduce 0DTE appetite. Only review if momentum, spread, and liquidity are exceptional."},
+        ],
+        "stock_vs_options_decision": [
+            "Prefer options when stock setup is strong, contract is liquid, spread is tight, DTE/max loss fit account size, and broker snapshot confirms truth.",
+            "Prefer stock when direct IPO options are unavailable, contract spreads are too wide, IV/theta risk is hostile, or a swing idea is cleaner than a scalp.",
+            "Prefer no trade when both lanes require assumptions.",
+        ],
+        "links": {
+            "playbook": "/ops/event-volatility-playbook?format=html",
+            "event_scan": "/ops/event-volatility-scan?format=html",
+            "market_open_observer": f"/ops/market-open-observer?tickers={','.join(universe)}&max_candidates=25&format=html",
+            "live_review_cycle": f"/ops/live-review-cycle?tickers={','.join(universe)}&account_value={account_value}&max_candidates=25&review_top_n=8&max_contract_price={contract_cap}&format=html",
+            "manual_preflight": "/review/manual-preflight?format=html",
+        },
+        "safety": {
+            "review_only": True,
+            "place_orders": False,
+            "market_orders_allowed": False,
+            "manual_approval_required": True,
+            "paper_research_uncapped": True,
+            "real_cash_daily_closed_loss_lockout_count": settings.max_daily_real_cash_closed_losses,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        },
+        "notes": [
+            "This is an event-day decision map, not a prediction and not a broker action.",
+            "The machine should become more active in paper/research, not more reckless with real cash.",
+            "Every accepted candidate still needs live truth, manual preflight, and post-outcome learning.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+    return service_container.events.log("event_volatility_playbook", payload)
+
+
+def _run_event_volatility_scan(
+    service_container,
+    event_name: str,
+    tickers: list[str] | None,
+    max_candidates: int,
+    account_value: float,
+    review_top_n: int,
+    max_contract_price: float | None,
+) -> dict:
+    max_candidates = max(1, min(int(max_candidates or 25), 50))
+    review_top_n = max(1, min(int(review_top_n or 8), 20))
+    universe = _event_volatility_universe(service_container, tickers)
+    direct_symbol = str(service_container.settings.event_direct_symbol or "SPCX").upper()
+    event_key = (event_name or service_container.settings.event_theme or "event_volatility").strip().lower()
+    effective_contract_cap = max_contract_price
+    if effective_contract_cap is None:
+        effective_contract_cap = service_container.settings.scalp_max_contract_price
+    scan = service_container.scanner.run_market_scan("scalp_review", universe, max_candidates)
+    top_rows = list(scan.get("top_candidates") or [])
+    pass_rows = list(scan.get("pass_list") or [])
+    stock_candidates = [
+        row
+        for row in top_rows
+        if row.get("status") == "CANDIDATE"
+        and (row.get("quality_gates") or {}).get("stock_setup_quality") == "VALID_CANDIDATE"
+        and str(row.get("direction") or "").lower() in {"long", "short"}
+    ]
+    reviews: dict[str, dict[str, Any]] = {}
+    for candidate in stock_candidates[:review_top_n]:
+        ticker = str(candidate.get("ticker") or "").upper()
+        if ticker == direct_symbol:
+            continue
+        direction = str(candidate.get("direction") or "").lower()
+        option_direction = "call" if direction == "long" else "put"
+        reviews[ticker] = _review_candidate_for_options(
+            service_container,
+            ticker,
+            option_direction,
+            "scalp_review",
+            effective_contract_cap,
+        )
+
+    lane_decisions = [
+        _event_lane_decision(row, reviews.get(str(row.get("ticker") or "").upper()), direct_symbol)
+        for row in stock_candidates
+    ]
+    ranked_options = [
+        decision
+        for decision in lane_decisions
+        if decision.get("lane") == "SYMPATHY_OPTIONS_REVIEW_READY"
+    ]
+    ranked_options.sort(
+        key=lambda item: (
+            _float_or_zero(item.get("priority_score")),
+            _float_or_zero(item.get("friction_adjusted_score")),
+            -_float_or_zero(item.get("max_loss_dollars")),
+        ),
+        reverse=True,
+    )
+    stock_review = [
+        decision
+        for decision in lane_decisions
+        if decision.get("lane") in {"DIRECT_IPO_STOCK_REVIEW", "STOCK_REVIEW_FALLBACK", "INDEX_VOLATILITY_STOCK_REVIEW"}
+    ]
+    direct_present = any(str(row.get("ticker") or "").upper() == direct_symbol for row in top_rows + pass_rows)
+    status = "EVENT_OPTIONS_READY" if ranked_options else "EVENT_STOCK_REVIEW_ONLY" if stock_review else "EVENT_NO_TRADE_PLAN"
+    next_action = (
+        "Review ranked options only after manual broker snapshot/preflight."
+        if ranked_options
+        else "Track stock lanes and rerun; do not force options until the contract gate passes."
+        if stock_review
+        else "Keep observing. No event-lane candidate cleared the stock setup gate."
+    )
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "event_name": event_key,
+        "generated_at": utc_now(),
+        "universe": universe,
+        "direct_symbol": direct_symbol,
+        "direct_symbol_status": "SCANNED_OR_PRESENT" if direct_present else "NOT_RETURNED_BY_DATA_PROVIDER_YET",
+        "account_value_reference": _float_or_zero(account_value) or 50.0,
+        "max_candidates": max_candidates,
+        "review_top_n": review_top_n,
+        "max_contract_price_used": effective_contract_cap,
+        "scan_summary": _scan_summary(scan),
+        "stock_candidate_count": len(stock_candidates),
+        "options_review_count": len(reviews),
+        "ranked_options_candidates": ranked_options,
+        "stock_review_candidates": stock_review,
+        "watch_only_or_rejected": [
+            decision for decision in lane_decisions if decision not in ranked_options and decision not in stock_review
+        ],
+        "pass_count": len(pass_rows),
+        "pass_observations": [_stock_summary(row) for row in pass_rows[:12]],
+        "direct_ipo_options_rule": "Direct IPO symbol is stock-review only until listed options exist and broker-visible options truth is supplied.",
+        "stock_lane_allowed": True,
+        "options_lane_allowed_only_after": [
+            "VALID_CANDIDATE stock setup",
+            "Clear direction",
+            "OPTIONS_CHAIN_ACCEPTABLE",
+            "SMALL_ACCOUNT_SCALP_ACCEPTABLE",
+            "Manual broker snapshot/preflight for real money",
+        ],
+        "next_action": next_action,
+        "links": {
+            "event_playbook": "/ops/event-volatility-playbook?format=html",
+            "event_scan_refresh": f"/ops/event-volatility-scan?event_name={event_key}&tickers={','.join(universe)}&max_candidates={max_candidates}&account_value={_float_or_zero(account_value) or 50.0}&review_top_n={review_top_n}&max_contract_price={effective_contract_cap}&format=html",
+            "manual_preflight": "/review/manual-preflight?format=html",
+            "paper_summary": "/paper/options/summary?format=html",
+            "session_risk": f"/risk/session?account_value={_float_or_zero(account_value) or 50.0}&format=html",
+        },
+        "safety": {
+            "review_only": True,
+            "place_orders": False,
+            "market_orders_allowed": False,
+            "manual_approval_required": True,
+            "paper_research_uncapped": True,
+            "real_cash_daily_closed_loss_lockout_count": service_container.settings.max_daily_real_cash_closed_losses,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        },
+        "raw_reviews": list(reviews.values()),
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_allowed": False,
+        "notes": [
+            "This event scan can classify stock/options lanes, but it cannot place, simulate, modify, or cancel broker orders.",
+            "A stock review lane is allowed when options data is the weak link.",
+            "No options candidate is ranked unless small-account review is acceptable.",
+        ],
+    }
+    return service_container.events.log("event_volatility_scan", payload)
+
+
+def _event_lane_decision(stock_row: dict[str, Any], review: dict[str, Any] | None, direct_symbol: str) -> dict[str, Any]:
+    ticker = str(stock_row.get("ticker") or "").upper()
+    direction = str(stock_row.get("direction") or "").lower()
+    signals = stock_row.get("key_signals") or {}
+    vwap_state = "above" if signals.get("above_vwap") else "below" if signals.get("below_vwap") else "unknown"
+    base = {
+        "ticker": ticker,
+        "stock_direction": direction,
+        "stock_score": stock_row.get("score"),
+        "relative_volume": signals.get("relative_volume"),
+        "vwap_state": vwap_state,
+        "stock_setup_quality": (stock_row.get("quality_gates") or {}).get("stock_setup_quality"),
+        "stock_status": stock_row.get("status"),
+        "why_not_ranked": [],
+        "review_only": True,
+        "order_allowed": False,
+    }
+    if ticker == direct_symbol:
+        return {
+            **base,
+            "lane": "DIRECT_IPO_STOCK_REVIEW",
+            "rankable_as_options": False,
+            "why_not_ranked": ["Direct IPO symbol is stock-review only until options are actually listed and validated by broker snapshot."],
+        }
+    if ticker in {"SPY", "QQQ", "IWM"} and not review:
+        return {
+            **base,
+            "lane": "INDEX_VOLATILITY_STOCK_REVIEW",
+            "rankable_as_options": False,
+            "why_not_ranked": ["Index volatility proxy has stock setup, but no small-account options review passed yet."],
+        }
+    if not review:
+        return {
+            **base,
+            "lane": "STOCK_REVIEW_FALLBACK",
+            "rankable_as_options": False,
+            "why_not_ranked": ["Stock setup passed, but options review was not run within the review_top_n window."],
+        }
+    small = review.get("small_account_review") or {}
+    selected = small.get("selected_contract") or {}
+    option_status = review.get("status")
+    small_status = small.get("status")
+    option_ready = option_status == "REVIEW_ONLY_OPTIONS_READY" and small_status == "SMALL_ACCOUNT_SCALP_ACCEPTABLE"
+    if option_ready:
+        return {
+            **base,
+            "lane": "SYMPATHY_OPTIONS_REVIEW_READY",
+            "rankable_as_options": True,
+            "option_direction": "call" if direction == "long" else "put",
+            "priority_score": small.get("priority_score"),
+            "friction_adjusted_score": small.get("friction_adjusted_score"),
+            "friction_band": small.get("friction_band"),
+            "selected_contract": selected.get("contract_symbol"),
+            "ask": selected.get("ask"),
+            "max_loss_dollars": selected.get("max_loss_dollars"),
+            "spread_pct": selected.get("spread_pct"),
+            "dte": selected.get("days_to_expiration"),
+            "warnings": review.get("warnings") or small.get("warnings") or [],
+            "why_not_ranked": [],
+        }
+    return {
+        **base,
+        "lane": "STOCK_REVIEW_FALLBACK",
+        "rankable_as_options": False,
+        "option_status": option_status,
+        "small_account_status": small_status,
+        "selected_contract": selected.get("contract_symbol") if selected else None,
+        "why_not_ranked": [
+            "Stock setup passed, but options candidate did not clear both OPTIONS_CHAIN_ACCEPTABLE and SMALL_ACCOUNT_SCALP_ACCEPTABLE.",
+            review.get("reason") or "Options review did not return a rankable small-account contract.",
+        ],
+        "warnings": review.get("warnings") or small.get("warnings") or [],
+    }
 
 
 def _get_market_session_playbook(service_container, tickers: list[str] | None, account_value: float) -> dict:

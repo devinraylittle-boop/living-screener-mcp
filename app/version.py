@@ -1,1 +1,1 @@
-BUILD_VERSION = "2026.06.11-cash-paper-split"
+BUILD_VERSION = "2026.06.11-event-volatility"

@@ -14,6 +14,7 @@ from app.mcp_server import (
     _build_manual_trade_preflight_ticket,
     _close_manual_option_paper_trade,
     _export_journal_checkpoint,
+    _get_event_volatility_playbook,
     _get_ops_command_center,
     _get_market_session_playbook,
     _get_session_risk_guard,
@@ -25,6 +26,7 @@ from app.mcp_server import (
     _market_readiness_check,
     _review_candidate_for_options,
     _restore_journal_checkpoint,
+    _run_event_volatility_scan,
     _run_autonomous_morning_scan,
     _run_go_live_rehearsal,
     _run_live_review_cycle,
@@ -256,9 +258,9 @@ def _field_grid(items: list[tuple[str, Any]]) -> str:
 
 def _status_class(status: str | None) -> str:
     value = (status or "").upper()
-    if value in {"REVIEW_ONLY_OPTIONS_READY", "SMALL_ACCOUNT_SCALP_ACCEPTABLE", "OPTIONS_CHAIN_ACCEPTABLE"}:
+    if value in {"REVIEW_ONLY_OPTIONS_READY", "SMALL_ACCOUNT_SCALP_ACCEPTABLE", "OPTIONS_CHAIN_ACCEPTABLE", "EVENT_VOLATILITY_PLAYBOOK_READY", "EVENT_OPTIONS_READY"}:
         return "ok"
-    if value in {"NO_TRADE_PLAN", "NO_SMALL_ACCOUNT_CONTRACT"}:
+    if value in {"NO_TRADE_PLAN", "NO_SMALL_ACCOUNT_CONTRACT", "EVENT_NO_TRADE_PLAN"}:
         return "bad"
     return "warn"
 
@@ -689,6 +691,125 @@ def _session_playbook_html(payload: dict[str, Any]) -> HTMLResponse:
 {_list(result.get("manual_trade_gate") or [])}
 """
     return _html_page("Market Session Playbook", body, payload)
+
+
+def _event_volatility_playbook_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    lane_rows = []
+    for lane in result.get("lanes") or []:
+        applies = lane.get("applies_to")
+        if isinstance(applies, list):
+            applies = ", ".join(str(item) for item in applies[:10]) + ("..." if len(applies) > 10 else "")
+        lane_rows.append(
+            "<tr>"
+            f"<td>{escape(str(lane.get('lane') or ''))}</td>"
+            f"<td>{escape(str(applies or ''))}</td>"
+            f"<td>{escape(str(lane.get('rule') or ''))}</td>"
+            f"<td>{escape(str(lane.get('do_not_do') or ''))}</td>"
+            "</tr>"
+        )
+    timeline_rows = []
+    for item in result.get("tomorrow_timeline_central") or []:
+        timeline_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('time') or ''))}</td>"
+            f"<td>{escape(str(item.get('action') or ''))}</td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Event Volatility Playbook</h1>
+    <p>{escape(str(result.get('mission') or 'Event-day review plan.'))}</p>
+  </div>
+  <div><span class="badge ok">REVIEW ONLY</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Event", result.get("event_name")),
+    ("Direct Symbol", result.get("direct_symbol")),
+    ("Contract Cap", result.get("small_account_contract_cap")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Decision Lanes</h2>
+<table><thead><tr><th>Lane</th><th>Applies To</th><th>Rule</th><th>Do Not Do</th></tr></thead><tbody>{''.join(lane_rows)}</tbody></table>
+<h2>Timeline</h2>
+<table><thead><tr><th>Central Time</th><th>Action</th></tr></thead><tbody>{''.join(timeline_rows)}</tbody></table>
+<h2>Hard No-Trade Gates</h2>
+{_list(result.get("hard_no_trade_gates") or [])}
+<h2>Stock vs Options</h2>
+{_list(result.get("stock_vs_options_decision") or [])}
+"""
+    return _html_page("Event Volatility Playbook", body, payload)
+
+
+def _event_volatility_scan_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    option_rows = []
+    for item in result.get("ranked_options_candidates") or []:
+        option_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('stock_direction') or ''))}</td>"
+            f"<td>{escape(str(item.get('stock_score') or ''))}</td>"
+            f"<td>{escape(str(item.get('relative_volume') or ''))}</td>"
+            f"<td>{escape(str(item.get('vwap_state') or ''))}</td>"
+            f"<td>{escape(str(item.get('selected_contract') or ''))}</td>"
+            f"<td>{escape(str(item.get('dte') or ''))}</td>"
+            f"<td>{escape(str(item.get('ask') or ''))} / {escape(str(item.get('max_loss_dollars') or ''))}</td>"
+            f"<td>{escape(str(item.get('priority_score') or ''))}</td>"
+            "</tr>"
+        )
+    stock_rows = []
+    for item in result.get("stock_review_candidates") or []:
+        stock_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('lane') or ''))}</td>"
+            f"<td>{escape(str(item.get('stock_direction') or ''))}</td>"
+            f"<td>{escape(str(item.get('stock_score') or ''))}</td>"
+            f"<td>{escape(str(item.get('relative_volume') or ''))}</td>"
+            f"<td>{escape(str(item.get('vwap_state') or ''))}</td>"
+            f"<td>{escape('; '.join(str(reason) for reason in (item.get('why_not_ranked') or [])))}</td>"
+            "</tr>"
+        )
+    reject_rows = []
+    for item in result.get("watch_only_or_rejected") or []:
+        reject_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(item.get('lane') or ''))}</td>"
+            f"<td>{escape(str(item.get('option_status') or item.get('stock_status') or ''))}</td>"
+            f"<td>{escape('; '.join(str(reason) for reason in (item.get('why_not_ranked') or [])))}</td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Event Volatility Scan</h1>
+    <p>{escape(str(result.get('next_action') or 'Review-only event scan.'))}</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Event", result.get("event_name")),
+    ("Direct Symbol", result.get("direct_symbol")),
+    ("Direct Status", result.get("direct_symbol_status")),
+    ("Stock Candidates", result.get("stock_candidate_count")),
+    ("Options Reviews", result.get("options_review_count")),
+    ("Contract Cap", result.get("max_contract_price_used")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Ranked Options Candidates</h2>
+<table><thead><tr><th>Ticker</th><th>Direction</th><th>Score</th><th>RVOL</th><th>VWAP</th><th>Contract</th><th>DTE</th><th>Ask / Max Loss</th><th>Priority</th></tr></thead><tbody>{''.join(option_rows) or '<tr><td colspan="9">None.</td></tr>'}</tbody></table>
+<h2>Stock Review Lanes</h2>
+<table><thead><tr><th>Ticker</th><th>Lane</th><th>Direction</th><th>Score</th><th>RVOL</th><th>VWAP</th><th>Why Not Options Ranked</th></tr></thead><tbody>{''.join(stock_rows) or '<tr><td colspan="7">None.</td></tr>'}</tbody></table>
+<h2>Watch Only / Rejected</h2>
+<table><thead><tr><th>Ticker</th><th>Lane</th><th>Status</th><th>Reason</th></tr></thead><tbody>{''.join(reject_rows) or '<tr><td colspan="4">None.</td></tr>'}</tbody></table>
+"""
+    return _html_page("Event Volatility Scan", body, payload)
 
 
 def _harvest_followup_html(payload: dict[str, Any]) -> HTMLResponse:
@@ -2372,6 +2493,36 @@ async def fallback_session_playbook(request: Request) -> JSONResponse | HTMLResp
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _session_playbook_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_event_volatility_playbook(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _get_event_volatility_playbook(
+        container,
+        params.get("event_name") or "spacex_ipo",
+        _float_or_none(params.get("account_value")) or 50.0,
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _event_volatility_playbook_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_event_volatility_scan(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _run_event_volatility_scan(
+        container,
+        params.get("event_name") or "spacex_ipo",
+        _tickers(params.get("tickers")),
+        _int_or_default(params.get("max_candidates"), 25),
+        _float_or_none(params.get("account_value")) or 50.0,
+        _int_or_default(params.get("review_top_n"), 8),
+        _float_or_none(params.get("max_contract_price")),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _event_volatility_scan_html(payload)
     return JSONResponse(payload)
 
 

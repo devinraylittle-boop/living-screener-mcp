@@ -51,6 +51,13 @@ class Settings:
         "RBLX", "UBER", "SHOP", "JPM", "BAC", "XOM", "CVX", "LLY", "UNH", "LULU",
         "PG", "KO",
     )
+    event_volatility_watchlist: tuple[str, ...] = (
+        "SPCX", "TSLA", "HOOD", "SOFI", "RKLB", "LUNR", "ASTS", "PL", "SPCE", "BA",
+        "LMT", "NOC", "AVAV", "GSAT", "IRDM", "VSAT", "ARKX", "ITA", "UFO", "QQQ",
+        "SPY", "IWM",
+    )
+    event_direct_symbol: str = "SPCX"
+    event_theme: str = "spacex_ipo"
     max_scan_universe: int = 75
     market_data_provider: str = "none"
     market_data_interval: str = "5m"
@@ -106,6 +113,14 @@ def get_settings() -> Settings:
         ).split(",")
         if item.strip()
     )
+    event_watchlist = tuple(
+        item.strip().upper()
+        for item in os.getenv(
+            "EVENT_VOLATILITY_WATCHLIST",
+            "SPCX,TSLA,HOOD,SOFI,RKLB,LUNR,ASTS,PL,SPCE,BA,LMT,NOC,AVAV,GSAT,IRDM,VSAT,ARKX,ITA,UFO,QQQ,SPY,IWM",
+        ).split(",")
+        if item.strip()
+    )
     settings = Settings(
         environment=os.getenv("SCREENER_ENV", "local"),
         hosted_mode=_bool("HOSTED_MODE", False),
@@ -127,6 +142,9 @@ def get_settings() -> Settings:
         max_pending_order_price_drift_pct=_float("MAX_PENDING_ORDER_PRICE_DRIFT_PCT", 0.003),
         default_watchlist=watchlist,
         scalp_watchlist=scalp_watchlist,
+        event_volatility_watchlist=event_watchlist,
+        event_direct_symbol=os.getenv("EVENT_DIRECT_SYMBOL", "SPCX").strip().upper(),
+        event_theme=os.getenv("EVENT_THEME", "spacex_ipo").strip().lower(),
         max_scan_universe=_int("MAX_SCAN_UNIVERSE", 75),
         market_data_provider=os.getenv("MARKET_DATA_PROVIDER", "none").strip().lower(),
         market_data_interval=os.getenv("MARKET_DATA_INTERVAL", "5m"),
