@@ -15,6 +15,7 @@ from app.fallback_endpoints import (
     fallback_day_alerts,
     fallback_day_monitor,
     fallback_autonomous_morning_scan,
+    fallback_autonomous_launch_decision,
     fallback_evidence_summary,
     fallback_event_radar,
     fallback_event_volatility_playbook,
@@ -60,6 +61,8 @@ from app.fallback_endpoints import (
     fallback_premove_blueprint,
     fallback_session_playbook,
     fallback_session_risk_guard,
+    fallback_shared_intelligence_layer,
+    fallback_strategy_module_registry,
     fallback_system_communication_audit,
     fallback_safety,
     fallback_scalp_scan,
@@ -112,6 +115,9 @@ def create_app():
     app.add_route("/ops/day-monitor", fallback_day_monitor, methods=["GET"])
     app.add_route("/ops/day-alerts", fallback_day_alerts, methods=["GET"])
     app.add_route("/ops/autonomous-morning-scan", fallback_autonomous_morning_scan, methods=["GET"])
+    app.add_route("/ops/autonomous-launch-decision", fallback_autonomous_launch_decision, methods=["GET"])
+    app.add_route("/ops/strategy-modules", fallback_strategy_module_registry, methods=["GET"])
+    app.add_route("/ops/shared-intelligence", fallback_shared_intelligence_layer, methods=["GET"])
     app.add_route("/ops/morning-autopilot", fallback_morning_autopilot, methods=["GET"])
     app.add_route("/ops/live-review-cycle", fallback_live_review_cycle, methods=["GET"])
     app.add_route("/ops/market-open-observer", fallback_market_open_observer, methods=["GET"])

@@ -20,7 +20,10 @@ from app.mcp_server import (
     _get_ops_command_center,
     _get_market_session_playbook,
     _get_session_risk_guard,
+    _get_shared_intelligence_layer,
+    _get_strategy_module_registry,
     _get_system_communication_audit,
+    _get_autonomous_launch_decision,
     _get_failure_mode_audit,
     _get_tomorrow_operator_brief,
     _get_trading_day_launch_checklist,
@@ -2398,6 +2401,114 @@ def _paper_exploration_summary_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Paper Exploration Summary", body, payload)
 
 
+def _strategy_module_registry_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    rows = []
+    for item in result.get("modules") or []:
+        rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('module')))}</td>"
+            f"<td><span class=\"badge {escape(_status_class(str(item.get('status'))))}\">{escape(str(item.get('status')))}</span></td>"
+            f"<td>{escape(str(item.get('paper_enabled')))}</td>"
+            f"<td>{escape(str(item.get('cash_autonomous_enabled')))}</td>"
+            f"<td>{escape(str(item.get('reason')))}</td>"
+            "</tr>"
+        )
+    body = f"""
+      <div class="topbar">
+        <div>
+          <h1>Strategy Module Registry</h1>
+          <p>Every module stays paper/review-first until it earns cash eligibility through data, liquidity, and broker truth.</p>
+        </div>
+        <span class="badge warn">{escape(str(result.get("status")))}</span>
+      </div>
+      {_field_grid([
+          ("Build", result.get("build_version")),
+          ("Modules", result.get("module_count")),
+          ("Learning Samples", (result.get("live_performance_memory") or {}).get("sample_size")),
+          ("Cash Autonomy", "disabled"),
+      ])}
+      <h2>Modules</h2>
+      <table><thead><tr><th>Module</th><th>Status</th><th>Paper</th><th>Cash Auto</th><th>Read</th></tr></thead><tbody>{"".join(rows)}</tbody></table>
+    """
+    return _html_page("Strategy Module Registry", body, payload)
+
+
+def _shared_intelligence_layer_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+
+    def signal_rows(items: list[dict[str, Any]]) -> str:
+        rows = []
+        for item in items:
+            rows.append(
+                "<tr>"
+                f"<td>{escape(str(item.get('ticker')))}</td>"
+                f"<td>{escape(str(item.get('source_module')))}</td>"
+                f"<td>{escape(str(item.get('signal_type')))}</td>"
+                f"<td>{escape(str(item.get('directional_bias')))}</td>"
+                f"<td>{escape(str(item.get('intelligence_score')))}</td>"
+                f"<td>{escape(str(item.get('final_use')))}</td>"
+                "</tr>"
+            )
+        return "".join(rows)
+
+    body = f"""
+      <div class="topbar">
+        <div>
+          <h1>Shared Intelligence Layer</h1>
+          <p>Turns noisy scans, paper trials, outcomes, and watch events into ranked knowledge without letting noise become confidence.</p>
+        </div>
+        <span class="badge warn">{escape(str(result.get("status")))}</span>
+      </div>
+      {_field_grid([
+          ("Signals", result.get("signal_count")),
+          ("Actionable", result.get("actionable_count")),
+          ("Supporting", result.get("supporting_count")),
+          ("Suppressed", result.get("suppressed_count")),
+          ("Conflicts", result.get("conflict_count")),
+      ])}
+      <h2>Actionable Signals</h2>
+      <table><thead><tr><th>Ticker</th><th>Source</th><th>Signal</th><th>Bias</th><th>Score</th><th>Use</th></tr></thead><tbody>{signal_rows(result.get("actionable_signals") or [])}</tbody></table>
+      <h2>Supporting Confirmations</h2>
+      <table><thead><tr><th>Ticker</th><th>Source</th><th>Signal</th><th>Bias</th><th>Score</th><th>Use</th></tr></thead><tbody>{signal_rows(result.get("supporting_confirmations") or [])}</tbody></table>
+      <h2>Noise Rules</h2>
+      <ul>{"".join(f"<li>{escape(str(rule))}</li>" for rule in result.get("noise_filter_rules") or [])}</ul>
+    """
+    return _html_page("Shared Intelligence Layer", body, payload)
+
+
+def _autonomous_launch_decision_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    blockers = result.get("blockers") or []
+    warnings = result.get("warnings") or []
+    body = f"""
+      <div class="topbar">
+        <div>
+          <h1>Autonomous Launch Decision</h1>
+          <p>Cash automation remains behind broker truth, option truth, risk, and learning gates. Scanning and paper exploration may run.</p>
+        </div>
+        <span class="badge bad">{escape(str(result.get("final_launch_decision")))}</span>
+      </div>
+      {_field_grid([
+          ("Status", result.get("status")),
+          ("Build", result.get("build_version")),
+          ("Account Reference", result.get("account_value_reference")),
+          ("Intended Cash", result.get("intended_cash_reference")),
+          ("Cash Auto", (result.get("capability_decision") or {}).get("autonomous_real_money_execution_enabled")),
+          ("Paper Exploration", (result.get("capability_decision") or {}).get("autonomous_paper_exploration_enabled")),
+      ])}
+      <h2>Blockers</h2>
+      <ul>{"".join(f"<li>{escape(str(item))}</li>" for item in blockers) or "<li>None</li>"}</ul>
+      <h2>Warnings</h2>
+      <ul>{"".join(f"<li>{escape(str(item))}</li>" for item in warnings) or "<li>None</li>"}</ul>
+      <h2>Minimum Before Cash Autonomy</h2>
+      <ul>{"".join(f"<li>{escape(str(item))}</li>" for item in result.get("minimum_before_cash_autonomy") or [])}</ul>
+      <h2>Operator Read</h2>
+      <p>{escape(str(result.get("operator_read") or ""))}</p>
+    """
+    return _html_page("Autonomous Launch Decision", body, payload)
+
+
 def _paper_option_position_watch_html(payload: dict[str, Any]) -> HTMLResponse:
     result = payload.get("result") or {}
     close_request = result.get("close_request") or {}
@@ -3317,6 +3428,41 @@ async def fallback_paper_exploration_summary(request: Request) -> JSONResponse |
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _paper_exploration_summary_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_strategy_module_registry(request: Request) -> JSONResponse | HTMLResponse:
+    result = _get_strategy_module_registry(container)
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _strategy_module_registry_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_shared_intelligence_layer(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _get_shared_intelligence_layer(
+        container,
+        _tickers(params.get("tickers")),
+        _int_or_default(params.get("limit_events"), 100),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _shared_intelligence_layer_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_autonomous_launch_decision(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _get_autonomous_launch_decision(
+        container,
+        _float_or_none(params.get("account_value")) or 100.0,
+        _float_or_none(params.get("intended_cash")) or 100.0,
+        _tickers(params.get("tickers")),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _autonomous_launch_decision_html(payload)
     return JSONResponse(payload)
 
 

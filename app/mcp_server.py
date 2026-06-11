@@ -135,6 +135,21 @@ def get_system_communication_audit() -> dict:
 
 
 @mcp.tool
+def get_strategy_module_registry() -> dict:
+    return _get_strategy_module_registry(container)
+
+
+@mcp.tool
+def get_shared_intelligence_layer(tickers: list[str] | None = None, limit_events: int = 100) -> dict:
+    return _get_shared_intelligence_layer(container, tickers, limit_events)
+
+
+@mcp.tool
+def get_autonomous_launch_decision(account_value: float = 100.0, intended_cash: float = 100.0, tickers: list[str] | None = None) -> dict:
+    return _get_autonomous_launch_decision(container, account_value, intended_cash, tickers)
+
+
+@mcp.tool
 def market_readiness_check(tickers: list[str] | None = None, max_candidates: int = 25) -> dict:
     return _market_readiness_check(container, tickers, max_candidates)
 
@@ -1236,6 +1251,373 @@ def _get_system_communication_audit(service_container) -> dict:
         "can_cancel_order_from_this_mcp": False,
     }
     return service_container.events.log("system_communication_audit", payload)
+
+
+def _get_strategy_module_registry(service_container) -> dict:
+    modules = [
+        ("clean_liquid_options_scalp", "REVIEW_ONLY", "Core small-account options scalp. Needs broker-visible options truth for cash."),
+        ("relative_strength_calls", "REVIEW_ONLY", "Long setups leading SPY/QQQ with VWAP and volume confirmation."),
+        ("relative_weakness_puts", "REVIEW_ONLY", "Short setups lagging SPY/QQQ with below-VWAP pressure."),
+        ("vwap_reclaim", "REVIEW_ONLY", "Reclaim plus confirmation; avoid first-candle fakeouts."),
+        ("vwap_rejection", "REVIEW_ONLY", "Failed reclaim / rejection with downside continuation."),
+        ("opening_range_breakout", "REVIEW_ONLY", "Observe first minutes; enable only after false-breakout filters mature."),
+        ("failed_breakout_reversal", "REVIEW_ONLY", "Useful defensive and reversal detector; not cash-autonomous yet."),
+        ("power_hour_continuation", "REVIEW_ONLY", "Late-day momentum scanner; overnight rules remain stricter."),
+        ("overnight_swing", "DISABLED_FOR_CASH", "Only exceptional setups; too much gap risk for early $100 autonomy."),
+        ("microcap_ignition", "PAPER_ONLY", "Separate high-risk watchboard; real cash disabled until slippage/halt risk is proven."),
+        ("gap_fill", "REVIEW_ONLY", "Needs time-of-day and regime performance before cash use."),
+        ("news_catalyst_momentum", "REVIEW_ONLY", "Catalyst context is useful but not sufficient without price/liquidity truth."),
+        ("index_trend_following", "REVIEW_ONLY", "SPY/QQQ/IWM regime confirmation and possible safer stock lane."),
+        ("sector_rotation", "NEEDS_DATA", "High-value upgrade; sector-relative strength remains a known gap."),
+        ("high_relative_volume_momentum", "REVIEW_ONLY", "Priority signal, not a hard approval; backtests rejected RVOL as a standalone gate."),
+    ]
+    recent_classifications = service_container.events.recent("learning_outcome_classification", 500)
+    classification_counts = Counter(str((event.get("payload") or {}).get("classification") or "unknown") for event in recent_classifications)
+    payload = {
+        "status": "STRATEGY_MODULE_REGISTRY_READY",
+        "build_version": BUILD_VERSION,
+        "schema_version": "strategy_module_registry_v1",
+        "generated_at": utc_now(),
+        "module_count": len(modules),
+        "modules": [
+            {
+                "module": name,
+                "status": status,
+                "cash_autonomous_enabled": False,
+                "paper_enabled": status != "DISABLED_FOR_CASH",
+                "reason": reason,
+                "required_before_cash": [
+                    "fresh market data",
+                    "fresh options/broker snapshot if options",
+                    "positive expectancy from enough samples",
+                    "known false-positive filters",
+                    "active risk lockout and kill switch",
+                ],
+            }
+            for name, status, reason in modules
+        ],
+        "live_performance_memory": {
+            "status": "INSUFFICIENT_LIVE_SAMPLE_FOR_AUTONOMOUS_CASH",
+            "classification_counts": dict(classification_counts),
+            "sample_size": len(recent_classifications),
+            "minimum_before_cash_enablement": 30,
+            "notes": "Use module memory to disable bad strategies and prioritize paper, not to weaken core safety rules.",
+        },
+        "autonomous_adjustment_permissions": {
+            "may_adjust": [
+                "candidate scoring",
+                "watchlist priority",
+                "strategy confidence",
+                "strategy enable/disable status",
+                "entry/exit timing preferences",
+                "position size downward after drawdown",
+                "liquidity/spread rules only stricter",
+            ],
+            "may_not_adjust": [
+                "max daily loss upward",
+                "kill switch removal",
+                "market order restriction",
+                "stale-data shutdown",
+                "broker error shutdown",
+                "minimum liquidity downward",
+                "maximum spread tolerance upward",
+                "revenge-trade restrictions",
+            ],
+        },
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_allowed": False,
+    }
+    return service_container.events.log("strategy_module_registry", payload)
+
+
+def _get_shared_intelligence_layer(service_container, tickers: list[str] | None, limit_events: int) -> dict:
+    limit_events = max(10, min(int(limit_events or 100), 500))
+    universe_filter = {str(ticker).upper() for ticker in (tickers or []) if str(ticker).strip()}
+    source_events = []
+    for event_type in (
+        "market_open_observer",
+        "paper_exploration_run",
+        "paper_exploration_followup",
+        "live_review_cycle",
+        "broad_opportunity_scan",
+        "event_volatility_scan",
+        "learning_outcome_classification",
+    ):
+        source_events.extend(service_container.events.recent(event_type, limit_events))
+    source_events = sorted(source_events, key=lambda event: int(event.get("id") or 0), reverse=True)[:limit_events]
+    signals: list[dict[str, Any]] = []
+    for event in source_events:
+        signals.extend(_intelligence_signals_from_event(event, event.get("payload") or {}, universe_filter))
+    scored = [_score_intelligence_signal(signal) for signal in signals]
+    actionable = [item for item in scored if item["final_use"] == "ACTIONABLE"]
+    supporting = [item for item in scored if item["final_use"] == "SUPPORTING_CONFIRMATION"]
+    suppressed = [item for item in scored if item["final_use"] in {"SUPPRESSED_NOISE", "STALE_OR_LOW_CONFIDENCE", "BACKGROUND_ONLY"}]
+    payload = {
+        "status": "SHARED_INTELLIGENCE_READY",
+        "build_version": BUILD_VERSION,
+        "schema_version": "shared_intelligence_v1",
+        "generated_at": utc_now(),
+        "source_event_count": len(source_events),
+        "signal_count": len(scored),
+        "actionable_count": len(actionable),
+        "supporting_count": len(supporting),
+        "suppressed_count": len(suppressed),
+        "conflict_count": sum(1 for item in scored if item.get("signal_class") == "contradictory_information"),
+        "escalation_count": sum(1 for item in scored if item.get("escalate")),
+        "hierarchy": [
+            "risk_controls",
+            "broker_order_safety",
+            "fresh_market_data",
+            "liquidity_and_spread",
+            "market_regime",
+            "price_action",
+            "volume_confirmation",
+            "vwap_key_levels",
+            "options_chain_quality",
+            "catalyst_event_risk",
+            "strategy_specific_signals",
+            "background_context",
+        ],
+        "actionable_signals": actionable[:20],
+        "supporting_confirmations": supporting[:20],
+        "suppressed_or_background": suppressed[:20],
+        "noise_filter_rules": [
+            "Unknown information never becomes confidence.",
+            "More signals are not automatically better.",
+            "Weak clues are logged but do not trigger trades.",
+            "Contradictions reduce confidence; unresolved trade-critical contradictions force PASS.",
+            "Risk controls always override opportunity signals.",
+        ],
+        "cash_decision_rule": "Only ACTIONABLE plus high-quality SUPPORTING_CONFIRMATION can influence autonomous cash; this MCP still cannot execute broker orders.",
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_allowed": False,
+    }
+    return service_container.events.log("shared_intelligence_layer", payload)
+
+
+def _get_autonomous_launch_decision(service_container, account_value: float, intended_cash: float, tickers: list[str] | None) -> dict:
+    account_value = _float_or_zero(account_value) or 100.0
+    intended_cash = _float_or_zero(intended_cash) or account_value
+    universe = _resolve_universe(service_container, tickers)
+    safety = get_safety_config()
+    truth = _get_data_truth_cockpit(service_container, universe, 12)
+    options_status = service_container.options.options_data_status()
+    session_risk = _get_session_risk_guard(service_container, account_value, None, 2)
+    paper = _summarize_paper_exploration(service_container, 100)
+    ledger = _summarize_manual_option_paper_trades(service_container, 100)
+    registry = _get_strategy_module_registry(service_container)
+    intelligence = _get_shared_intelligence_layer(service_container, universe, 100)
+    blockers: list[str] = []
+    warnings: list[str] = []
+    if safety.get("can_place_order_from_this_mcp") is not False:
+        blockers.append("Unexpected broker execution capability state.")
+    blockers.append("This MCP has no broker execution capability; autonomous real-money execution cannot be enabled here.")
+    if options_status.get("real_money_options_truth_status") != "REAL_MONEY_OPTIONS_TRUTH_READY":
+        blockers.append("Real-money options truth is not automated; broker snapshot/manual or provider truth is required.")
+    if (truth.get("market_data_health") or {}).get("status") not in {"MARKET_DATA_HEALTHY", "MARKET_DATA_PARTIAL"}:
+        blockers.append("Market data health is not clean enough for cash launch.")
+    if ledger.get("closed_count", 0) < 10 and paper.get("opened_entry_count", 0) < 20:
+        warnings.append("Paper/live sample size is still thin; increase paper exploration and follow-up before trusting cash automation.")
+    if session_risk.get("status") == "SESSION_RISK_BLOCKED":
+        blockers.append("Session risk guard is blocked.")
+    payload = {
+        "status": "AUTONOMOUS_FIREWALL_READY",
+        "build_version": BUILD_VERSION,
+        "schema_version": "autonomous_launch_decision_v1",
+        "generated_at": utc_now(),
+        "account_value_reference": account_value,
+        "intended_cash_reference": intended_cash,
+        "stretch_goal": {
+            "target": "Turn $100 into $1,000,000 in 5 trading days",
+            "classification": "ASPIRATIONAL_MOONSHOT_NOT_A_RISK_RULE",
+            "reality_rule": "The system must never chase this target by violating risk, liquidity, probability, or data-quality requirements.",
+        },
+        "capability_decision": {
+            "autonomous_scanning_enabled": True,
+            "autonomous_paper_exploration_enabled": True,
+            "autonomous_real_money_execution_enabled": False,
+            "cash_gate_changed": False,
+        },
+        "blockers": blockers,
+        "warnings": warnings,
+        "data_readiness": {
+            "market_data_health": (truth.get("market_data_health") or {}).get("status"),
+            "options_truth": options_status.get("real_money_options_truth_status"),
+            "options_next_step": options_status.get("next_step"),
+            "missing_or_manual": [
+                "broker execution validator outside this MCP",
+                "broker buying-power validator outside this MCP",
+                "broker open-order/open-position validator outside this MCP",
+                "broker-visible option bid/ask/volume/OI truth or paid provider",
+            ],
+        },
+        "risk_readiness": {
+            "session_risk_status": session_risk.get("status"),
+            "warning_drawdown_pct": 0.10,
+            "soft_lockout_pct": 0.20,
+            "hard_shutdown_pct": 0.30,
+            "no_market_orders": True,
+            "three_loss_cash_lockout": True,
+        },
+        "learning_readiness": {
+            "paper_exploration_runs": paper.get("run_count"),
+            "paper_exploration_trials": paper.get("trial_count"),
+            "paper_exploration_opened": paper.get("opened_entry_count"),
+            "manual_paper_closed": ledger.get("closed_count"),
+            "manual_paper_win_rate": ledger.get("win_rate"),
+            "next_learning_action": "Run paper exploration, wait for candles, run follow-up, then classify what helped/hurt.",
+        },
+        "system_intelligence": {
+            "registry_status": registry.get("status"),
+            "shared_intelligence_status": intelligence.get("status"),
+            "actionable_signals": intelligence.get("actionable_count"),
+            "suppressed_signals": intelligence.get("suppressed_count"),
+            "conflicts": intelligence.get("conflict_count"),
+        },
+        "minimum_before_cash_autonomy": [
+            "Separate broker tool confirms account, buying power, positions, and open orders.",
+            "Order preview/check exists and rejects failing tickets before submission.",
+            "Automated fresh options truth exists or manual snapshot keeps execution human-reviewed.",
+            "Paper exploration and follow-up produce enough labeled winners/losers.",
+            "Strategy module has positive expectancy and known failure filters.",
+            "Kill switch and daily drawdown lockout are tested live.",
+        ],
+        "live_trading_rules_for_tomorrow": {
+            "premarket": ["validate data", "construct broad watchlist", "check catalysts", "confirm risk lockouts"],
+            "open": ["no blind trades", "observe first minutes unless exceptional", "reject wide spreads"],
+            "first_30_minutes": ["track opening range", "track VWAP", "avoid first-candle chase"],
+            "midday": ["reduce aggression", "avoid chop", "prefer only clean continuation or reclaim/rejection"],
+            "power_hour": ["rescan", "consider overnight only after strict swing gate", "do not hold weak scalps"],
+            "shutdown": ["3 real-cash closed losses", "30% drawdown", "stale data", "broker/API uncertainty", "market close for scalps"],
+        },
+        "final_launch_decision": "DELAY_LAUNCH" if blockers else "REVIEW_ONLY",
+        "operator_read": "Autonomous scanning and paper learning are enabled. Autonomous real-money execution is delayed/review-only until broker and options truth gates are actually present.",
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_allowed": False,
+        "broker_action": False,
+    }
+    return service_container.events.log("autonomous_launch_decision", payload)
+
+
+def _intelligence_signals_from_event(event: dict[str, Any], payload: dict[str, Any], universe_filter: set[str]) -> list[dict[str, Any]]:
+    event_type = str(event.get("event_type") or "")
+    timestamp = str(event.get("timestamp") or payload.get("generated_at") or "")
+    signals: list[dict[str, Any]] = []
+
+    def allowed(ticker: str | None) -> bool:
+        symbol = str(ticker or "").upper()
+        return bool(symbol) and (not universe_filter or symbol in universe_filter)
+
+    if event_type == "market_open_observer":
+        for row in payload.get("candidate_observations") or []:
+            ticker = str(row.get("ticker") or "").upper()
+            if not allowed(ticker):
+                continue
+            flags = row.get("data_flags") or []
+            signals.append({
+                "source_module": "market_open_observer",
+                "ticker": ticker,
+                "directional_bias": row.get("direction"),
+                "signal_type": "stock_candidate",
+                "signal_strength": row.get("score"),
+                "confidence_level": row.get("data_confidence") or row.get("confidence"),
+                "timestamp": timestamp,
+                "data_freshness": row.get("quote_freshness_status") or "unknown",
+                "market_regime_context": "scalp_review",
+                "supporting_evidence": row,
+                "contradicting_evidence": flags,
+                "expected_time_horizon": "15m-60m",
+                "actionability": "watch_only",
+                "noise_risk_rating": "medium" if flags else "low",
+            })
+    elif event_type == "paper_exploration_run":
+        for trial in payload.get("trials") or []:
+            ticker = str(trial.get("ticker") or "").upper()
+            if not allowed(ticker):
+                continue
+            signals.append({
+                "source_module": "paper_exploration",
+                "ticker": ticker,
+                "directional_bias": trial.get("stock_direction"),
+                "signal_type": trial.get("paper_quality") or trial.get("status"),
+                "signal_strength": trial.get("stock_score"),
+                "confidence_level": "low",
+                "timestamp": timestamp,
+                "data_freshness": "paper_trial",
+                "market_regime_context": "research_only",
+                "supporting_evidence": trial,
+                "contradicting_evidence": [trial.get("review_reason")] if trial.get("review_reason") else [],
+                "expected_time_horizon": "15m-60m",
+                "actionability": "informational",
+                "noise_risk_rating": "high",
+            })
+    elif event_type == "learning_outcome_classification":
+        ticker = str(payload.get("ticker") or "").upper()
+        if allowed(ticker):
+            classification = str(payload.get("classification") or "")
+            signals.append({
+                "source_module": "learning_engine",
+                "ticker": ticker,
+                "directional_bias": payload.get("direction"),
+                "signal_type": classification,
+                "signal_strength": 80 if classification in {"MISSED_MOVE", "BAD_CONTRACT_OR_TOO_STRICT"} else 50,
+                "confidence_level": "medium",
+                "timestamp": timestamp,
+                "data_freshness": "historical_outcome",
+                "market_regime_context": "learning",
+                "supporting_evidence": payload.get("outcome_summary") or {},
+                "contradicting_evidence": [],
+                "expected_time_horizon": "future_filter",
+                "actionability": "supporting_confirmation",
+                "noise_risk_rating": "medium",
+            })
+    return signals
+
+
+def _score_intelligence_signal(signal: dict[str, Any]) -> dict[str, Any]:
+    strength = _float_or_zero(signal.get("signal_strength"))
+    confidence = str(signal.get("confidence_level") or "").lower()
+    noise = str(signal.get("noise_risk_rating") or "").lower()
+    actionability = str(signal.get("actionability") or "").lower()
+    score = min(100.0, max(0.0, strength))
+    if confidence == "high":
+        score += 10
+    elif confidence in {"low", "unknown"}:
+        score -= 15
+    if noise == "high":
+        score -= 25
+    elif noise == "medium":
+        score -= 8
+    if actionability == "actionable":
+        score += 10
+    elif actionability in {"informational", "watch_only"}:
+        score -= 10
+    contradicting = [item for item in (signal.get("contradicting_evidence") or []) if item]
+    if contradicting:
+        score -= min(20, 5 * len(contradicting))
+    score = round(max(0.0, min(100.0, score)), 2)
+    if score >= 85 and actionability == "actionable":
+        final_use = "ACTIONABLE"
+    elif score >= 65 and actionability in {"actionable", "supporting_confirmation", "watch_only"}:
+        final_use = "SUPPORTING_CONFIRMATION"
+    elif score < 35 or noise == "high":
+        final_use = "SUPPRESSED_NOISE"
+    else:
+        final_use = "BACKGROUND_ONLY"
+    if "stale" in str(signal.get("data_freshness") or "").lower():
+        final_use = "STALE_OR_LOW_CONFIDENCE"
+    result = dict(signal)
+    result["intelligence_score"] = score
+    result["signal_class"] = "contradictory_information" if contradicting else "supporting_confirmation" if final_use in {"ACTIONABLE", "SUPPORTING_CONFIRMATION"} else "background_context"
+    result["final_use"] = final_use
+    result["escalate"] = bool(final_use == "ACTIONABLE" or result["signal_class"] == "contradictory_information")
+    return result
 
 
 def _event_lane_decision(stock_row: dict[str, Any], review: dict[str, Any] | None, direct_symbol: str) -> dict[str, Any]:
