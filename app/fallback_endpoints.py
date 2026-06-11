@@ -938,6 +938,102 @@ def _broad_opportunity_scan_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Broad Opportunity Scan", body, payload)
 
 
+def _data_truth_cockpit_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    health = result.get("market_data_health") or {}
+    rows = []
+    for row in health.get("rows") or []:
+        rows.append(
+            "<tr>"
+            f"<td>{escape(str(row.get('ticker') or ''))}</td>"
+            f"<td>{escape(str(row.get('status') or ''))}</td>"
+            f"<td>{escape(str(row.get('quote_age_seconds') or ''))}</td>"
+            f"<td>{escape(str(row.get('candle_age_seconds') or ''))}</td>"
+            f"<td>{escape(str(row.get('quote_provider') or ''))}</td>"
+            f"<td>{escape(str(row.get('candle_provider') or ''))}</td>"
+            f"<td>{escape('; '.join(str(reason) for reason in (row.get('blocking_reasons') or [])))}</td>"
+            "</tr>"
+        )
+    level2 = result.get("robinhood_level_2_decision") or {}
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Data Truth Cockpit</h1>
+    <p>{escape(str(result.get('next_action') or 'Live input quality and truth-source status.'))}</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Market Data Status", health.get("status")),
+    ("Provider", health.get("provider")),
+    ("Healthy", health.get("healthy_count")),
+    ("Degraded", health.get("degraded_count")),
+    ("Options Truth", (result.get("options_truth") or {}).get("real_money_options_truth_status")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Market Data Rows</h2>
+<table><thead><tr><th>Ticker</th><th>Status</th><th>Quote Age Sec</th><th>Candle Age Sec</th><th>Quote Provider</th><th>Candle Provider</th><th>Reasons</th></tr></thead><tbody>{''.join(rows) or '<tr><td colspan="7">None.</td></tr>'}</tbody></table>
+<h2>Source Priority</h2>
+{_list(result.get("source_priority") or [])}
+<h2>Robinhood Level II Decision</h2>
+{_field_grid([
+    ("Recommendation", level2.get("recommendation")),
+    ("Reason", level2.get("reason")),
+])}
+{_list(level2.get("subscribe_when") or [])}
+<h2>Cash Test Readiness</h2>
+{_list((result.get("cash_test_readiness") or {}).get("real_cash_allowed_only_after") or [])}
+"""
+    return _html_page("Data Truth Cockpit", body, payload)
+
+
+def _system_communication_audit_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    map_rows = []
+    for item in result.get("communication_map") or []:
+        map_rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('system') or ''))}</td>"
+            f"<td>{escape(', '.join(str(value) for value in (item.get('writes') or [])))}</td>"
+            f"<td>{escape(', '.join(str(value) for value in (item.get('read_by') or [])))}</td>"
+            f"<td>{escape(str(item.get('clutter_control') or ''))}</td>"
+            "</tr>"
+        )
+    count_rows = []
+    for event_type, count in sorted((result.get("recent_event_type_counts") or {}).items()):
+        count_rows.append(
+            "<tr>"
+            f"<td>{escape(str(event_type))}</td>"
+            f"<td>{escape(str(count))}</td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>System Communication Audit</h1>
+    <p>{escape(str(result.get('next_action') or 'Checks whether the machine shares useful data without creating clutter.'))}</p>
+  </div>
+  <div><span class="badge ok">REVIEW ONLY</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Recent Events", result.get("recent_event_count")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Communication Map</h2>
+<table><thead><tr><th>System</th><th>Writes</th><th>Read By</th><th>Clutter Control</th></tr></thead><tbody>{''.join(map_rows)}</tbody></table>
+<h2>Recent Event Counts</h2>
+<table><thead><tr><th>Event Type</th><th>Count</th></tr></thead><tbody>{''.join(count_rows) or '<tr><td colspan="2">None.</td></tr>'}</tbody></table>
+<h2>Clutter Limits</h2>
+{_list(result.get("clutter_limits") or [])}
+<h2>Known Weak Links</h2>
+{_list(result.get("known_weak_links") or [])}
+"""
+    return _html_page("System Communication Audit", body, payload)
+
+
 def _harvest_followup_html(payload: dict[str, Any]) -> HTMLResponse:
     result = payload.get("result") or {}
     outcome_rows = []
@@ -2675,6 +2771,27 @@ async def fallback_broad_opportunity_scan(request: Request) -> JSONResponse | HT
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _broad_opportunity_scan_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_data_truth_cockpit(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _get_data_truth_cockpit(
+        container,
+        _tickers(params.get("tickers")),
+        _int_or_default(params.get("max_tickers"), 12),
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _data_truth_cockpit_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_system_communication_audit(request: Request) -> JSONResponse | HTMLResponse:
+    result = _get_system_communication_audit(container)
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _system_communication_audit_html(payload)
     return JSONResponse(payload)
 
 

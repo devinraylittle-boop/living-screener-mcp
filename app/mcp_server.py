@@ -125,6 +125,16 @@ def run_broad_opportunity_scan(
 
 
 @mcp.tool
+def get_data_truth_cockpit(tickers: list[str] | None = None, max_tickers: int = 12) -> dict:
+    return _get_data_truth_cockpit(container, tickers, max_tickers)
+
+
+@mcp.tool
+def get_system_communication_audit() -> dict:
+    return _get_system_communication_audit(container)
+
+
+@mcp.tool
 def market_readiness_check(tickers: list[str] | None = None, max_candidates: int = 25) -> dict:
     return _market_readiness_check(container, tickers, max_candidates)
 
@@ -1069,6 +1079,141 @@ def _broad_lane_decision(
         ],
         "warnings": review.get("warnings") or small.get("warnings") or [],
     }
+
+
+def _get_data_truth_cockpit(service_container, tickers: list[str] | None, max_tickers: int) -> dict:
+    max_tickers = max(1, min(int(max_tickers or 12), 25))
+    universe = _broad_opportunity_universe(service_container, tickers, include_event_context=True)[:max_tickers]
+    truth = service_container.market_truth.truth_source_status()
+    health = service_container.market_truth.check_market_data_health(universe, max_tickers)
+    options_status = service_container.options.options_data_status()
+    healthy_rows = [row for row in (health.get("rows") or []) if row.get("status") == "HEALTHY"]
+    degraded_rows = [row for row in (health.get("rows") or []) if row.get("status") != "HEALTHY"]
+    options_truth_ready = options_status.get("real_money_options_truth_status") == "REAL_MONEY_OPTIONS_TRUTH_READY"
+    if health.get("status") == "MARKET_DATA_HEALTHY" and options_truth_ready:
+        status = "DATA_TRUTH_READY"
+        next_action = "Inputs are clean enough for review-only scans; still require manual broker preflight for real money."
+    elif health.get("status") == "MARKET_DATA_HEALTHY":
+        status = "DATA_TRUTH_EQUITY_READY_OPTIONS_MANUAL"
+        next_action = "Equity data is usable. Real-money options still require broker-visible snapshot/manual preflight."
+    elif healthy_rows:
+        status = "DATA_TRUTH_PARTIAL"
+        next_action = "Use only healthy symbols for review; do not trade symbols with degraded source rows."
+    else:
+        status = "DATA_TRUTH_BLOCKED"
+        next_action = "Do not run real-cash review. Fix or wait for fresh quotes/candles."
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "generated_at": utc_now(),
+        "checked_universe": universe,
+        "market_data_health": {
+            "status": health.get("status"),
+            "provider": health.get("provider"),
+            "configured_provider": health.get("configured_provider"),
+            "healthy_count": len(healthy_rows),
+            "degraded_count": len(degraded_rows),
+            "rows": health.get("rows") or [],
+        },
+        "options_truth": options_status,
+        "truth_source_status": {
+            "market_data": truth.get("market_data"),
+            "cash_readiness": truth.get("cash_readiness"),
+            "blocked_for_cash_without": truth.get("blocked_for_cash_without"),
+        },
+        "source_priority": [
+            "Provider quote/candle data for broad scans.",
+            "Broker-visible manual snapshot for real-money option truth.",
+            "Robinhood watchlists only as organization/context unless a callable quote/chain tool proves live data.",
+            "Paper ledger and journal checkpoints for learning continuity.",
+        ],
+        "robinhood_level_2_decision": {
+            "recommendation": "WAIT_FOR_TOOL_PROOF",
+            "reason": "Do not subscribe solely for this system until the connected tool surface exposes useful live quote/order-book/options-chain fields. UI-only Level II does not automatically solve MCP data truth.",
+            "subscribe_when": [
+                "Robinhood tool list exposes callable live equity/order-book quote fields useful to the MCP.",
+                "Or it exposes live options bid/ask/volume/open-interest/chain data we can validate.",
+                "Or manual broker snapshots become the bottleneck and Level II visibly improves your human preflight quality.",
+            ],
+        },
+        "cash_test_readiness": {
+            "paper_research_uncapped": True,
+            "real_cash_daily_closed_loss_lockout_count": service_container.settings.max_daily_real_cash_closed_losses,
+            "market_close_stop": True,
+            "real_cash_allowed_only_after": [
+                "DATA_TRUTH_READY or DATA_TRUTH_EQUITY_READY_OPTIONS_MANUAL",
+                "Candidate clears the relevant lane gates.",
+                "Manual broker snapshot/preflight confirms current truth.",
+                "No market order.",
+                "Manual approval outside MCP.",
+            ],
+        },
+        "next_action": next_action,
+        "links": {
+            "data_truth_cockpit": "/ops/data-truth-cockpit?format=html",
+            "market_data_health": f"/market/data-health?tickers={','.join(universe)}&max_tickers={max_tickers}",
+            "truth_source_status": "/truth/source-status",
+            "options_data_status": "/options/data-status",
+            "broad_opportunity_scan": "/ops/broad-opportunity-scan?format=html",
+            "manual_trade_desk": "/trade/manual-desk?format=html",
+        },
+        "safety": {
+            "review_only": True,
+            "place_orders": False,
+            "market_orders_allowed": False,
+            "manual_approval_required": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        },
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+    return service_container.events.log("data_truth_cockpit", payload)
+
+
+def _get_system_communication_audit(service_container) -> dict:
+    recent_events = service_container.events.recent(None, 250)
+    event_counts = Counter(event.get("event_type") for event in recent_events)
+    payload = {
+        "status": "SYSTEM_COMMUNICATION_AUDIT_READY",
+        "build_version": BUILD_VERSION,
+        "generated_at": utc_now(),
+        "recent_event_count": len(recent_events),
+        "recent_event_type_counts": dict(event_counts),
+        "communication_map": [
+            {"system": "scanner", "writes": ["scan rows", "evidence_packet", "evidence_scorecard", "quote/candle lineage"], "read_by": ["review harvest", "observer", "broad opportunity scan", "learning"], "clutter_control": "Compact row summaries plus evidence flags; raw scans are not treated as orders."},
+            {"system": "options review", "writes": ["candidate_options_review", "small_account_review", "friction score", "setup memory"], "read_by": ["live review cycle", "manual trade desk", "learning"], "clutter_control": "Only SMALL_ACCOUNT_SCALP_ACCEPTABLE can be ranked as an options review candidate."},
+            {"system": "paper/manual journal", "writes": ["paper option entries/closes", "manual broker actions", "pending recheck cards"], "read_by": ["session risk", "learning", "command center", "alerts"], "clutter_control": "Paper and real-cash counters are separated; real-cash lockout uses user-reported real-cash closes only."},
+            {"system": "event radar", "writes": ["event context", "event/non-event candidate separation"], "read_by": ["broad opportunity scan", "operator"], "clutter_control": "Event context cannot replace broad scan and cannot rank messy event names above cleaner setups."},
+            {"system": "crypto/global research", "writes": ["paper-only crypto backtests", "global research observations"], "read_by": ["learning/research only"], "clutter_control": "Crypto is kept out of equity/options scoring unless explicitly tested in its own lane."},
+        ],
+        "clutter_limits": [
+            "Each route returns a status and next_action, not just raw data.",
+            "Event, broad equity/options, microcap, and crypto lanes are labeled separately.",
+            "Learning proposals are do_not_auto_apply until backtested and manually accepted.",
+            "Journal checkpoints are used to preserve useful evidence without relying on Render local disk.",
+            "Broker/watchlist data is treated as context unless it supplies explicit live truth fields.",
+        ],
+        "known_weak_links": [
+            "Render local SQLite is not durable without checkpoint export/restore.",
+            "Options truth is still manual/broker-snapshot unless a realtime options provider is configured.",
+            "Robinhood watchlist visibility does not equal live options-chain validation.",
+            "Too many scan rows can create operator noise; use broad scan ranking plus alerts to focus attention.",
+        ],
+        "next_action": "Keep the day monitor, data truth cockpit, broad scan, paper summary, and journal checkpoint pages open. Export checkpoint after meaningful reviews.",
+        "links": {
+            "command_center": "/ops/command-center?format=html",
+            "data_truth_cockpit": "/ops/data-truth-cockpit?format=html",
+            "broad_scan": "/ops/broad-opportunity-scan?format=html",
+            "learning_dashboard": "/learning/dashboard?format=html",
+            "journal_checkpoint": "/journal/checkpoint?limit=500&format=html",
+        },
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+    return service_container.events.log("system_communication_audit", payload)
 
 
 def _event_lane_decision(stock_row: dict[str, Any], review: dict[str, Any] | None, direct_symbol: str) -> dict[str, Any]:

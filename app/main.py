@@ -11,6 +11,7 @@ from app.fallback_endpoints import (
     fallback_build_evidence_packets_from_scan,
     fallback_debug_scan_schema,
     fallback_debug_tool_manifest,
+    fallback_data_truth_cockpit,
     fallback_day_alerts,
     fallback_day_monitor,
     fallback_autonomous_morning_scan,
@@ -56,6 +57,7 @@ from app.fallback_endpoints import (
     fallback_premove_blueprint,
     fallback_session_playbook,
     fallback_session_risk_guard,
+    fallback_system_communication_audit,
     fallback_safety,
     fallback_scalp_scan,
     fallback_scoring_model,
@@ -96,6 +98,8 @@ def create_app():
     app.add_route("/ops/event-volatility-playbook", fallback_event_volatility_playbook, methods=["GET"])
     app.add_route("/ops/event-volatility-scan", fallback_event_volatility_scan, methods=["GET"])
     app.add_route("/ops/broad-opportunity-scan", fallback_broad_opportunity_scan, methods=["GET"])
+    app.add_route("/ops/data-truth-cockpit", fallback_data_truth_cockpit, methods=["GET"])
+    app.add_route("/ops/system-communication-audit", fallback_system_communication_audit, methods=["GET"])
     app.add_route("/ops/harvest-followup", fallback_harvest_followup, methods=["GET"])
     app.add_route("/ops/command-center", fallback_command_center, methods=["GET"])
     app.add_route("/ops/trading-day-launch", fallback_trading_day_launch, methods=["GET"])
