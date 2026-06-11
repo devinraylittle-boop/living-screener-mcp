@@ -89,6 +89,8 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("get_crypto_paper_rules", tools.json()["tools"])
         self.assertIn("start_crypto_paper_session", tools.json()["tools"])
         self.assertIn("run_crypto_paper_backtest", tools.json()["tools"])
+        self.assertIn("get_crypto_live_test_gate", tools.json()["tools"])
+        self.assertIn("summarize_crypto_live_test_report", tools.json()["tools"])
         self.assertIn("get_offhours_research_plan", tools.json()["tools"])
         self.assertIn("run_global_research_scan", tools.json()["tools"])
         self.assertIn("get_trading_monster_blueprint", tools.json()["tools"])
@@ -1137,6 +1139,57 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(backtest.status_code, 200)
         self.assertIn("Crypto Paper Backtest", backtest.text)
 
+    def test_crypto_live_test_gate_and_report_fallbacks_are_review_only(self) -> None:
+        fake_gate = {
+            "status": "CRYPTO_LIVE_TEST_GATE_READY",
+            "final_decision": "REVIEW_ONLY",
+            "exchange_gates": {"status": "EXCHANGE_PROOF_INCOMPLETE", "blockers": ["exchange_connected"]},
+            "approved_candidate_count": 0,
+            "candidate_classifications": [
+                {
+                    "symbol": "BTC-USD",
+                    "classification": "WATCH_ONLY",
+                    "setup_score": 70,
+                    "liquidity_score": 0,
+                    "spread_score": 0,
+                    "approval_or_rejection_reasons": ["No fresh broker/exchange quote and order-book snapshot supplied."],
+                    "order_ticket": {"final_verdict": "REJECTED", "max_loss": 0.02},
+                }
+            ],
+            "next_action": "Stay review-only.",
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        fake_report = {
+            "status": "CRYPTO_LIVE_TEST_REPORT_READY",
+            "final_decision_for_tomorrow": "REVIEW_ONLY",
+            "starting_balance": 5.0,
+            "ending_balance": 5.0,
+            "total_profit_loss": 0.0,
+            "trade_count": 0,
+            "rejected_candidate_count": 1,
+            "fees_paid": 0.0,
+            "module_decisions": {"crypto_live_execution": "DISABLED"},
+            "tomorrow_stock_options_improvements": ["Keep crypto separate."],
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        client = TestClient(create_app())
+        with patch("app.fallback_endpoints.container.crypto_paper.live_test_gate", return_value=fake_gate), patch(
+            "app.fallback_endpoints.container.crypto_paper.summarize_live_test_report", return_value=fake_report
+        ):
+            gate_json = client.get("/crypto/live-test?symbols=BTC-USD")
+            gate_html = client.get("/crypto/live-test?symbols=BTC-USD&format=html")
+            report = client.get("/crypto/test-report?format=html")
+
+        self.assertEqual(gate_json.status_code, 200)
+        self.assertFalse(gate_json.json()["can_place_order_from_this_mcp"])
+        self.assertEqual(gate_json.json()["result"]["final_decision"], "REVIEW_ONLY")
+        self.assertEqual(gate_html.status_code, 200)
+        self.assertIn("Crypto Live Test Gate", gate_html.text)
+        self.assertEqual(report.status_code, 200)
+        self.assertIn("Crypto Test Report", report.text)
+
     def test_premove_research_endpoints_are_review_only(self) -> None:
         client = TestClient(create_app())
 
@@ -1226,7 +1279,7 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(release.status_code, 200)
         self.assertEqual(release.json()["status"], "RELEASE_MANIFEST_READY")
         self.assertEqual(release.json()["manifest"]["target_build_version"], "2026.06.11-journal-vault")
-        self.assertEqual(release.json()["manifest"]["expected_live_tool_count"], 86)
+        self.assertEqual(release.json()["manifest"]["expected_live_tool_count"], 88)
         self.assertIn("tools/start_tomorrow.ps1", release.json()["manifest"]["operator_helpers"])
         self.assertEqual(manifest.status_code, 200)
         self.assertEqual(manifest.json()["result"]["status"], "TOOL_MANIFEST_READY")

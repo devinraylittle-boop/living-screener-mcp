@@ -1,6 +1,6 @@
 # Living Screener MCP V2.0 Adversarial Audit
 
-Build reviewed: `2026.06.11-broker-proof-bridge`
+Build reviewed: `2026.06.11-journal-vault`
 
 ## 1. Executive Summary
 

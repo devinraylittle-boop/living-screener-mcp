@@ -2,7 +2,7 @@
     "service":  "Living Screener MCP",
     "release_folder":  "living-screener-mcp-journal-vault-20260611-145500",
     "target_build_version":  "2026.06.11-journal-vault",
-    "expected_live_tool_count":  86,
+    "expected_live_tool_count":  88,
     "safety_invariants":  {
                               "review_only":  true,
                               "place_orders":  false,
@@ -58,6 +58,8 @@
                                       "/risk/failure-mode-audit?format=html",
                                       "/paper/exploration/summary?format=html",
                                       "/journal/vault?format=html",
+                                      "/crypto/live-test?format=html",
+                                      "/crypto/test-report?format=html",
                                       "/paper/exploration/run?max_trials=10\u0026exploration_level=aggressive\u0026format=html"
                                   ],
     "operator_helpers":  [

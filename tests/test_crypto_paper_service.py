@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from app.services.crypto_paper_service import CryptoPaperRules, CryptoPaperService
 from tests.helpers import TempContainer
@@ -85,6 +86,94 @@ class CryptoPaperServiceTests(unittest.TestCase):
         result = service._simulate_symbol("ETH-USD", candles, CryptoPaperRules(), 10)
 
         self.assertEqual(result["trade_count"], 0)
+
+    def test_live_test_gate_passes_when_exchange_proof_is_missing(self) -> None:
+        with TempContainer() as container:
+            service = CryptoPaperService(container.events)
+            fake_backtest = {
+                "result": "PAPER_WATCH",
+                "best_symbol": "BTC-USD",
+                "aggregate": {"total_trade_count": 6, "aggregate_return_pct": 0.01},
+                "results": [
+                    {
+                        "symbol": "BTC-USD",
+                        "status": "BACKTEST_COMPLETE",
+                        "symbol_recommendation": "PAPER_ELIGIBLE",
+                        "trade_count": 4,
+                        "win_rate": 0.75,
+                        "return_pct": 0.01,
+                    }
+                ],
+            }
+            with patch.object(service, "run_backtest", return_value=fake_backtest):
+                result = service.live_test_gate(symbols=["BTC-USD"], starting_cash=5.0)
+
+        self.assertEqual(result["final_decision"], "REVIEW_ONLY")
+        self.assertEqual(result["exchange_gates"]["status"], "EXCHANGE_PROOF_INCOMPLETE")
+        self.assertEqual(result["candidate_classifications"][0]["classification"], "WATCH_ONLY")
+        self.assertFalse(result["can_place_order_from_this_mcp"])
+
+    def test_live_test_gate_builds_ticket_when_all_crypto_gates_pass(self) -> None:
+        with TempContainer() as container:
+            service = CryptoPaperService(container.events)
+            fake_backtest = {
+                "result": "PAPER_WATCH",
+                "best_symbol": "BTC-USD",
+                "aggregate": {"total_trade_count": 8, "aggregate_return_pct": 0.02},
+                "results": [
+                    {
+                        "symbol": "BTC-USD",
+                        "status": "BACKTEST_COMPLETE",
+                        "symbol_recommendation": "PAPER_ELIGIBLE",
+                        "trade_count": 5,
+                        "win_rate": 0.8,
+                        "return_pct": 0.02,
+                    }
+                ],
+            }
+            with patch.object(service, "run_backtest", return_value=fake_backtest):
+                result = service.live_test_gate(
+                    symbols=["BTC-USD"],
+                    starting_cash=5.0,
+                    intended_cash=5.0,
+                    account_balance=5.0,
+                    buying_power=5.0,
+                    exchange_connected=True,
+                    open_positions_checked=True,
+                    open_position_count=0,
+                    open_orders_checked=True,
+                    open_order_count=0,
+                    market_data_fresh=True,
+                    order_book_fresh=True,
+                    kill_switch_ready=True,
+                    emergency_shutdown_ready=True,
+                    daily_loss_lockout_clear=True,
+                    fee_bps=2,
+                    slippage_pct=0.0002,
+                    min_order_size=1.0,
+                    candidate_snapshots={
+                        "BTC-USD": {
+                            "bid": 100.00,
+                            "ask": 100.05,
+                            "volume_24h": 1_000_000_000,
+                        }
+                    },
+                )
+
+        candidate = result["candidate_classifications"][0]
+        self.assertEqual(result["final_decision"], "LIMITED_AUTONOMOUS_CRYPTO_ENABLED")
+        self.assertEqual(candidate["classification"], "AUTONOMOUS_CRYPTO_APPROVED")
+        self.assertEqual(candidate["order_ticket"]["final_verdict"], "AUTONOMOUS_CRYPTO_APPROVED")
+        self.assertFalse(candidate["order_ticket"]["can_place_order_from_this_mcp"])
+
+    def test_crypto_live_test_report_summarizes_no_trade_abstention(self) -> None:
+        with TempContainer() as container:
+            service = CryptoPaperService(container.events)
+            report = service.summarize_live_test_report(starting_balance=5.0, ending_balance=5.0)
+
+        self.assertEqual(report["trade_count"], 0)
+        self.assertFalse(report["did_force_trades"])
+        self.assertEqual(report["final_decision_for_tomorrow"], "REVIEW_ONLY")
 
 
 if __name__ == "__main__":
