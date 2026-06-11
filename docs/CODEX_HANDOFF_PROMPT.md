@@ -13,7 +13,7 @@ The live Render app is:
 https://living-screener-mcp.onrender.com
 
 Expected build:
-2026.06.11-autonomous-firewall
+2026.06.11-proof-gate-prebuild
 
 First, run:
 powershell -ExecutionPolicy Bypass -File .\tools\agent_status_snapshot.ps1

@@ -1,6 +1,6 @@
 param(
     [string]$BaseUrl = "https://living-screener-mcp.onrender.com",
-    [string]$ExpectedBuild = "2026.06.11-autonomous-firewall",
+    [string]$ExpectedBuild = "2026.06.11-proof-gate-prebuild",
     [int]$AccountValue = 50,
     [int]$TimeoutSeconds = 20
 )

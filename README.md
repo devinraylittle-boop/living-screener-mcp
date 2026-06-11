@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.11-autonomous-firewall
+2026.06.11-proof-gate-prebuild
 ```
 
 ## Render Environment
@@ -86,6 +86,8 @@ Paper exploration deliberately increases paper-trade volume for data mining. Use
 
 Autonomous firewall tools convert the moonshot goal into a safe operating system. Use `get_strategy_module_registry` or `/ops/strategy-modules` to see which strategy lanes are review-only, paper-only, or disabled for cash. Use `get_shared_intelligence_layer` or `/ops/shared-intelligence` to merge scan rows, paper trials, outcomes, and learning labels into actionable/supporting/suppressed knowledge without letting noise become confidence. Use `get_autonomous_launch_decision` or `/ops/autonomous-launch-decision` before any real-money autonomy discussion; it keeps autonomous scanning and paper learning enabled while blocking real-money execution until broker state, order preview, buying power, open orders, open positions, options truth, market data, and risk lockouts are all proven.
 
+Real-cash proof gate is the final prebuild checkpoint before any autonomous execution build. Use `get_real_cash_proof_gate` or `/ops/real-cash-proof-gate` to classify each required proof item as `PROVEN`, `MISSING`, `BLOCKED`, or `WARNING`. It separates `autonomous_scanning`, `aggressive_paper_learning`, `manual_real_cash_review`, and `fully_autonomous_real_cash_execution` so a missing broker/order/position proof cannot be hidden behind good scan results. Operator-supplied broker confirmations may support manual review, but they are labeled as operator proof and do not become machine-verified broker integration.
+
 Manual option position watch helps manage an open manual/paper option after entry. Use `watch_manual_option_position` or `/paper/options/watch` with the open entry ID or contract symbol plus current broker-visible bid/ask/mark. It returns `POSITION_HOLD_REVIEW`, `POSITION_PROFIT_WATCH`, `POSITION_PROFIT_REVIEW`, `POSITION_STOP_REVIEW`, or `POSITION_WATCH_NEEDS_LIVE_QUOTE`, prepares a `/paper/options/close` payload, and keeps all broker action outside the MCP.
 
 Session risk guard checks the journal before adding another manual idea. Use `get_session_risk_guard` or `/risk/session` with account value, proposed risk, and max open positions. It summarizes paper/research activity separately from user-reported real-cash activity. Paper scans, paper entries, paper closes, and learning are uncapped because there is no broker downside. New real-cash/autonomous escalation is blocked after 3 user-reported real-cash closed losses in the current trading day. This is journal evidence only; it does not verify broker balances or broker positions and cannot execute broker actions.
@@ -144,7 +146,7 @@ These routes call the same review-only services as the MCP tools. They exist so 
 GET /safety
 GET /
 GET /release-manifest
-GET /health/full?expected_build_version=2026.06.11-autonomous-firewall
+GET /health/full?expected_build_version=2026.06.11-proof-gate-prebuild
 GET /ops/event-radar?format=html
 GET /ops/broad-opportunity-scan?format=html
 GET /ops/data-truth-cockpit?format=html
@@ -222,7 +224,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.11-autonomous-firewall
+GET /debug/scan-schema?expected_build_version=2026.06.11-proof-gate-prebuild
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -241,7 +243,7 @@ If Render is still building, run the watcher instead:
 .\tools\watch_deploy.ps1
 ```
 
-It polls `/version` every 30 seconds. When `2026.06.11-autonomous-firewall` appears, it automatically runs `validate_live.ps1`.
+It polls `/version` every 30 seconds. When `2026.06.11-proof-gate-prebuild` appears, it automatically runs `validate_live.ps1`.
 
 On market morning, after validation passes, run:
 
@@ -350,7 +352,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.11-autonomous-firewall",
+  "build_version": "2026.06.11-proof-gate-prebuild",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false

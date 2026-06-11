@@ -1,6 +1,6 @@
 # Living Screener MCP V2.0 Adversarial Audit
 
-Build reviewed: `2026.06.11-autonomous-firewall`
+Build reviewed: `2026.06.11-proof-gate-prebuild`
 
 ## 1. Executive Summary
 
