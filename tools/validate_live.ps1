@@ -1,6 +1,6 @@
 param(
     [string]$BaseUrl = "https://living-screener-mcp.onrender.com",
-    [string]$ExpectedBuild = "2026.06.11-event-volatility",
+    [string]$ExpectedBuild = "2026.06.11-event-radar-broad-scan",
     [int]$AccountValue = 50,
     [int]$TimeoutSeconds = 20
 )

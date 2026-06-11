@@ -1,6 +1,6 @@
 # Living Screener MCP V2.0 Adversarial Audit
 
-Build reviewed: `2026.06.11-event-volatility`
+Build reviewed: `2026.06.11-event-radar-broad-scan`
 
 ## 1. Executive Summary
 

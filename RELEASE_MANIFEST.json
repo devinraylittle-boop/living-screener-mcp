@@ -1,8 +1,8 @@
 {
   "service": "Living Screener MCP",
-  "release_folder": "living-screener-mcp-event-volatility-20260611-084500",
-  "target_build_version": "2026.06.11-event-volatility",
-  "expected_live_tool_count": 74,
+  "release_folder": "living-screener-mcp-event-radar-broad-scan-20260611-093500",
+  "target_build_version": "2026.06.11-event-radar-broad-scan",
+  "expected_live_tool_count": 76,
   "safety_invariants": {
     "review_only": true,
     "place_orders": false,
@@ -36,8 +36,10 @@
   "live_validation_endpoints": [
     "/version",
     "/tools",
-    "/health/full?expected_build_version=2026.06.11-event-volatility",
+    "/health/full?expected_build_version=2026.06.11-event-radar-broad-scan",
     "/ops/autonomous-morning-scan?format=html",
+    "/ops/event-radar?format=html",
+    "/ops/broad-opportunity-scan?format=html",
     "/ops/event-volatility-playbook?format=html",
     "/ops/event-volatility-scan?format=html",
     "/truth/source-status",
