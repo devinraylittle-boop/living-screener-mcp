@@ -1,8 +1,8 @@
 {
   "service": "Living Screener MCP",
-  "release_folder": "living-screener-mcp-options-provider-20260610-223000",
-  "target_build_version": "2026.06.10-options-provider",
-  "expected_live_tool_count": 68,
+  "release_folder": "living-screener-mcp-market-truth-20260610-231500",
+  "target_build_version": "2026.06.10-market-truth",
+  "expected_live_tool_count": 71,
   "safety_invariants": {
     "review_only": true,
     "place_orders": false,
@@ -36,7 +36,10 @@
   "live_validation_endpoints": [
     "/version",
     "/tools",
-    "/health/full?expected_build_version=2026.06.10-options-provider",
+    "/health/full?expected_build_version=2026.06.10-market-truth",
+    "/truth/source-status",
+    "/market/data-health",
+    "/research/catalyst-context?ticker=SOFI",
     "/",
     "/ops/go-live-rehearsal?account_value=50&format=html",
     "/trade/manual-form?format=html",

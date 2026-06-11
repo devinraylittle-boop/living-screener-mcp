@@ -1,6 +1,6 @@
-param(
+﻿param(
     [string]$BaseUrl = "https://living-screener-mcp.onrender.com",
-    [string]$ExpectedBuild = "2026.06.10-options-provider",
+    [string]$ExpectedBuild = "2026.06.10-market-truth",
     [int]$AccountValue = 50,
     [int]$TimeoutSeconds = 20
 )
@@ -74,3 +74,4 @@ if ($checks.Pass -contains $false) {
 
 Write-Host ""
 Write-Host "LIVE_VALIDATION_PASS"
+

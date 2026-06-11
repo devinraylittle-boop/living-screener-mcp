@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import unittest
 from unittest.mock import patch
@@ -48,6 +48,9 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("review_candidate_for_options", tools.json()["tools"])
         self.assertIn("validate_broker_option_snapshot", tools.json()["tools"])
         self.assertIn("get_options_data_status", tools.json()["tools"])
+        self.assertIn("get_truth_source_status", tools.json()["tools"])
+        self.assertIn("check_market_data_health", tools.json()["tools"])
+        self.assertIn("get_catalyst_context", tools.json()["tools"])
         self.assertIn("build_manual_trade_preflight_ticket", tools.json()["tools"])
         self.assertIn("build_manual_trade_desk", tools.json()["tools"])
         self.assertIn("log_manual_broker_action", tools.json()["tools"])
@@ -107,6 +110,37 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(result["real_money_options_truth_status"], "BROKER_SNAPSHOT_REQUIRED")
         self.assertTrue(result["broker_snapshot_required"])
         self.assertFalse(response.json()["can_place_order_from_this_mcp"])
+
+    def test_market_truth_endpoints_are_review_only(self) -> None:
+        client = TestClient(create_app())
+        fake_catalyst = {
+            "status": "CATALYST_CONTEXT_CLEAR",
+            "schema_version": "catalyst_context_v1",
+            "ticker": "SOFI",
+            "cash_ready": True,
+            "risk_items": [],
+            "blocking_reasons": [],
+        }
+        truth = client.get("/truth/source-status")
+        health = client.get("/market/data-health?tickers=SOFI,SMCI&max_tickers=2")
+        missing_catalyst = client.get("/research/catalyst-context")
+        with patch("app.fallback_endpoints.container.market_truth.get_catalyst_context", return_value=fake_catalyst):
+            catalyst = client.get("/research/catalyst-context?ticker=SOFI")
+
+        self.assertEqual(truth.status_code, 200)
+        self.assertEqual(truth.json()["result"]["schema_version"], "truth_source_status_v1")
+        self.assertFalse(truth.json()["result"]["cash_readiness"]["cash_ready"])
+        self.assertFalse(truth.json()["can_place_order_from_this_mcp"])
+        self.assertEqual(health.status_code, 200)
+        self.assertEqual(health.json()["result"]["schema_version"], "market_data_health_v1")
+        self.assertEqual(health.json()["result"]["checked_tickers"], ["SOFI", "SMCI"])
+        self.assertFalse(health.json()["can_cancel_order_from_this_mcp"])
+        self.assertEqual(missing_catalyst.status_code, 400)
+        self.assertFalse(missing_catalyst.json()["can_place_order_from_this_mcp"])
+        self.assertEqual(catalyst.status_code, 200)
+        self.assertEqual(catalyst.json()["result"]["schema_version"], "catalyst_context_v1")
+        self.assertIn(catalyst.json()["result"]["status"], {"CATALYST_CONTEXT_CLEAR", "CATALYST_CONTEXT_BLOCK", "CATALYST_CONTEXT_UNAVAILABLE"})
+        self.assertFalse(catalyst.json()["can_place_order_from_this_mcp"])
 
     def test_options_review_can_render_human_readable_html(self) -> None:
         fake_review = {
@@ -465,7 +499,7 @@ class EndpointTests(unittest.TestCase):
     def test_tomorrow_operator_brief_endpoint_can_render_human_readable_html(self) -> None:
         fake_brief = {
             "status": "OPERATOR_READY_TO_START",
-            "build_version": "2026.06.10-options-provider",
+            "build_version": "2026.06.10-market-truth",
             "next_action": "Open launch, morning autopilot, and day monitor.",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -490,7 +524,7 @@ class EndpointTests(unittest.TestCase):
                 {
                     "step": "1. Confirm deployment",
                     "target_time_ct": "Before open",
-                    "link": "/health/full?expected_build_version=2026.06.10-options-provider",
+                    "link": "/health/full?expected_build_version=2026.06.10-market-truth",
                     "pass_condition": "OK and build matches.",
                 }
             ],
@@ -525,7 +559,7 @@ class EndpointTests(unittest.TestCase):
     def test_root_route_opens_operator_brief(self) -> None:
         fake_brief = {
             "status": "OPERATOR_READY_TO_START",
-            "build_version": "2026.06.10-options-provider",
+            "build_version": "2026.06.10-market-truth",
             "next_action": "Open launch, morning autopilot, and day monitor.",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -555,7 +589,7 @@ class EndpointTests(unittest.TestCase):
     def test_root_defaults_to_human_readable_operator_brief(self) -> None:
         fake_brief = {
             "status": "OPERATOR_READY_TO_START",
-            "build_version": "2026.06.10-options-provider",
+            "build_version": "2026.06.10-market-truth",
             "generated_at": "2026-06-10T12:00:00+00:00",
             "account_value_reference": 50.0,
             "safety": {"review_only": True},
@@ -585,7 +619,7 @@ class EndpointTests(unittest.TestCase):
     def test_go_live_rehearsal_endpoint_can_render_human_readable_html(self) -> None:
         fake_rehearsal = {
             "status": "GO_LIVE_REHEARSAL_READY",
-            "build_version": "2026.06.10-options-provider",
+            "build_version": "2026.06.10-market-truth",
             "next_action": "Deploy and validate this build.",
             "include_market_check": False,
             "operator_brief": {
@@ -638,7 +672,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_trade_desk_endpoint_can_render_human_readable_html(self) -> None:
         fake_trade_desk = {
             "status": "MANUAL_TRADE_DESK_READY",
-            "build_version": "2026.06.10-options-provider",
+            "build_version": "2026.06.10-market-truth",
             "ticker": "SOFI",
             "direction": "put",
             "contract_symbol": "SOFI260612P00015000",
@@ -714,7 +748,7 @@ class EndpointTests(unittest.TestCase):
     def test_market_open_observer_endpoint_logs_evidence_without_broker_action(self) -> None:
         fake_observer = {
             "status": "OBSERVER_STOCK_CANDIDATES",
-            "build_version": "2026.06.10-options-provider",
+            "build_version": "2026.06.10-market-truth",
             "mode": "market_open_observer",
             "cadence_minutes": 5,
             "candidate_count": 1,
@@ -770,7 +804,7 @@ class EndpointTests(unittest.TestCase):
     def test_observer_followup_endpoint_can_render_missed_move_learning(self) -> None:
         fake_followup = {
             "status": "OBSERVER_FOLLOWUP_LEARNING_NEEDED",
-            "build_version": "2026.06.10-options-provider",
+            "build_version": "2026.06.10-market-truth",
             "mode": "observer_followup",
             "source_observation_count": 2,
             "items_checked": 3,
@@ -821,7 +855,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_broker_action_endpoint_records_pending_recheck_card(self) -> None:
         fake_action = {
             "status": "MANUAL_ACTION_PENDING_RECHECK_REQUIRED",
-            "build_version": "2026.06.10-options-provider",
+            "build_version": "2026.06.10-market-truth",
             "ticker": "SOFI",
             "contract_symbol": "SOFI260612P00015000",
             "action_type": "pending_buy",
@@ -901,7 +935,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_launch_endpoint_renders_go_no_go_map(self) -> None:
         fake_launch = {
             "status": "LAUNCH_START_HERE",
-            "build_version": "2026.06.10-options-provider",
+            "build_version": "2026.06.10-market-truth",
             "mode": "trading_day_launch_checklist",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -917,7 +951,7 @@ class EndpointTests(unittest.TestCase):
                 {
                     "phase": "Build and safety",
                     "go_condition": "Build matches expected version.",
-                    "primary_link": "/health/full?expected_build_version=2026.06.10-options-provider",
+                    "primary_link": "/health/full?expected_build_version=2026.06.10-market-truth",
                     "stop_if": "Wrong build.",
                 },
                 {
@@ -950,7 +984,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_heartbeat_endpoint_renders_safe_cadence_tick(self) -> None:
         fake_heartbeat = {
             "status": "HEARTBEAT_NO_TRADE_PLAN",
-            "build_version": "2026.06.10-options-provider",
+            "build_version": "2026.06.10-market-truth",
             "mode": "trading_day_heartbeat",
             "phase": {"phase": "active", "forced": True, "now_et": "2026-06-10T11:00:00-04:00"},
             "universe": ["SOFI", "SMCI"],
@@ -987,7 +1021,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_alerts_endpoint_renders_attention_queue(self) -> None:
         fake_alerts = {
             "status": "ALERTS_MANUAL_REVIEW_READY",
-            "build_version": "2026.06.10-options-provider",
+            "build_version": "2026.06.10-market-truth",
             "top_level": "REVIEW",
             "alert_count": 1,
             "alerts": [
@@ -1136,11 +1170,11 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.10-options-provider")
+        full = client.get("/health/full?expected_build_version=2026.06.10-market-truth")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         release = client.get("/release-manifest")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-options-provider")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.10-market-truth")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -1149,8 +1183,8 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(mismatch.json()["result"]["status"], "BUILD_MISMATCH")
         self.assertEqual(release.status_code, 200)
         self.assertEqual(release.json()["status"], "RELEASE_MANIFEST_READY")
-        self.assertEqual(release.json()["manifest"]["target_build_version"], "2026.06.10-options-provider")
-        self.assertEqual(release.json()["manifest"]["expected_live_tool_count"], 68)
+        self.assertEqual(release.json()["manifest"]["target_build_version"], "2026.06.10-market-truth")
+        self.assertEqual(release.json()["manifest"]["expected_live_tool_count"], 71)
         self.assertIn("tools/start_tomorrow.ps1", release.json()["manifest"]["operator_helpers"])
         self.assertEqual(manifest.status_code, 200)
         self.assertEqual(manifest.json()["result"]["status"], "TOOL_MANIFEST_READY")
@@ -1178,6 +1212,9 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_session_risk_guard"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_failure_mode_audit"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_options_data_status"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["get_truth_source_status"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["check_market_data_health"])
+        self.assertTrue(manifest.json()["result"]["required_tools"]["get_catalyst_context"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["export_journal_checkpoint"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["restore_journal_checkpoint"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["summarize_evidence_packets"])
@@ -1191,6 +1228,9 @@ class EndpointTests(unittest.TestCase):
         options_preview = schema.json()["result"]["options_review_schema_preview"]
         self.assertEqual(options_preview["small_account_review"]["friction_band"], "LOW_FRICTION")
         self.assertEqual(schema.json()["result"]["options_data_status_schema_preview"]["schema_version"], "options_data_status_v1")
+        self.assertEqual(schema.json()["result"]["truth_source_status_schema_preview"]["schema_version"], "truth_source_status_v1")
+        self.assertEqual(schema.json()["result"]["market_data_health_schema_preview"]["schema_version"], "market_data_health_v1")
+        self.assertEqual(schema.json()["result"]["catalyst_context_schema_preview"]["schema_version"], "catalyst_context_v1")
         setup_preview = schema.json()["result"]["setup_memory_schema_preview"]
         self.assertEqual(setup_preview["status"], "SETUP_MEMORY_READY")
         harvest_preview = schema.json()["result"]["review_harvest_schema_preview"]
@@ -1353,7 +1393,7 @@ class EndpointTests(unittest.TestCase):
     def test_session_risk_guard_endpoint_is_review_only(self) -> None:
         fake_risk = {
             "status": "SESSION_RISK_CLEAR",
-            "build_version": "2026.06.10-options-provider",
+            "build_version": "2026.06.10-market-truth",
             "account_value_reference": 50,
             "proposed_risk_dollars": 5,
             "per_trade_cap_dollars": 5,
@@ -1401,9 +1441,9 @@ class EndpointTests(unittest.TestCase):
         }
         fake_restore = {
             "status": "CHECKPOINT_RESTORE_READY",
-            "build_version": "2026.06.10-options-provider",
+            "build_version": "2026.06.10-market-truth",
             "source_label": "unit_test",
-            "checkpoint_build_version": "2026.06.10-options-provider",
+            "checkpoint_build_version": "2026.06.10-market-truth",
             "requested_event_count": 1,
             "restored_count": 1,
             "skipped_duplicate_count": 0,
@@ -1436,3 +1476,4 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(restore_html.status_code, 200)
         self.assertIn("Journal Checkpoint Restore", restore_html.text)
         self.assertIn("Restored Events", restore_html.text)
+
