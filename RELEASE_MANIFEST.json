@@ -1,7 +1,7 @@
 {
     "service":  "Living Screener MCP",
-    "release_folder":  "living-screener-mcp-paper-followup-clarity-20260611-142500",
-    "target_build_version":  "2026.06.11-paper-followup-clarity",
+    "release_folder":  "living-screener-mcp-journal-vault-20260611-145500",
+    "target_build_version":  "2026.06.11-journal-vault",
     "expected_live_tool_count":  86,
     "safety_invariants":  {
                               "review_only":  true,
@@ -36,7 +36,7 @@
     "live_validation_endpoints":  [
                                       "/version",
                                       "/tools",
-                                      "/health/full?expected_build_version=2026.06.11-paper-followup-clarity",
+                                      "/health/full?expected_build_version=2026.06.11-journal-vault",
                                       "/ops/autonomous-morning-scan?format=html",
                                       "/ops/event-radar?format=html",
                                       "/ops/broad-opportunity-scan?format=html",
@@ -57,6 +57,7 @@
                                       "/trade/manual-form?format=html",
                                       "/risk/failure-mode-audit?format=html",
                                       "/paper/exploration/summary?format=html",
+                                      "/journal/vault?format=html",
                                       "/paper/exploration/run?max_trials=10\u0026exploration_level=aggressive\u0026format=html"
                                   ],
     "operator_helpers":  [

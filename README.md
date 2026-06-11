@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.11-paper-followup-clarity
+2026.06.11-journal-vault
 ```
 
 ## Render Environment
@@ -148,7 +148,7 @@ These routes call the same review-only services as the MCP tools. They exist so 
 GET /safety
 GET /
 GET /release-manifest
-GET /health/full?expected_build_version=2026.06.11-paper-followup-clarity
+GET /health/full?expected_build_version=2026.06.11-journal-vault
 GET /ops/event-radar?format=html
 GET /ops/broad-opportunity-scan?format=html
 GET /ops/data-truth-cockpit?format=html
@@ -226,7 +226,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.11-paper-followup-clarity
+GET /debug/scan-schema?expected_build_version=2026.06.11-journal-vault
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -245,7 +245,7 @@ If Render is still building, run the watcher instead:
 .\tools\watch_deploy.ps1
 ```
 
-It polls `/version` every 30 seconds. When `2026.06.11-paper-followup-clarity` appears, it automatically runs `validate_live.ps1`.
+It polls `/version` every 30 seconds. When `2026.06.11-journal-vault` appears, it automatically runs `validate_live.ps1`.
 
 On market morning, after validation passes, run:
 
@@ -354,7 +354,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.11-paper-followup-clarity",
+  "build_version": "2026.06.11-journal-vault",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false
