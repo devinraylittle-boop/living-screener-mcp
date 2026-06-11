@@ -27,16 +27,21 @@ class GoLiveRehearsalTests(unittest.TestCase):
         self.assertIn("SPY", result["universe"])
         self.assertIn("Go-live rehearsal", [item["label"] for item in result["required_live_urls"]])
 
-    def test_rehearsal_blocks_when_session_risk_blocks(self) -> None:
+    def test_rehearsal_blocks_after_real_cash_loss_lockout(self) -> None:
         with TempContainer() as container:
-            for index in range(2):
+            for index in range(3):
                 container.events.log(
-                    "manual_option_paper_entry",
+                    "manual_broker_action",
                     {
-                        "status": "PAPER_OPTION_ENTRY_OPEN",
+                        "status": "MANUAL_ACTION_LOGGED",
                         "ticker": "SOFI",
                         "contract_symbol": f"SOFI260612P0001500{index}",
-                        "entry_debit_dollars": 8.0,
+                        "action_type": "sell_to_close",
+                        "order_status": "filled",
+                        "side": "sell",
+                        "is_real_cash": True,
+                        "is_closing_action": True,
+                        "pnl_dollars": -1.0,
                     },
                 )
             result = _run_go_live_rehearsal(container, ["SOFI"], 50, 25, False)

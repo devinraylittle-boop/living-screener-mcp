@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from app.mcp_server import _get_market_session_playbook, _get_ops_command_center, _market_readiness_check, _run_latest_harvest_followup, _run_live_review_cycle, _run_morning_readiness_autopilot, _run_review_harvest
@@ -248,18 +249,25 @@ class MarketHarvestTests(unittest.TestCase):
         self.assertFalse(result["can_place_order_from_this_mcp"])
         self.assertFalse(result["can_cancel_order_from_this_mcp"])
 
-    def test_live_review_cycle_blocks_manual_preflight_when_session_risk_is_full(self) -> None:
+    def test_live_review_cycle_blocks_manual_preflight_after_real_cash_loss_lockout(self) -> None:
         container = self.container()
-        for _ in range(2):
+        for index in range(3):
             container.events.log(
-                "manual_option_paper_entry",
+                "manual_broker_action",
                 {
-                    "status": "PAPER_OPTION_ENTRY_OPEN",
+                    "status": "MANUAL_ACTION_LOGGED",
+                    "timestamp": datetime.now(UTC).isoformat(),
                     "ticker": "SOFI",
-                    "contract_symbol": "SOFI260612P00015000",
-                    "entry_debit_dollars": 8.0,
+                    "contract_symbol": f"SOFI260612P0001500{index}",
+                    "action_type": "sell_to_close",
+                    "order_status": "filled",
+                    "side": "sell",
+                    "is_real_cash": True,
+                    "is_closing_action": True,
+                    "pnl_dollars": -1.0,
                 },
             )
+            container.events.rows[-1]["timestamp"] = datetime.now(UTC).isoformat()
 
         result = _run_live_review_cycle(container, ["SOFI"], 50, 5, 3, None, False)
 

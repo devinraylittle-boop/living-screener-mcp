@@ -13,7 +13,7 @@ The live Render app is:
 https://living-screener-mcp.onrender.com
 
 Expected build:
-2026.06.11-three-loss-guard
+2026.06.11-cash-paper-split
 
 First, run:
 powershell -ExecutionPolicy Bypass -File .\tools\agent_status_snapshot.ps1

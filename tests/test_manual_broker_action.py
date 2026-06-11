@@ -65,6 +65,28 @@ class ManualBrokerActionTests(unittest.TestCase):
         self.assertTrue(result["broker_action_was_user_reported"])
         self.assertFalse(result["mcp_broker_action"])
 
+    def test_real_cash_close_loss_is_countable_for_daily_cash_guard(self) -> None:
+        with TempContainer() as container:
+            result = _log_manual_broker_action(
+                container,
+                {
+                    "ticker": "SOFI",
+                    "contract_symbol": "SOFI260612P00015000",
+                    "action_type": "sell_to_close",
+                    "order_status": "filled",
+                    "side": "sell",
+                    "direction": "put",
+                    "pnl_dollars": -2.0,
+                    "is_real_cash": True,
+                },
+            )
+
+        self.assertEqual(result["status"], "MANUAL_ACTION_LOGGED")
+        self.assertEqual(result["pnl_dollars"], -2.0)
+        self.assertTrue(result["is_real_cash"])
+        self.assertTrue(result["is_closing_action"])
+        self.assertTrue(result["real_cash_loss_countable"])
+
 
 if __name__ == "__main__":
     unittest.main()

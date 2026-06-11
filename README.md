@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.10-manual-snapshot-form
+2026.06.11-cash-paper-split
 ```
 
 ## Render Environment
@@ -78,7 +78,7 @@ Paper option ledger tools let you study manual or hypothetical option decisions 
 
 Manual option position watch helps manage an open manual/paper option after entry. Use `watch_manual_option_position` or `/paper/options/watch` with the open entry ID or contract symbol plus current broker-visible bid/ask/mark. It returns `POSITION_HOLD_REVIEW`, `POSITION_PROFIT_WATCH`, `POSITION_PROFIT_REVIEW`, `POSITION_STOP_REVIEW`, or `POSITION_WATCH_NEEDS_LIVE_QUOTE`, prepares a `/paper/options/close` payload, and keeps all broker action outside the MCP.
 
-Session risk guard checks the journal before adding another manual idea. Use `get_session_risk_guard` or `/risk/session` with account value, proposed risk, and max open positions. It summarizes journaled open entries, current-day closed losses, closed paper/manual P/L, per-trade cap, total open-risk cap, and warning/soft/hard references. There is no hard daily trade-count cap for research, but new manual/cash escalation is blocked after 3 closed losses in the current trading day. This is journal evidence only; it does not verify broker balances or broker positions and cannot execute broker actions.
+Session risk guard checks the journal before adding another manual idea. Use `get_session_risk_guard` or `/risk/session` with account value, proposed risk, and max open positions. It summarizes paper/research activity separately from user-reported real-cash activity. Paper scans, paper entries, paper closes, and learning are uncapped because there is no broker downside. New real-cash/autonomous escalation is blocked after 3 user-reported real-cash closed losses in the current trading day. This is journal evidence only; it does not verify broker balances or broker positions and cannot execute broker actions.
 
 Tomorrow control pages are session-risk aware. The command center, launch checklist, morning autopilot, live review cycle, and heartbeat now surface session risk before manual review. If session risk is blocked, the live cycle and heartbeat do not treat ranked candidates as manual-ready, even when stock/options gates are otherwise clean.
 
@@ -134,7 +134,7 @@ These routes call the same review-only services as the MCP tools. They exist so 
 GET /safety
 GET /
 GET /release-manifest
-GET /health/full?expected_build_version=2026.06.10-manual-snapshot-form
+GET /health/full?expected_build_version=2026.06.11-cash-paper-split
 GET /scan/scalp?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&max_candidates=25
 GET /scan/market?mode=conservative_review_only&tickers=SPY,QQQ,KO,PG
 GET /ops/trading-day-launch?tickers=AMZN,SOFI,SHOP,SMCI,HOOD,TSLA&account_value=50&max_candidates=25
@@ -206,7 +206,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.10-manual-snapshot-form
+GET /debug/scan-schema?expected_build_version=2026.06.11-cash-paper-split
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -225,7 +225,7 @@ If Render is still building, run the watcher instead:
 .\tools\watch_deploy.ps1
 ```
 
-It polls `/version` every 30 seconds. When `2026.06.10-manual-snapshot-form` appears, it automatically runs `validate_live.ps1`.
+It polls `/version` every 30 seconds. When `2026.06.11-cash-paper-split` appears, it automatically runs `validate_live.ps1`.
 
 On market morning, after validation passes, run:
 
@@ -263,7 +263,7 @@ Opening `/ops/day-alerts` returns the attention queue from recent journal events
 
 Opening `/trade/manual-action` records a user-reported broker-side decision and returns a pending-buy recheck card when needed. Opening `/trade/pending-recheck` runs the review-only stale pending-buy check. Neither route can verify broker state or perform broker actions.
 
-Opening `/risk/session` returns the session risk guard: current journaled open option risk, current-day closed-loss count, closed paper/manual P/L, proposed-risk check, max-open-position check, blocking reasons, warnings, and next action links. Use it before adding another manual idea.
+Opening `/risk/session` returns the session risk guard: paper/research counts, real-cash daily closed-loss count, proposed-risk check, max real-cash position check, blocking reasons, warnings, and next action links. Use it before adding another manual idea.
 
 Opening `/paper/options/summary` shows the paper option ledger: open paper entries, recent closes, paper P/L, and learning labels. Use it to study what would have happened after a manual/paper idea without creating a broker action.
 
@@ -334,7 +334,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.10-manual-snapshot-form",
+  "build_version": "2026.06.11-cash-paper-split",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false

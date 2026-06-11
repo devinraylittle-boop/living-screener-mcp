@@ -39,16 +39,21 @@ class TradingDayLaunchTests(unittest.TestCase):
         self.assertIn("pending-buy recheck", result["next_action"].lower())
         self.assertEqual(result["latest"]["manual_broker_action"]["status"], "MANUAL_ACTION_PENDING_RECHECK_REQUIRED")
 
-    def test_launch_blocks_new_ideas_when_session_risk_is_full(self) -> None:
+    def test_launch_blocks_new_ideas_after_real_cash_loss_lockout(self) -> None:
         with TempContainer() as container:
-            for _ in range(2):
+            for index in range(3):
                 container.events.log(
-                    "manual_option_paper_entry",
+                    "manual_broker_action",
                     {
-                        "status": "PAPER_OPTION_ENTRY_OPEN",
+                        "status": "MANUAL_ACTION_LOGGED",
                         "ticker": "SOFI",
-                        "contract_symbol": "SOFI260612P00015000",
-                        "entry_debit_dollars": 8.0,
+                        "contract_symbol": f"SOFI260612P0001500{index}",
+                        "action_type": "sell_to_close",
+                        "order_status": "filled",
+                        "side": "sell",
+                        "is_real_cash": True,
+                        "is_closing_action": True,
+                        "pnl_dollars": -1.0,
                     },
                 )
             result = _get_trading_day_launch_checklist(container, ["SOFI"], account_value=50, max_candidates=25)

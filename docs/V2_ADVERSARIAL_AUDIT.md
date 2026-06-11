@@ -1,6 +1,6 @@
 # Living Screener MCP V2.0 Adversarial Audit
 
-Build reviewed: `2026.06.11-three-loss-guard`
+Build reviewed: `2026.06.11-cash-paper-split`
 
 ## 1. Executive Summary
 

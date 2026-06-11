@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.mcp_server import _build_manual_trade_desk, _build_manual_trade_preflight_ticket, _log_manual_option_paper_entry
+from app.mcp_server import _build_manual_trade_desk, _log_manual_broker_action
 from tests.helpers import TempContainer
 
 
@@ -70,7 +70,7 @@ class ManualTradeDeskTests(unittest.TestCase):
         self.assertFalse(result["order_submitted"])
         self.assertFalse(result["broker_action"])
 
-    def test_manual_trade_desk_blocks_when_session_risk_is_already_full(self) -> None:
+    def test_manual_trade_desk_blocks_after_real_cash_daily_loss_lockout(self) -> None:
         snapshot = {
             "ticker": "SOFI",
             "contract_symbol": "SOFI260612P00015000",
@@ -84,9 +84,22 @@ class ManualTradeDeskTests(unittest.TestCase):
             "strike": 15,
         }
         with TempContainer() as container:
-            ticket = _build_manual_trade_preflight_ticket(container, snapshot, account_value=50, max_contract_price=1.0)
-            _log_manual_option_paper_entry(container, ticket, fill_price=0.08, quantity=1, underlying_price=16.2)
-            _log_manual_option_paper_entry(container, ticket, fill_price=0.08, quantity=1, underlying_price=16.2)
+            for index in range(3):
+                _log_manual_broker_action(
+                    container,
+                    {
+                        "ticker": "SOFI",
+                        "contract_symbol": f"SOFI260612P0001500{index}",
+                        "action_type": "sell_to_close",
+                        "order_status": "filled",
+                        "side": "sell",
+                        "direction": "put",
+                        "fill_price": 0.04,
+                        "quantity": 1,
+                        "pnl_dollars": -1.0,
+                        "is_real_cash": True,
+                    },
+                )
             result = _build_manual_trade_desk(
                 container,
                 snapshot,
@@ -99,7 +112,7 @@ class ManualTradeDeskTests(unittest.TestCase):
         self.assertEqual(result["preflight"]["status"], "MANUAL_PREFLIGHT_READY")
         self.assertEqual(result["session_risk_guard"]["status"], "SESSION_RISK_BLOCKED")
         self.assertIsNone(result["paper_entry_request"])
-        self.assertIn("Session risk guard: Max open paper/manual option positions already reached.", result["blocking_reasons"])
+        self.assertIn("Session risk guard: Real-cash daily closed-loss lockout reached (3/3 losses).", result["blocking_reasons"])
         self.assertFalse(result["broker_action"])
 
 

@@ -5,6 +5,7 @@ import unittest
 from app.mcp_server import (
     _build_manual_trade_preflight_ticket,
     _get_session_risk_guard,
+    _log_manual_broker_action,
     _log_manual_option_paper_entry,
 )
 from tests.helpers import TempContainer
@@ -39,40 +40,60 @@ class SessionRiskGuardTests(unittest.TestCase):
         self.assertEqual(result["projected_open_risk_dollars"], 5.0)
         self.assertFalse(result["can_place_order_from_this_mcp"])
 
-    def test_blocks_when_open_positions_and_projected_risk_exceed_caps(self) -> None:
+    def test_paper_open_positions_do_not_block_research(self) -> None:
         with TempContainer() as container:
             ticket = self._ticket(container)
             _log_manual_option_paper_entry(container, ticket, fill_price=0.08, quantity=1, underlying_price=16.2)
             _log_manual_option_paper_entry(container, ticket, fill_price=0.08, quantity=1, underlying_price=16.2)
             result = _get_session_risk_guard(container, account_value=50, proposed_risk_dollars=5, max_open_positions=2)
 
-        self.assertEqual(result["status"], "SESSION_RISK_BLOCKED")
+        self.assertEqual(result["status"], "SESSION_RISK_CLEAR")
         self.assertEqual(result["open_position_count"], 2)
-        self.assertIn("Max open paper/manual option positions already reached.", result["blocking_reasons"])
+        self.assertEqual(result["paper_open_position_count"], 2)
+        self.assertEqual(result["real_cash_open_position_count"], 0)
+        self.assertEqual(result["blocking_reasons"], [])
         self.assertFalse(result["broker_action"])
 
-    def test_blocks_after_three_closed_losses_today_without_daily_trade_cap(self) -> None:
+    def test_paper_closed_losses_do_not_trigger_daily_cash_lockout(self) -> None:
         with TempContainer() as container:
-            for index in range(2):
+            for index in range(3):
                 container.events.log(
                     "manual_option_paper_close",
                     {"status": "PAPER_OPTION_CLOSED", "entry_event_id": index + 1, "pnl_dollars": -1.0},
                 )
-            two_loss_result = _get_session_risk_guard(container, account_value=50, proposed_risk_dollars=1, max_open_positions=2)
-            container.events.log(
-                "manual_option_paper_close",
-                {"status": "PAPER_OPTION_CLOSED", "entry_event_id": 3, "pnl_dollars": -1.0},
-            )
-            three_loss_result = _get_session_risk_guard(container, account_value=50, proposed_risk_dollars=1, max_open_positions=2)
+            result = _get_session_risk_guard(container, account_value=50, proposed_risk_dollars=1, max_open_positions=2)
 
-        self.assertNotEqual(two_loss_result["status"], "SESSION_RISK_BLOCKED")
-        self.assertEqual(two_loss_result["daily_loss_count"], 2)
-        self.assertEqual(three_loss_result["status"], "SESSION_RISK_BLOCKED")
-        self.assertEqual(three_loss_result["daily_loss_count"], 3)
-        self.assertEqual(three_loss_result["daily_loss_lockout_count"], 3)
-        self.assertTrue(three_loss_result["daily_loss_lockout_triggered"])
-        self.assertIn("There is no hard daily trade-count cap for review/paper research.", three_loss_result["rules"])
-        self.assertIn("Daily closed-loss lockout reached (3/3 losses).", three_loss_result["blocking_reasons"])
+        self.assertEqual(result["status"], "SESSION_RISK_CLEAR")
+        self.assertEqual(result["paper_daily_loss_count"], 3)
+        self.assertEqual(result["real_cash_daily_loss_count"], 0)
+        self.assertFalse(result["real_cash_daily_loss_lockout_triggered"])
+        self.assertIn("Paper/research scanning, paper entries, and paper closes are uncapped for learning.", result["rules"])
+
+    def test_blocks_after_three_real_cash_closed_losses_today(self) -> None:
+        with TempContainer() as container:
+            for index in range(3):
+                _log_manual_broker_action(
+                    container,
+                    {
+                        "ticker": "SOFI",
+                        "contract_symbol": f"SOFI260612P0001500{index}",
+                        "action_type": "sell_to_close",
+                        "order_status": "filled",
+                        "side": "sell",
+                        "direction": "put",
+                        "fill_price": 0.04,
+                        "quantity": 1,
+                        "pnl_dollars": -1.0,
+                        "is_real_cash": True,
+                    },
+                )
+            result = _get_session_risk_guard(container, account_value=50, proposed_risk_dollars=1, max_open_positions=2)
+
+        self.assertEqual(result["status"], "SESSION_RISK_BLOCKED")
+        self.assertEqual(result["real_cash_daily_loss_count"], 3)
+        self.assertEqual(result["real_cash_daily_loss_lockout_count"], 3)
+        self.assertTrue(result["real_cash_daily_loss_lockout_triggered"])
+        self.assertIn("Real-cash daily closed-loss lockout reached (3/3 losses).", result["blocking_reasons"])
 
 
 if __name__ == "__main__":

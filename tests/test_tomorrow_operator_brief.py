@@ -39,16 +39,21 @@ class TomorrowOperatorBriefTests(unittest.TestCase):
         self.assertEqual(result["status"], "OPERATOR_PENDING_RECHECK_REQUIRED")
         self.assertIn("pending-buy", result["next_action"].lower())
 
-    def test_operator_brief_blocks_when_session_risk_is_full(self) -> None:
+    def test_operator_brief_blocks_after_real_cash_loss_lockout(self) -> None:
         with TempContainer() as container:
-            for index in range(2):
+            for index in range(3):
                 container.events.log(
-                    "manual_option_paper_entry",
+                    "manual_broker_action",
                     {
-                        "status": "PAPER_OPTION_ENTRY_OPEN",
+                        "status": "MANUAL_ACTION_LOGGED",
                         "ticker": "SOFI",
+                        "action_type": "sell_to_close",
+                        "order_status": "filled",
+                        "side": "sell",
                         "contract_symbol": f"SOFI260612P0001500{index}",
-                        "entry_debit_dollars": 8.0,
+                        "is_real_cash": True,
+                        "is_closing_action": True,
+                        "pnl_dollars": -1.0,
                     },
                 )
             result = _get_tomorrow_operator_brief(container, ["SOFI"], 50, 25)
