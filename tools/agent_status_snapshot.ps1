@@ -1,6 +1,6 @@
-param(
+﻿param(
     [string]$BaseUrl = "https://living-screener-mcp.onrender.com",
-    [string]$ExpectedBuild = "2026.06.10-failure-mode-audit",
+    [string]$ExpectedBuild = "2026.06.10-truth-layer",
     [int]$TimeoutSeconds = 20
 )
 

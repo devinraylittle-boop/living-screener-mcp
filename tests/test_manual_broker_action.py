@@ -20,8 +20,13 @@ class ManualBrokerActionTests(unittest.TestCase):
                     "side": "buy",
                     "direction": "put",
                     "limit_price": 0.08,
+                    "reviewed_price": 0.07,
+                    "fill_price": 0.08,
                     "quantity": 1,
                     "submitted_at": "2026-06-10T14:30:00+00:00",
+                    "broker_snapshot_ts": "2026-06-10T14:29:55+00:00",
+                    "execution_ts": "2026-06-10T14:30:02+00:00",
+                    "screenshot_hash": "abc123",
                     "is_options_order": True,
                 },
             )
@@ -37,6 +42,9 @@ class ManualBrokerActionTests(unittest.TestCase):
         self.assertFalse(result["order_submitted_by_mcp"])
         self.assertFalse(result["order_canceled_by_mcp"])
         self.assertFalse(result["can_place_order_from_this_mcp"])
+        self.assertEqual(result["manual_execution_receipt_v1"]["schema_version"], "ManualExecutionReceiptV1")
+        self.assertEqual(result["execution_reconciliation"], "RECONCILIATION_NEEDS_REVIEW")
+        self.assertIn("FILL_WORSE_THAN_REVIEWED_PRICE", result["mismatch_codes"])
 
     def test_non_pending_manual_note_logs_without_recheck(self) -> None:
         with TempContainer() as container:

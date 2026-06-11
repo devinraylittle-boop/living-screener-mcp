@@ -1,4 +1,4 @@
-# Codex Handoff Prompt
+﻿# Codex Handoff Prompt
 
 Paste this into a fresh Codex session if this conversation runs out of context.
 
@@ -7,13 +7,13 @@ We are working on Living Screener MCP in:
 C:\Users\devin\OneDrive\Documents\Screener
 
 Use the latest package folder unless I specify otherwise:
-living-screener-mcp-failure-mode-audit-20260610-193000
+living-screener-mcp-truth-layer-20260610-210000
 
 The live Render app is:
 https://living-screener-mcp.onrender.com
 
 Expected build:
-2026.06.10-failure-mode-audit
+2026.06.10-truth-layer
 
 First, run:
 powershell -ExecutionPolicy Bypass -File .\tools\agent_status_snapshot.ps1
@@ -28,7 +28,7 @@ Safety is non-negotiable:
 - pending buys older than 60 seconds must be rechecked
 
 Primary objective:
-Prepare and operate a review-only stock/options screener for tomorrow’s market session. Accuracy is priority one, profit is priority two. The system should scan, review, validate, log, paper-track, classify outcomes, and improve by evidence. It must not execute broker actions.
+Prepare and operate a review-only stock/options screener for tomorrowâ€™s market session. Accuracy is priority one, profit is priority two. The system should scan, review, validate, log, paper-track, classify outcomes, and improve by evidence. It must not execute broker actions.
 
 Most recent improvement:
 Added failure-mode audit build with:

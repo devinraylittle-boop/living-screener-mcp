@@ -1,7 +1,7 @@
 {
   "service": "Living Screener MCP",
-  "release_folder": "living-screener-mcp-failure-mode-audit-20260610-193000",
-  "target_build_version": "2026.06.10-failure-mode-audit",
+  "release_folder": "living-screener-mcp-truth-layer-20260610-210000",
+  "target_build_version": "2026.06.10-truth-layer",
   "expected_live_tool_count": 67,
   "safety_invariants": {
     "review_only": true,
@@ -36,7 +36,7 @@
   "live_validation_endpoints": [
     "/version",
     "/tools",
-    "/health/full?expected_build_version=2026.06.10-failure-mode-audit",
+    "/health/full?expected_build_version=2026.06.10-truth-layer",
     "/",
     "/ops/go-live-rehearsal?account_value=50&format=html",
     "/trade/manual-form?format=html",
