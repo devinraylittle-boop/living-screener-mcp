@@ -1,8 +1,8 @@
 {
   "service": "Living Screener MCP",
-  "release_folder": "living-screener-mcp-market-truth-20260610-231500",
-  "target_build_version": "2026.06.10-market-truth",
-  "expected_live_tool_count": 71,
+  "release_folder": "living-screener-mcp-autonomous-morning-20260610-235500",
+  "target_build_version": "2026.06.10-autonomous-morning",
+  "expected_live_tool_count": 72,
   "safety_invariants": {
     "review_only": true,
     "place_orders": false,
@@ -36,7 +36,8 @@
   "live_validation_endpoints": [
     "/version",
     "/tools",
-    "/health/full?expected_build_version=2026.06.10-market-truth",
+    "/health/full?expected_build_version=2026.06.10-autonomous-morning",
+    "/ops/autonomous-morning-scan?format=html",
     "/truth/source-status",
     "/market/data-health",
     "/research/catalyst-context?ticker=SOFI",

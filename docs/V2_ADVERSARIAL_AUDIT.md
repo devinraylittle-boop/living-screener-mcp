@@ -1,6 +1,6 @@
 ﻿# Living Screener MCP V2.0 Adversarial Audit
 
-Build reviewed: `2026.06.10-market-truth`
+Build reviewed: `2026.06.10-autonomous-morning`
 
 ## 1. Executive Summary
 
@@ -304,4 +304,5 @@ Evidence required before real-money manual use:
 - Broker snapshot or automated options truth available.
 - No release mismatch.
 - No safety regression.
+
 

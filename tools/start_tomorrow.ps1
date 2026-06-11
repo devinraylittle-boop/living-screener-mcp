@@ -1,6 +1,6 @@
 ﻿param(
     [string]$BaseUrl = "https://living-screener-mcp.onrender.com",
-    [string]$ExpectedBuild = "2026.06.10-market-truth",
+    [string]$ExpectedBuild = "2026.06.10-autonomous-morning",
     [int]$AccountValue = 50,
     [string]$Tickers = "AMZN,SOFI,SHOP,XOM,LULU,AAPL,QQQ,IWM,MSFT,NVDA,AMD,META,AVGO,SMCI,RBLX,CVX,LLY,UNH,HOOD,TSLA"
 )
@@ -20,6 +20,7 @@ $encodedTickers = [System.Uri]::EscapeDataString($Tickers)
 $urls = @(
     "$BaseUrl/",
     "$BaseUrl/ops/go-live-rehearsal?account_value=$AccountValue&format=html",
+    "$BaseUrl/ops/autonomous-morning-scan?tickers=$encodedTickers&account_value=$AccountValue&max_candidates=25&review_top_n=8&max_contract_price=1.00&format=html",
     "$BaseUrl/ops/day-monitor?tickers=$encodedTickers&account_value=$AccountValue&max_candidates=25&review_top_n=8&max_contract_price=1.00&format=html",
     "$BaseUrl/ops/day-alerts?limit=50&format=html",
     "$BaseUrl/trade/manual-form?format=html",
@@ -37,4 +38,5 @@ $urls | ForEach-Object {
 
 Write-Host ""
 Write-Host "START_TOMORROW_READY"
+
 

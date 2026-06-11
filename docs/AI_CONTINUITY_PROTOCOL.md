@@ -17,7 +17,7 @@ Purpose: make every future Codex or ChatGPT session able to resume the Living Sc
 ## Current Live Target
 
 - Render URL: `https://living-screener-mcp.onrender.com`
-- Expected build: `2026.06.10-market-truth`
+- Expected build: `2026.06.10-autonomous-morning`
 - Expected tool count: 67
 - Required pass signal: `LIVE_VALIDATION_PASS`
 - Tomorrow start signal: `START_TOMORROW_READY`
@@ -43,7 +43,7 @@ Ask ChatGPT to do this before analysis:
 
 1. Confirm the connected Living Screener MCP app is callable.
 2. Call `get_version`.
-3. Confirm build is `2026.06.10-market-truth`.
+3. Confirm build is `2026.06.10-autonomous-morning`.
 4. Call `get_safety_config`.
 5. Confirm review-only and no place/cancel capability.
 6. Only then run scans or reviews.
@@ -51,9 +51,9 @@ Ask ChatGPT to do this before analysis:
 If the connector is not exposed, use public fallback endpoints:
 
 - `/version`
-- `/health/full?expected_build_version=2026.06.10-market-truth`
+- `/health/full?expected_build_version=2026.06.10-autonomous-morning`
 - `/debug/tool-manifest`
-- `/debug/scan-schema?expected_build_version=2026.06.10-market-truth`
+- `/debug/scan-schema?expected_build_version=2026.06.10-autonomous-morning`
 - `/risk/failure-mode-audit`
 
 If endpoint access fails from ChatGPT runtime, report exactly:
@@ -89,5 +89,6 @@ Highest priority:
 4. Add morning broker-balance/open-position confirmation to the launch checklist.
 
 Do not prioritize flashy new indicators before these controls. Accuracy improves through replayable evidence.
+
 
 
