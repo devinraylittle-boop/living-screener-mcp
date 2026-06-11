@@ -56,6 +56,19 @@ class Settings:
         "LMT", "NOC", "AVAV", "GSAT", "IRDM", "VSAT", "ARKX", "ITA", "UFO", "QQQ",
         "SPY", "IWM",
     )
+    broad_opportunity_watchlist: tuple[str, ...] = (
+        "SPY", "QQQ", "IWM", "DIA", "AAPL", "MSFT", "NVDA", "AMD", "TSLA", "AMZN",
+        "META", "GOOGL", "NFLX", "AVGO", "SMCI", "PLTR", "COIN", "HOOD", "SOFI",
+        "RBLX", "UBER", "SHOP", "JPM", "BAC", "XOM", "CVX", "LLY", "UNH", "LULU",
+        "PG", "KO", "WMT", "COST", "CRM", "ORCL", "ADBE", "INTC", "QCOM", "MU",
+        "MRVL", "CRWD", "PANW", "SNOW", "NOW", "MSTR", "MARA", "RIOT", "RIVN",
+        "LCID", "NIO", "BABA", "PDD", "TMDX", "CELH", "DKNG", "UPST", "AFRM",
+        "RKLB", "LUNR", "ASTS", "PL", "SPCE", "GSAT", "IRDM", "VSAT",
+    )
+    microcap_research_watchlist: tuple[str, ...] = (
+        "SOUN", "BBAI", "IONQ", "QBTS", "RGTI", "ACHR", "JOBY", "OPEN", "DNA", "MVIS",
+    )
+    crypto_research_symbols: tuple[str, ...] = ("BTC-USD", "ETH-USD", "SOL-USD", "DOGE-USD")
     event_direct_symbol: str = "SPCX"
     event_theme: str = "spacex_ipo"
     max_scan_universe: int = 75
@@ -121,6 +134,27 @@ def get_settings() -> Settings:
         ).split(",")
         if item.strip()
     )
+    broad_watchlist = tuple(
+        item.strip().upper()
+        for item in os.getenv(
+            "BROAD_OPPORTUNITY_WATCHLIST",
+            "SPY,QQQ,IWM,DIA,AAPL,MSFT,NVDA,AMD,TSLA,AMZN,META,GOOGL,NFLX,AVGO,SMCI,PLTR,COIN,HOOD,SOFI,RBLX,UBER,SHOP,JPM,BAC,XOM,CVX,LLY,UNH,LULU,PG,KO,WMT,COST,CRM,ORCL,ADBE,INTC,QCOM,MU,MRVL,CRWD,PANW,SNOW,NOW,MSTR,MARA,RIOT,RIVN,LCID,NIO,BABA,PDD,TMDX,CELH,DKNG,UPST,AFRM,RKLB,LUNR,ASTS,PL,SPCE,GSAT,IRDM,VSAT",
+        ).split(",")
+        if item.strip()
+    )
+    microcap_watchlist = tuple(
+        item.strip().upper()
+        for item in os.getenv(
+            "MICROCAP_RESEARCH_WATCHLIST",
+            "SOUN,BBAI,IONQ,QBTS,RGTI,ACHR,JOBY,OPEN,DNA,MVIS",
+        ).split(",")
+        if item.strip()
+    )
+    crypto_symbols = tuple(
+        item.strip().upper()
+        for item in os.getenv("CRYPTO_RESEARCH_SYMBOLS", "BTC-USD,ETH-USD,SOL-USD,DOGE-USD").split(",")
+        if item.strip()
+    )
     settings = Settings(
         environment=os.getenv("SCREENER_ENV", "local"),
         hosted_mode=_bool("HOSTED_MODE", False),
@@ -143,6 +177,9 @@ def get_settings() -> Settings:
         default_watchlist=watchlist,
         scalp_watchlist=scalp_watchlist,
         event_volatility_watchlist=event_watchlist,
+        broad_opportunity_watchlist=broad_watchlist,
+        microcap_research_watchlist=microcap_watchlist,
+        crypto_research_symbols=crypto_symbols,
         event_direct_symbol=os.getenv("EVENT_DIRECT_SYMBOL", "SPCX").strip().upper(),
         event_theme=os.getenv("EVENT_THEME", "spacex_ipo").strip().lower(),
         max_scan_universe=_int("MAX_SCAN_UNIVERSE", 75),

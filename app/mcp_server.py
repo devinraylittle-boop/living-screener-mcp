@@ -96,6 +96,11 @@ def get_event_volatility_playbook(event_name: str = "spacex_ipo", account_value:
 
 
 @mcp.tool
+def get_event_radar() -> dict:
+    return _get_event_radar(container)
+
+
+@mcp.tool
 def run_event_volatility_scan(
     event_name: str = "spacex_ipo",
     tickers: list[str] | None = None,
@@ -105,6 +110,18 @@ def run_event_volatility_scan(
     max_contract_price: float | None = None,
 ) -> dict:
     return _run_event_volatility_scan(container, event_name, tickers, max_candidates, account_value, review_top_n, max_contract_price)
+
+
+@mcp.tool
+def run_broad_opportunity_scan(
+    tickers: list[str] | None = None,
+    max_candidates: int = 25,
+    account_value: float = 50.0,
+    review_top_n: int = 10,
+    max_contract_price: float | None = None,
+    include_event_context: bool = True,
+) -> dict:
+    return _run_broad_opportunity_scan(container, tickers, max_candidates, account_value, review_top_n, max_contract_price, include_event_context)
 
 
 @mcp.tool
@@ -478,6 +495,106 @@ def _event_volatility_universe(service_container, tickers: list[str] | None) -> 
     return universe
 
 
+def _broad_opportunity_universe(service_container, tickers: list[str] | None, include_event_context: bool = True) -> list[str]:
+    settings = service_container.settings
+    configured: list[str] = []
+    configured.extend(list(getattr(settings, "broad_opportunity_watchlist", ())))
+    configured.extend(list(getattr(settings, "scalp_watchlist", ())))
+    if include_event_context:
+        configured.extend(list(getattr(settings, "event_volatility_watchlist", ())))
+    if tickers:
+        configured.extend([str(ticker).upper().strip() for ticker in tickers])
+    seen: set[str] = set()
+    universe: list[str] = []
+    max_universe = max(10, int(getattr(settings, "max_scan_universe", 75) or 75))
+    for ticker in configured:
+        symbol = str(ticker or "").upper().strip()
+        if not symbol or symbol in seen or "-" in symbol:
+            continue
+        seen.add(symbol)
+        universe.append(symbol)
+        if len(universe) >= max_universe:
+            break
+    return universe
+
+
+def _get_event_radar(service_container) -> dict:
+    settings = service_container.settings
+    event_watchlist = list(getattr(settings, "event_volatility_watchlist", ()))
+    broad_watchlist = list(getattr(settings, "broad_opportunity_watchlist", ()))
+    payload = {
+        "status": "EVENT_RADAR_READY",
+        "build_version": BUILD_VERSION,
+        "generated_at": utc_now(),
+        "mission": "Keep catalysts on radar without letting any single story create tunnel vision.",
+        "active_events": [
+            {
+                "event_id": "spacex_ipo_2026_06_12",
+                "label": "SpaceX IPO / SPCX expected listing",
+                "expected_date": "2026-06-12",
+                "confidence": "operator_research_pending_final_exchange_verification",
+                "direct_symbol": settings.event_direct_symbol,
+                "event_type": "ipo",
+                "primary_risk": "Fresh IPO volatility, uncertain opening mechanics, and likely no direct listed options at launch.",
+                "watchlist": event_watchlist,
+                "playbook_link": "/ops/event-volatility-playbook?event_name=spacex_ipo&format=html",
+                "scan_link": "/ops/event-volatility-scan?event_name=spacex_ipo&format=html",
+                "rule": "Use as context, not as a mandate. Broad market scan remains required.",
+            }
+        ],
+        "radar_lanes": [
+            {
+                "lane": "scheduled_events",
+                "examples": ["IPOs", "earnings", "Fed/CPI/PPI/jobs", "major product launches", "regulatory rulings"],
+                "current_status": "Manual/operator-fed until a trusted news/calendar feed is configured.",
+            },
+            {
+                "lane": "live_market_discovery",
+                "examples": ["relative volume spikes", "VWAP breaks", "sector sympathy", "index volatility"],
+                "current_status": "Handled by run_broad_opportunity_scan and normal scalp scans.",
+            },
+            {
+                "lane": "microcap_research",
+                "examples": list(getattr(settings, "microcap_research_watchlist", ())),
+                "current_status": "Paper/research only by default; do not mix into real-cash options ranking.",
+            },
+            {
+                "lane": "crypto_research",
+                "examples": list(getattr(settings, "crypto_research_symbols", ())),
+                "current_status": "Separate paper/backtest lane; do not blend with equity/options scoring.",
+            },
+        ],
+        "anti_tunnel_vision_rules": [
+            "Run broad opportunity scan even when an event is active.",
+            "Do not allocate every review slot to event-related names.",
+            "Prefer an unrelated clean setup over an event-adjacent messy setup.",
+            "Report event-related and non-event candidate counts separately.",
+            "Treat event watchlists as context, not prediction.",
+        ],
+        "broad_market_universe_preview": broad_watchlist[:75],
+        "links": {
+            "broad_opportunity_scan": "/ops/broad-opportunity-scan?format=html",
+            "event_playbook": "/ops/event-volatility-playbook?format=html",
+            "event_scan": "/ops/event-volatility-scan?format=html",
+            "crypto_rules": "/crypto/rules",
+            "crypto_backtest": "/crypto/backtest",
+        },
+        "safety": {
+            "review_only": True,
+            "place_orders": False,
+            "market_orders_allowed": False,
+            "paper_research_uncapped": True,
+            "real_cash_daily_closed_loss_lockout_count": settings.max_daily_real_cash_closed_losses,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        },
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+    return service_container.events.log("event_radar", payload)
+
+
 def _get_event_volatility_playbook(service_container, event_name: str, account_value: float) -> dict:
     settings = service_container.settings
     event_key = (event_name or settings.event_theme or "event_volatility").strip().lower()
@@ -716,6 +833,242 @@ def _run_event_volatility_scan(
         ],
     }
     return service_container.events.log("event_volatility_scan", payload)
+
+
+def _run_broad_opportunity_scan(
+    service_container,
+    tickers: list[str] | None,
+    max_candidates: int,
+    account_value: float,
+    review_top_n: int,
+    max_contract_price: float | None,
+    include_event_context: bool,
+) -> dict:
+    max_candidates = max(1, min(int(max_candidates or 25), 50))
+    review_top_n = max(1, min(int(review_top_n or 10), 25))
+    universe = _broad_opportunity_universe(service_container, tickers, include_event_context)
+    event_universe = set(_event_volatility_universe(service_container, None))
+    microcap_universe = set(getattr(service_container.settings, "microcap_research_watchlist", ()))
+    crypto_symbols = list(getattr(service_container.settings, "crypto_research_symbols", ()))
+    effective_contract_cap = max_contract_price
+    if effective_contract_cap is None:
+        effective_contract_cap = service_container.settings.scalp_max_contract_price
+
+    scan = service_container.scanner.run_market_scan("scalp_review", universe, max_candidates)
+    stock_candidates = [
+        row
+        for row in (scan.get("top_candidates") or [])
+        if row.get("status") == "CANDIDATE"
+        and (row.get("quality_gates") or {}).get("stock_setup_quality") == "VALID_CANDIDATE"
+        and str(row.get("direction") or "").lower() in {"long", "short"}
+    ]
+    reviews: dict[str, dict[str, Any]] = {}
+    reviewable = [
+        row
+        for row in stock_candidates
+        if str(row.get("ticker") or "").upper() not in microcap_universe
+    ]
+    for candidate in reviewable[:review_top_n]:
+        ticker = str(candidate.get("ticker") or "").upper()
+        direction = str(candidate.get("direction") or "").lower()
+        option_direction = "call" if direction == "long" else "put"
+        reviews[ticker] = _review_candidate_for_options(
+            service_container,
+            ticker,
+            option_direction,
+            "scalp_review",
+            effective_contract_cap,
+        )
+
+    lane_decisions = [
+        _broad_lane_decision(row, reviews.get(str(row.get("ticker") or "").upper()), event_universe, microcap_universe)
+        for row in stock_candidates
+    ]
+    ranked_options = [
+        decision
+        for decision in lane_decisions
+        if decision.get("lane") == "BROAD_OPTIONS_REVIEW_READY"
+    ]
+    ranked_options.sort(
+        key=lambda item: (
+            _float_or_zero(item.get("priority_score")),
+            _float_or_zero(item.get("friction_adjusted_score")),
+            -_float_or_zero(item.get("max_loss_dollars")),
+        ),
+        reverse=True,
+    )
+    stock_fallbacks = [
+        decision
+        for decision in lane_decisions
+        if decision.get("lane") in {"STOCK_REVIEW_FALLBACK", "EVENT_STOCK_REVIEW", "INDEX_STOCK_REVIEW"}
+    ]
+    microcap_research = [
+        decision
+        for decision in lane_decisions
+        if decision.get("lane") == "MICROCAP_PAPER_RESEARCH"
+    ]
+    non_event_candidates = [decision for decision in lane_decisions if not decision.get("event_related")]
+    event_candidates = [decision for decision in lane_decisions if decision.get("event_related")]
+    status = "BROAD_OPTIONS_READY" if ranked_options else "BROAD_STOCK_REVIEW_ONLY" if stock_fallbacks or microcap_research else "BROAD_NO_TRADE_PLAN"
+    next_action = (
+        "Review ranked broad-market options, then require manual broker snapshot/preflight for any real money."
+        if ranked_options
+        else "Keep observing broad stock lanes; do not force options when the contract gate is weak or unavailable."
+        if stock_fallbacks or microcap_research
+        else "No broad-market candidate cleared the stock setup gate. Keep scanning and harvesting."
+    )
+    payload = {
+        "status": status,
+        "build_version": BUILD_VERSION,
+        "mode": "broad_opportunity_scan",
+        "generated_at": utc_now(),
+        "universe": universe,
+        "universe_count": len(universe),
+        "account_value_reference": _float_or_zero(account_value) or 50.0,
+        "max_candidates": max_candidates,
+        "review_top_n": review_top_n,
+        "max_contract_price_used": effective_contract_cap,
+        "include_event_context": bool(include_event_context),
+        "scan_summary": _scan_summary(scan),
+        "stock_candidate_count": len(stock_candidates),
+        "options_review_count": len(reviews),
+        "event_candidate_count": len(event_candidates),
+        "non_event_candidate_count": len(non_event_candidates),
+        "ranked_options_candidates": ranked_options,
+        "stock_review_candidates": stock_fallbacks,
+        "microcap_paper_research": microcap_research,
+        "watch_only_or_rejected": [
+            decision
+            for decision in lane_decisions
+            if decision not in ranked_options and decision not in stock_fallbacks and decision not in microcap_research
+        ],
+        "crypto_research_lane": {
+            "status": "SEPARATE_PAPER_RESEARCH",
+            "symbols": crypto_symbols,
+            "reason": "Crypto trades 24/7 and has different spreads, volatility, catalysts, and risk mechanics. Keep it out of equity/options scoring.",
+            "links": {
+                "rules": "/crypto/rules",
+                "backtest": "/crypto/backtest",
+                "global_research": "/research/global-scan?market=crypto",
+            },
+        },
+        "anti_tunnel_vision": {
+            "event_related_candidates": [item.get("ticker") for item in event_candidates],
+            "non_event_candidates": [item.get("ticker") for item in non_event_candidates],
+            "rule": "Do not prefer event-adjacent names over cleaner non-event setups.",
+        },
+        "real_cash_test_guard": {
+            "starting_cash_reference": _float_or_zero(account_value) or 50.0,
+            "daily_closed_loss_lockout_count": service_container.settings.max_daily_real_cash_closed_losses,
+            "market_close_stop": True,
+            "microcap_real_cash_default": "DISABLED_UNTIL_PAPER_PROVEN",
+            "crypto_real_cash_default": "SEPARATE_PAPER_LANE_UNTIL_RULES_PROVEN",
+            "no_market_orders": True,
+            "manual_approval_required": True,
+        },
+        "next_action": next_action,
+        "links": {
+            "event_radar": "/ops/event-radar?format=html",
+            "broad_scan_refresh": f"/ops/broad-opportunity-scan?tickers={','.join(universe)}&max_candidates={max_candidates}&account_value={_float_or_zero(account_value) or 50.0}&review_top_n={review_top_n}&max_contract_price={effective_contract_cap}&include_event_context=true&format=html",
+            "live_review_cycle": f"/ops/live-review-cycle?tickers={','.join(universe)}&account_value={_float_or_zero(account_value) or 50.0}&max_candidates={max_candidates}&review_top_n={review_top_n}&max_contract_price={effective_contract_cap}&format=html",
+            "manual_preflight": "/review/manual-preflight?format=html",
+            "paper_summary": "/paper/options/summary?format=html",
+        },
+        "safety": {
+            "review_only": True,
+            "place_orders": False,
+            "market_orders_allowed": False,
+            "manual_approval_required": True,
+            "paper_research_uncapped": True,
+            "real_cash_daily_closed_loss_lockout_count": service_container.settings.max_daily_real_cash_closed_losses,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        },
+        "raw_reviews": list(reviews.values()),
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_allowed": False,
+        "notes": [
+            "Broad scan is the default opportunity engine. Event radar adds context but cannot narrow the machine by itself.",
+            "Microcap and crypto lanes are separated to prevent contaminated learning.",
+            "This MCP cannot place, simulate, modify, or cancel broker orders.",
+        ],
+    }
+    return service_container.events.log("broad_opportunity_scan", payload)
+
+
+def _broad_lane_decision(
+    stock_row: dict[str, Any],
+    review: dict[str, Any] | None,
+    event_universe: set[str],
+    microcap_universe: set[str],
+) -> dict[str, Any]:
+    ticker = str(stock_row.get("ticker") or "").upper()
+    direction = str(stock_row.get("direction") or "").lower()
+    signals = stock_row.get("key_signals") or {}
+    vwap_state = "above" if signals.get("above_vwap") else "below" if signals.get("below_vwap") else "unknown"
+    base = {
+        "ticker": ticker,
+        "stock_direction": direction,
+        "stock_score": stock_row.get("score"),
+        "relative_volume": signals.get("relative_volume"),
+        "vwap_state": vwap_state,
+        "stock_setup_quality": (stock_row.get("quality_gates") or {}).get("stock_setup_quality"),
+        "stock_status": stock_row.get("status"),
+        "event_related": ticker in event_universe,
+        "why_not_ranked": [],
+        "review_only": True,
+        "order_allowed": False,
+    }
+    if ticker in microcap_universe:
+        return {
+            **base,
+            "lane": "MICROCAP_PAPER_RESEARCH",
+            "rankable_as_options": False,
+            "real_cash_enabled": False,
+            "why_not_ranked": ["Microcap symbols are paper/research only until slippage, spread, halt risk, and repeatability are proven."],
+        }
+    if not review:
+        lane = "EVENT_STOCK_REVIEW" if ticker in event_universe else "INDEX_STOCK_REVIEW" if ticker in {"SPY", "QQQ", "IWM"} else "STOCK_REVIEW_FALLBACK"
+        return {
+            **base,
+            "lane": lane,
+            "rankable_as_options": False,
+            "why_not_ranked": ["Stock setup passed, but no rankable options review is available in this pass."],
+        }
+    small = review.get("small_account_review") or {}
+    selected = small.get("selected_contract") or {}
+    option_ready = review.get("status") == "REVIEW_ONLY_OPTIONS_READY" and small.get("status") == "SMALL_ACCOUNT_SCALP_ACCEPTABLE"
+    if option_ready:
+        return {
+            **base,
+            "lane": "BROAD_OPTIONS_REVIEW_READY",
+            "rankable_as_options": True,
+            "option_direction": "call" if direction == "long" else "put",
+            "priority_score": small.get("priority_score"),
+            "friction_adjusted_score": small.get("friction_adjusted_score"),
+            "friction_band": small.get("friction_band"),
+            "selected_contract": selected.get("contract_symbol"),
+            "ask": selected.get("ask"),
+            "max_loss_dollars": selected.get("max_loss_dollars"),
+            "spread_pct": selected.get("spread_pct"),
+            "dte": selected.get("days_to_expiration"),
+            "warnings": review.get("warnings") or small.get("warnings") or [],
+        }
+    return {
+        **base,
+        "lane": "STOCK_REVIEW_FALLBACK",
+        "rankable_as_options": False,
+        "option_status": review.get("status"),
+        "small_account_status": small.get("status"),
+        "selected_contract": selected.get("contract_symbol") if selected else None,
+        "why_not_ranked": [
+            "Stock setup passed, but options candidate did not clear both OPTIONS_CHAIN_ACCEPTABLE and SMALL_ACCOUNT_SCALP_ACCEPTABLE.",
+            review.get("reason") or "Options review did not return a rankable small-account contract.",
+        ],
+        "warnings": review.get("warnings") or small.get("warnings") or [],
+    }
 
 
 def _event_lane_decision(stock_row: dict[str, Any], review: dict[str, Any] | None, direct_symbol: str) -> dict[str, Any]:

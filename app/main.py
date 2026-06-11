@@ -15,8 +15,10 @@ from app.fallback_endpoints import (
     fallback_day_monitor,
     fallback_autonomous_morning_scan,
     fallback_evidence_summary,
+    fallback_event_radar,
     fallback_event_volatility_playbook,
     fallback_event_volatility_scan,
+    fallback_broad_opportunity_scan,
     fallback_explain_premove_score,
     fallback_feature_registry,
     fallback_global_research_scan,
@@ -90,8 +92,10 @@ def create_app():
     app.add_route("/market/data-health", fallback_market_data_health, methods=["GET"])
     app.add_route("/ops/review-harvest", fallback_review_harvest, methods=["GET"])
     app.add_route("/ops/session-playbook", fallback_session_playbook, methods=["GET"])
+    app.add_route("/ops/event-radar", fallback_event_radar, methods=["GET"])
     app.add_route("/ops/event-volatility-playbook", fallback_event_volatility_playbook, methods=["GET"])
     app.add_route("/ops/event-volatility-scan", fallback_event_volatility_scan, methods=["GET"])
+    app.add_route("/ops/broad-opportunity-scan", fallback_broad_opportunity_scan, methods=["GET"])
     app.add_route("/ops/harvest-followup", fallback_harvest_followup, methods=["GET"])
     app.add_route("/ops/command-center", fallback_command_center, methods=["GET"])
     app.add_route("/ops/trading-day-launch", fallback_trading_day_launch, methods=["GET"])

@@ -1,1 +1,1 @@
-BUILD_VERSION = "2026.06.11-event-volatility"
+BUILD_VERSION = "2026.06.11-event-radar-broad-scan"
