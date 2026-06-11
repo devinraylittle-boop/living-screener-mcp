@@ -103,7 +103,7 @@ def _release_manifest_payload() -> dict[str, Any]:
         "manifest_loaded": False,
     }
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
     except (OSError, json.JSONDecodeError):
         manifest = fallback
     return _review_only_envelope({"status": "RELEASE_MANIFEST_READY", "manifest": manifest})
@@ -2033,7 +2033,11 @@ def _session_risk_guard_html(payload: dict[str, Any]) -> HTMLResponse:
     ("Per-Trade Cap", result.get("per_trade_cap_dollars")),
     ("Open Risk", result.get("open_risk_dollars")),
     ("Projected Open Risk", result.get("projected_open_risk_dollars")),
-    ("Closed P/L", result.get("closed_pnl_dollars")),
+    ("Today", result.get("trading_day")),
+    ("Daily Closed P/L", result.get("daily_closed_pnl_dollars")),
+    ("Daily Losses", f"{result.get('daily_loss_count')} / {result.get('daily_loss_lockout_count')}"),
+    ("Daily Closed Trades", result.get("daily_closed_trade_count")),
+    ("All Journal Closed P/L", result.get("closed_pnl_dollars")),
     ("Open Positions", f"{result.get('open_position_count')} / {result.get('max_open_positions')}"),
     ("Next Action", result.get("next_action")),
     ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),

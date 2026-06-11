@@ -1,1 +1,1 @@
-BUILD_VERSION = "2026.06.10-autonomous-morning"
+BUILD_VERSION = "2026.06.11-three-loss-guard"

@@ -2564,6 +2564,9 @@ def _get_session_risk_guard(service_container, account_value: float = 50.0, prop
     account_value = _float_or_zero(account_value) or 50.0
     max_open_positions = max(1, min(int(max_open_positions or 2), 5))
     proposed_risk = _float_or_zero(proposed_risk_dollars)
+    trading_day_timezone = "America/Chicago"
+    today = datetime.now(UTC).astimezone(ZoneInfo(trading_day_timezone)).date().isoformat()
+    max_daily_closed_losses = max(1, int(getattr(service_container.settings, "max_daily_closed_losses", 3) or 3))
     entries = [
         event
         for event in service_container.events.recent("manual_option_paper_entry", 500)
@@ -2576,6 +2579,12 @@ def _get_session_risk_guard(service_container, account_value: float = 50.0, prop
     ]
     closed_entry_ids = {(event.get("payload") or {}).get("entry_event_id") for event in closes}
     open_entries = [event for event in entries if event.get("id") not in closed_entry_ids]
+    todays_closes = [event for event in closes if _event_local_date(event, trading_day_timezone) == today]
+    daily_pnls = [_float_or_zero((event.get("payload") or {}).get("pnl_dollars")) for event in todays_closes]
+    daily_closed_pnl = round(sum(daily_pnls), 2)
+    daily_loss_count = sum(1 for pnl in daily_pnls if pnl < 0)
+    daily_win_count = sum(1 for pnl in daily_pnls if pnl > 0)
+    daily_flat_count = sum(1 for pnl in daily_pnls if pnl == 0)
     open_risk = round(sum(_float_or_zero((event.get("payload") or {}).get("entry_debit_dollars")) for event in open_entries), 2)
     closed_pnl = round(sum(_float_or_zero((event.get("payload") or {}).get("pnl_dollars")) for event in closes), 2)
     per_trade_cap = round(account_value * service_container.settings.max_trade_risk_pct, 2)
@@ -2595,12 +2604,14 @@ def _get_session_risk_guard(service_container, account_value: float = 50.0, prop
         blocking_reasons.append("Projected open option risk exceeds session open-risk cap.")
     if open_risk >= total_open_cap:
         blocking_reasons.append("Current open option risk is already at or above session cap.")
-    if closed_pnl <= -hard_lockout:
-        blocking_reasons.append("Closed paper/manual P/L reached hard lockout reference.")
-    elif closed_pnl <= -soft_stop:
-        warnings.append("Closed paper/manual P/L is beyond soft-stop reference.")
-    elif closed_pnl <= -warn_drawdown:
-        warnings.append("Closed paper/manual P/L is beyond warning reference.")
+    if daily_loss_count >= max_daily_closed_losses:
+        blocking_reasons.append(f"Daily closed-loss lockout reached ({daily_loss_count}/{max_daily_closed_losses} losses).")
+    if daily_closed_pnl <= -hard_lockout:
+        blocking_reasons.append("Daily closed paper/manual P/L reached hard lockout reference.")
+    elif daily_closed_pnl <= -soft_stop:
+        warnings.append("Daily closed paper/manual P/L is beyond soft-stop reference.")
+    elif daily_closed_pnl <= -warn_drawdown:
+        warnings.append("Daily closed paper/manual P/L is beyond warning reference.")
     if open_risk >= account_value * service_container.settings.soft_stop_daily_drawdown_pct and open_risk < total_open_cap:
         warnings.append("Current open option risk is elevated for the account reference.")
 
@@ -2639,12 +2650,21 @@ def _get_session_risk_guard(service_container, account_value: float = 50.0, prop
         "warning_drawdown_dollars": warn_drawdown,
         "soft_stop_dollars": soft_stop,
         "hard_lockout_dollars": hard_lockout,
+        "trading_day": today,
+        "trading_day_timezone": trading_day_timezone,
         "open_position_count": len(open_entries),
         "max_open_positions": max_open_positions,
         "open_risk_dollars": open_risk,
         "projected_open_risk_dollars": projected_open_risk,
         "closed_pnl_dollars": closed_pnl,
         "closed_trade_count": len(closes),
+        "daily_closed_pnl_dollars": daily_closed_pnl,
+        "daily_closed_trade_count": len(todays_closes),
+        "daily_loss_count": daily_loss_count,
+        "daily_win_count": daily_win_count,
+        "daily_flat_count": daily_flat_count,
+        "daily_loss_lockout_count": max_daily_closed_losses,
+        "daily_loss_lockout_triggered": daily_loss_count >= max_daily_closed_losses,
         "blocking_reasons": blocking_reasons,
         "warnings": warnings,
         "open_entries": open_summaries,
@@ -2658,7 +2678,9 @@ def _get_session_risk_guard(service_container, account_value: float = 50.0, prop
         },
         "rules": [
             "This guard uses MCP journal evidence only; it does not know actual broker balances or positions.",
-            "Do not add exposure if pending-buy recheck, hard lockout, max open positions, or projected open-risk cap is triggered.",
+            "There is no hard daily trade-count cap for review/paper research.",
+            f"Block new manual/cash escalation after {max_daily_closed_losses} closed losses in the current trading day.",
+            "Do not add exposure if pending-buy recheck, daily loss lockout, hard lockout, max open positions, or projected open-risk cap is triggered.",
             "Live review cycle and manual trade desk are still required before any broker-side manual action.",
             "No market orders.",
         ],
@@ -3437,6 +3459,19 @@ def _float_or_none_value(value: Any) -> float | None:
         return float(value)
     except Exception:
         return None
+
+
+def _event_local_date(event: dict[str, Any], timezone_name: str) -> str | None:
+    timestamp = _parse_manual_action_time(event.get("timestamp"))
+    if timestamp is None:
+        payload = event.get("payload") or {}
+        timestamp = _parse_manual_action_time(payload.get("exit_timestamp") or payload.get("entry_timestamp") or payload.get("timestamp"))
+    if timestamp is None:
+        return None
+    try:
+        return timestamp.astimezone(ZoneInfo(timezone_name)).date().isoformat()
+    except Exception:
+        return timestamp.astimezone(UTC).date().isoformat()
 
 
 def _parse_manual_action_time(value: Any) -> datetime | None:
