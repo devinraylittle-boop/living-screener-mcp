@@ -1,1 +1,1 @@
-BUILD_VERSION = "2026.06.10-manual-snapshot-form"
+BUILD_VERSION = "2026.06.10-failure-mode-audit"

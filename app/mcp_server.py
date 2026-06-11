@@ -23,7 +23,7 @@ mcp = FastMCP(
     instructions=(
         "Use this server for market scans, signal scoring, trade planning, risk checks, journaling, "
         "postmortems, backtests, and prompt/rule evolution. This server cannot place brokerage orders, "
-        "does not store Robinhood credentials, and does not call Robinhood APIs. For options review, use "
+        "does not store broker credentials, and does not call broker APIs. For options review, use "
         "review_candidate_for_options so stock setup quality and options-chain quality are checked together. "
         "For pending buys, use review_pending_buy_order after 60 seconds before treating the order as still valid. "
         "For crypto paper testing, call run_backtest with engine crypto-paper-overnight; this routes to paper-only "
@@ -233,6 +233,11 @@ def watch_manual_option_position(
 @mcp.tool
 def get_session_risk_guard(account_value: float = 50.0, proposed_risk_dollars: float | None = None, max_open_positions: int = 2) -> dict:
     return _get_session_risk_guard(container, account_value, proposed_risk_dollars, max_open_positions)
+
+
+@mcp.tool
+def get_failure_mode_audit() -> dict:
+    return _get_failure_mode_audit(container)
 
 
 @mcp.tool
@@ -2415,6 +2420,126 @@ def _get_session_risk_guard(service_container, account_value: float = 50.0, prop
     return service_container.events.log("session_risk_guard", payload)
 
 
+def _get_failure_mode_audit(service_container) -> dict:
+    tool_names = [getattr(tool, "name", str(tool)) for tool in service_container.mcp._tool_manager._tools.values()] if hasattr(service_container, "mcp") else []
+    controls = [
+        {
+            "area": "Broker execution containment",
+            "status": "HARD_BLOCKED",
+            "covered_by": ["review_only", "place_orders=false", "can_place_order_from_this_mcp=false", "can_cancel_order_from_this_mcp=false"],
+            "evidence": "This service does not store broker credentials and exposes no broker execution path.",
+            "remaining_gap": "Manual broker actions still depend on the operator following the desk ticket.",
+            "next_hardening": "Keep all broker actions outside this MCP until paper/manual logs prove repeatability.",
+        },
+        {
+            "area": "Market data freshness and corruption",
+            "status": "PARTIAL_CONTROL",
+            "covered_by": ["quote/candle freshness gates", "stale quote rejection", "market_readiness_check", "evidence_packet provider lineage"],
+            "evidence": "Scan rows expose provider lineage, freshness flags, data confidence, and quote/candle rejection reasons.",
+            "remaining_gap": "No paid OPRA feed or independent real-time options quote source is connected.",
+            "next_hardening": "Add cross-source quote divergence checks and explicit broker-visible snapshot comparison before any manual action.",
+        },
+        {
+            "area": "Backtest leakage and overfitting",
+            "status": "WATCHLIST_CONTROL",
+            "covered_by": ["backtest endpoint", "learning proposals are manual only", "no auto-applied rule changes"],
+            "evidence": "Rule proposals are research memory only and must be manually reviewed/backtested before gate changes.",
+            "remaining_gap": "No formal purged walk-forward or deflated-Sharpe/PBO report yet.",
+            "next_hardening": "Add a research-trial ledger and walk-forward validation report before loosening live gates.",
+        },
+        {
+            "area": "Train-serve skew",
+            "status": "PARTIAL_CONTROL",
+            "covered_by": ["scan_schema", "evidence_scorecard", "setup_fingerprint", "health/full schema versions"],
+            "evidence": "Debug schema exposes expected candidate fields and health reports schema versions.",
+            "remaining_gap": "Feature definitions are still service-code based rather than one declarative registry used by both research and live scoring.",
+            "next_hardening": "Promote scoring fields into a versioned feature contract and fail closed when critical fields are missing.",
+        },
+        {
+            "area": "Slippage, spread, and liquidity illusion",
+            "status": "ACTIVE_CONTROL",
+            "covered_by": ["friction_adjusted_review", "small_account_review", "manual snapshot form", "limit-only rule"],
+            "evidence": "Options review scores spread, volume, open interest, max loss, and small-account suitability.",
+            "remaining_gap": "Actual fill quality is not automatically reconciled against broker fills.",
+            "next_hardening": "Log intended limit, broker-visible bid/ask, actual fill, and outcome to build a slippage ledger.",
+        },
+        {
+            "area": "Order-state divergence and stale pending buys",
+            "status": "MANUAL_CONTROL",
+            "covered_by": ["review_pending_buy_order", "pending_buy_recheck_seconds=60", "manual broker action journal"],
+            "evidence": "Pending buys older than 60 seconds require reconsideration before trust.",
+            "remaining_gap": "The MCP cannot directly reconcile live options orders from a brokerage account.",
+            "next_hardening": "Require operator-entered pending-order snapshots for any visible pending buy older than 60 seconds.",
+        },
+        {
+            "area": "Session risk and concentration",
+            "status": "ACTIVE_CONTROL",
+            "covered_by": ["get_session_risk_guard", "paper option ledger", "max open positions", "per-trade risk cap"],
+            "evidence": "Session guard blocks additional ideas when local open paper/manual risk breaches thresholds.",
+            "remaining_gap": "Broker account balance and open positions are not independently verified inside this MCP.",
+            "next_hardening": "Add a manual broker-balance confirmation field to the morning launch checklist.",
+        },
+        {
+            "area": "Learning drift and false confidence",
+            "status": "ACTIVE_CONTROL",
+            "covered_by": ["check_review_outcome", "classify_review_outcome", "summarize_learning", "generate_learning_rule_proposals"],
+            "evidence": "Outcomes and false positives are logged, summarized, and kept separate from live gate changes.",
+            "remaining_gap": "No formal calibration curve by confidence bucket yet.",
+            "next_hardening": "Track win/loss and MFE/MAE by confidence band, setup fingerprint, ticker, DTE, and spread bucket.",
+        },
+        {
+            "area": "Observability and replay",
+            "status": "ACTIVE_CONTROL",
+            "covered_by": ["journal checkpoint", "release manifest", "health/full", "evidence packets", "paper ledger"],
+            "evidence": "Build, tool count, schema versions, safety, evidence, and local journal state can be replayed.",
+            "remaining_gap": "No immutable external log store; Render local storage may not be durable across rebuilds.",
+            "next_hardening": "Export checkpoints after each session and before/after any package upload.",
+        },
+    ]
+    blocked_until = [
+        "Do not enable broker execution from this MCP.",
+        "Do not loosen score or option gates from a single trade or a single day.",
+        "Do not trust stock setup alone without small-account options validation.",
+        "Do not trust options-chain quality alone without a valid directional stock setup.",
+        "Do not treat a stale pending buy as valid after 60 seconds without recheck.",
+        "Do not use market orders.",
+    ]
+    highest_priority_next = [
+        "Add broker-visible snapshot/fill/slippage comparison to every manual action journal entry.",
+        "Add confidence-bucket outcome reporting to learning dashboard.",
+        "Add a walk-forward validation report before changing tomorrow's live thresholds.",
+        "Add morning broker-balance/open-position confirmation to launch checklist.",
+    ]
+    payload = {
+        "status": "FAILURE_MODE_AUDIT_READY",
+        "build_version": BUILD_VERSION,
+        "generated_at": utc_now(),
+        "source": "agentic_trading_failure_modes_research",
+        "tool_count_observed": len(tool_names),
+        "control_summary": {
+            "hard_blocked": sum(1 for item in controls if item["status"] == "HARD_BLOCKED"),
+            "active_control": sum(1 for item in controls if item["status"] == "ACTIVE_CONTROL"),
+            "partial_control": sum(1 for item in controls if item["status"] == "PARTIAL_CONTROL"),
+            "manual_control": sum(1 for item in controls if item["status"] == "MANUAL_CONTROL"),
+            "watchlist_control": sum(1 for item in controls if item["status"] == "WATCHLIST_CONTROL"),
+        },
+        "controls": controls,
+        "blocked_until": blocked_until,
+        "highest_priority_next": highest_priority_next,
+        "operator_read": "The system is safest where it is bounded and replayable. Accuracy improves by logging every review, failed setup, manual broker snapshot, fill, and outcome before changing rules.",
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_allowed": False,
+        "notes": [
+            "This audit does not run a scan and does not create a trade plan.",
+            "It maps known trading-bot failure modes to current controls and gaps.",
+            "Rule changes from this audit still require tests, backtests, and manual approval.",
+        ],
+    }
+    return service_container.events.log("failure_mode_audit", payload)
+
+
 def _summarize_manual_option_paper_trades(service_container, limit: int = 100) -> dict:
     limit = max(1, min(int(limit or 100), 500))
     entries = [
@@ -3501,7 +3626,7 @@ def get_crypto_paper_rules() -> dict:
         "review_only": True,
         "can_place_order_from_this_mcp": False,
         "can_cancel_order_from_this_mcp": False,
-        "notes": "Crypto paper tools simulate and log only. They do not call Robinhood and cannot place broker orders.",
+        "notes": "Crypto paper tools simulate and log only. They do not call a broker and cannot place broker orders.",
     }
 
 

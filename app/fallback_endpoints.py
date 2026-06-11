@@ -17,6 +17,7 @@ from app.mcp_server import (
     _get_ops_command_center,
     _get_market_session_playbook,
     _get_session_risk_guard,
+    _get_failure_mode_audit,
     _get_tomorrow_operator_brief,
     _get_trading_day_launch_checklist,
     _log_manual_option_paper_entry,
@@ -446,6 +447,54 @@ def _learning_dashboard_html(payload: dict[str, Any]) -> HTMLResponse:
 </table>
 """
     return _html_page("Learning Dashboard", body, payload)
+
+
+def _failure_mode_audit_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    controls = result.get("controls") or []
+    rows = []
+    for item in controls:
+        covered_by = "; ".join(str(value) for value in item.get("covered_by", []))
+        rows.append(
+            "<tr>"
+            f"<td>{escape(str(item.get('area') or ''))}</td>"
+            f"<td><span class=\"badge {_status_class(item.get('status'))}\">{escape(str(item.get('status') or ''))}</span></td>"
+            f"<td>{escape(covered_by)}</td>"
+            f"<td>{escape(str(item.get('remaining_gap') or ''))}</td>"
+            f"<td>{escape(str(item.get('next_hardening') or ''))}</td>"
+            "</tr>"
+        )
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Failure-Mode Audit</h1>
+    <p>Maps known trading-system failure modes to current controls, gaps, and the next hardening step.</p>
+  </div>
+  <div><span class="badge ok">REVIEW ONLY</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Source", result.get("source")),
+    ("Tool Count Observed", result.get("tool_count_observed")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+    ("Can Cancel Orders", payload.get("can_cancel_order_from_this_mcp")),
+])}
+<h2>Control Summary</h2>
+{_field_grid([(str(key).replace('_', ' ').title(), value) for key, value in (result.get("control_summary") or {}).items()])}
+<h2>Controls And Gaps</h2>
+<table>
+  <thead>
+    <tr><th>Area</th><th>Status</th><th>Covered By</th><th>Remaining Gap</th><th>Next Hardening</th></tr>
+  </thead>
+  <tbody>{''.join(rows) if rows else '<tr><td colspan="5">No controls returned.</td></tr>'}</tbody>
+</table>
+<h2>Blocked Until Proven</h2>
+{_list(result.get("blocked_until") or [])}
+<h2>Highest Priority Next</h2>
+{_list(result.get("highest_priority_next") or [])}
+"""
+    return _html_page("Failure-Mode Audit", body, payload)
 
 
 def _global_scan_html(payload: dict[str, Any]) -> HTMLResponse:
@@ -2598,6 +2647,14 @@ async def fallback_session_risk_guard(request: Request) -> JSONResponse | HTMLRe
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _session_risk_guard_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_failure_mode_audit(request: Request) -> JSONResponse | HTMLResponse:
+    result = _get_failure_mode_audit(container)
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _failure_mode_audit_html(payload)
     return JSONResponse(payload)
 
 

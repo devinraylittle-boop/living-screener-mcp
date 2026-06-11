@@ -23,6 +23,7 @@ from app.fallback_endpoints import (
     fallback_learning_classify,
     fallback_learning_dashboard,
     fallback_learning_proposals,
+    fallback_failure_mode_audit,
     fallback_setup_memory,
     fallback_live_review_cycle,
     fallback_log_review_decision,
@@ -99,6 +100,7 @@ def create_app():
     app.add_route("/trade/manual-action", fallback_manual_broker_action, methods=["GET", "POST"])
     app.add_route("/trade/pending-recheck", fallback_pending_recheck, methods=["GET", "POST"])
     app.add_route("/risk/session", fallback_session_risk_guard, methods=["GET"])
+    app.add_route("/risk/failure-mode-audit", fallback_failure_mode_audit, methods=["GET"])
     app.add_route("/review/broker-option-snapshot", fallback_validate_broker_snapshot, methods=["POST"])
     app.add_route("/paper/options/entry", fallback_paper_option_entry, methods=["POST"])
     app.add_route("/paper/options/close", fallback_paper_option_close, methods=["POST"])

@@ -47,6 +47,7 @@ class DebugValidationService:
                 "day_monitor": "day_monitor_v1",
                 "trading_day_alerts": "trading_day_alerts_v1",
                 "session_risk_guard": "session_risk_guard_v1",
+                "failure_mode_audit": "failure_mode_audit_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -70,6 +71,7 @@ class DebugValidationService:
                 "/trade/manual-action",
                 "/trade/pending-recheck",
                 "/risk/session",
+                "/risk/failure-mode-audit",
             ],
             "readiness": {
                 "version_endpoint": True,
@@ -105,6 +107,7 @@ class DebugValidationService:
                 "manual_broker_action_route": True,
                 "pending_recheck_route": True,
                 "session_risk_guard_route": True,
+                "failure_mode_audit_route": True,
             },
             "safety": self._safety(),
         }
@@ -944,6 +947,7 @@ class DebugValidationService:
             "watch_manual_option_position",
             "summarize_manual_option_paper_trades",
             "get_session_risk_guard",
+            "get_failure_mode_audit",
             "export_journal_checkpoint",
             "restore_journal_checkpoint",
             "get_trading_monster_blueprint",
@@ -968,7 +972,7 @@ class DebugValidationService:
             return "market_review"
         if "option" in name:
             return "options_review"
-        if "risk" in name or "safety" in name or "status" in name:
+        if "risk" in name or "safety" in name or "status" in name or "failure_mode" in name:
             return "safety"
         if "learning" in name or "outcome" in name or "postmortem" in name:
             return "learning"
@@ -1011,6 +1015,8 @@ class DebugValidationService:
             return "Paper/manual ledger for tracking hypothetical option entries and exits; no broker contact."
         if "journal" in name or "checkpoint" in name:
             return "Read-only journal checkpoint/export for preserving local review and learning evidence."
+        if "failure_mode" in name:
+            return "Read-only control audit mapping known trading-bot failure modes to current safeguards and gaps."
         if "scan" in name:
             return "Review-only scan; no execution path."
         return "Review-only tool."
