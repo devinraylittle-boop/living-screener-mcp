@@ -6134,6 +6134,86 @@ def run_crypto_paper_backtest(symbols: list[str] | None = None, period: str = "1
 
 
 @mcp.tool
+def get_crypto_live_test_gate(
+    symbols: list[str] | None = None,
+    starting_cash: float = 5.0,
+    intended_cash: float = 5.0,
+    account_balance: float | None = None,
+    buying_power: float | None = None,
+    exchange_connected: bool = False,
+    open_positions_checked: bool = False,
+    open_position_count: int | None = None,
+    open_orders_checked: bool = False,
+    open_order_count: int | None = None,
+    market_data_fresh: bool = False,
+    order_book_fresh: bool = False,
+    kill_switch_ready: bool = False,
+    emergency_shutdown_ready: bool = False,
+    daily_loss_lockout_clear: bool = False,
+    journaling_ready: bool = True,
+    fee_bps: float | None = None,
+    slippage_pct: float | None = None,
+    min_order_size: float | None = None,
+    candidate_snapshots: dict[str, dict[str, Any]] | None = None,
+    max_spread_pct: float = 0.0015,
+    max_fee_impact_pct: float = 0.0015,
+    max_slippage_pct: float = 0.0015,
+    min_24h_volume: float = 100_000_000.0,
+    period: str = "1d",
+    interval: str = "5m",
+) -> dict:
+    return container.crypto_paper.live_test_gate(
+        symbols=symbols,
+        starting_cash=starting_cash,
+        intended_cash=intended_cash,
+        account_balance=account_balance,
+        buying_power=buying_power,
+        exchange_connected=exchange_connected,
+        open_positions_checked=open_positions_checked,
+        open_position_count=open_position_count,
+        open_orders_checked=open_orders_checked,
+        open_order_count=open_order_count,
+        market_data_fresh=market_data_fresh,
+        order_book_fresh=order_book_fresh,
+        kill_switch_ready=kill_switch_ready,
+        emergency_shutdown_ready=emergency_shutdown_ready,
+        daily_loss_lockout_clear=daily_loss_lockout_clear,
+        journaling_ready=journaling_ready,
+        fee_bps=fee_bps,
+        slippage_pct=slippage_pct,
+        min_order_size=min_order_size,
+        candidate_snapshots=candidate_snapshots,
+        max_spread_pct=max_spread_pct,
+        max_fee_impact_pct=max_fee_impact_pct,
+        max_slippage_pct=max_slippage_pct,
+        min_24h_volume=min_24h_volume,
+        period=period,
+        interval=interval,
+    )
+
+
+@mcp.tool
+def summarize_crypto_live_test_report(
+    starting_balance: float = 5.0,
+    ending_balance: float | None = None,
+    fees_paid: float = 0.0,
+    estimated_slippage: float = 0.0,
+    live_trades: list[dict[str, Any]] | None = None,
+    rejected_candidates: list[dict[str, Any]] | None = None,
+    limit_events: int = 100,
+) -> dict:
+    return container.crypto_paper.summarize_live_test_report(
+        starting_balance=starting_balance,
+        ending_balance=ending_balance,
+        fees_paid=fees_paid,
+        estimated_slippage=estimated_slippage,
+        live_trades=live_trades,
+        rejected_candidates=rejected_candidates,
+        limit_events=limit_events,
+    )
+
+
+@mcp.tool
 def get_offhours_research_plan() -> dict:
     return container.global_research.offhours_plan()
 

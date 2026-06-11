@@ -6,7 +6,9 @@ from app.fallback_endpoints import (
     fallback_check_review_outcome,
     fallback_command_center,
     fallback_crypto_backtest,
+    fallback_crypto_live_test_gate,
     fallback_crypto_rules,
+    fallback_crypto_test_report,
     fallback_build_evidence_packet,
     fallback_build_evidence_packets_from_scan,
     fallback_debug_scan_schema,
@@ -166,6 +168,8 @@ def create_app():
     app.add_route("/debug/scan-schema", fallback_debug_scan_schema, methods=["GET"])
     app.add_route("/crypto/rules", fallback_crypto_rules, methods=["GET"])
     app.add_route("/crypto/backtest", fallback_crypto_backtest, methods=["GET"])
+    app.add_route("/crypto/live-test", fallback_crypto_live_test_gate, methods=["GET"])
+    app.add_route("/crypto/test-report", fallback_crypto_test_report, methods=["GET"])
     app.add_middleware(BearerAuthMiddleware, settings=settings)
     return app
 

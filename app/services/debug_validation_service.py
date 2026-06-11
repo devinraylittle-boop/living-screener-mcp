@@ -64,6 +64,8 @@ class DebugValidationService:
                 "autonomous_launch_decision": "autonomous_launch_decision_v1",
                 "real_cash_proof_gate": "real_cash_proof_gate_v1",
                 "broker_proof_bridge": "broker_proof_bridge_v1",
+                "crypto_live_test_gate": "crypto_live_test_gate_v1",
+                "crypto_live_test_report": "crypto_live_test_report_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -104,6 +106,8 @@ class DebugValidationService:
                 "/research/catalyst-context",
                 "/risk/session",
                 "/risk/failure-mode-audit",
+                "/crypto/live-test",
+                "/crypto/test-report",
             ],
             "readiness": {
                 "version_endpoint": True,
@@ -156,6 +160,8 @@ class DebugValidationService:
                 "catalyst_context_route": True,
                 "session_risk_guard_route": True,
                 "failure_mode_audit_route": True,
+                "crypto_live_test_gate_route": True,
+                "crypto_live_test_report_route": True,
             },
             "safety": self._safety(),
             "options_data_status": self.container.options.options_data_status(),
@@ -1145,11 +1151,15 @@ class DebugValidationService:
             "summarize_evidence_packets",
             "build_setup_fingerprint",
             "compare_setup_memory",
+            "get_crypto_live_test_gate",
+            "summarize_crypto_live_test_report",
         ]
         available = set(tools)
         return {name: name in available for name in required}
 
     def _category(self, name: str) -> str:
+        if "crypto" in name:
+            return "crypto_validation"
         if "truth" in name or "health" in name or "catalyst" in name:
             return "truth_validation"
         if "harvest" in name or "readiness" in name or "observer" in name or "playbook" in name or "command_center" in name or "launch" in name or "brief" in name or "rehearsal" in name or "heartbeat" in name or "autopilot" in name or "autonomous" in name or "cycle" in name or "preflight" in name or "desk" in name or "manual_broker" in name or "paper" in name or "journal" in name or "checkpoint" in name:
@@ -1189,6 +1199,8 @@ class DebugValidationService:
             return "Review-only morning readiness summary; checks data readiness, ledger state, and next safe action."
         if "autonomous" in name:
             return "Review-only phase-aware scan loop; observes, logs, and returns the next refresh interval without broker action."
+        if "crypto" in name:
+            return "Crypto validation/scanning/reporting tool; cannot place exchange orders."
         if "cycle" in name:
             return "Review-only live market cycle; runs readiness and harvest gates without broker action."
         if "followup" in name and "observer" in name:
