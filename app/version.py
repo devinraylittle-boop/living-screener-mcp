@@ -1,1 +1,1 @@
-BUILD_VERSION = "2026.06.11-three-loss-guard"
+BUILD_VERSION = "2026.06.11-cash-paper-split"

@@ -40,6 +40,7 @@ class Settings:
     soft_stop_daily_drawdown_pct: float = 0.20
     hard_lockout_daily_drawdown_pct: float = 0.30
     max_daily_closed_losses: int = 3
+    max_daily_real_cash_closed_losses: int = 3
     require_broker_review: bool = True
     pending_buy_recheck_seconds: int = 60
     max_pending_order_price_drift_pct: float = 0.003
@@ -120,6 +121,7 @@ def get_settings() -> Settings:
         soft_stop_daily_drawdown_pct=_float("SOFT_STOP_DAILY_DRAWDOWN_PCT", 0.20),
         hard_lockout_daily_drawdown_pct=_float("HARD_LOCKOUT_DAILY_DRAWDOWN_PCT", 0.30),
         max_daily_closed_losses=_int("MAX_DAILY_CLOSED_LOSSES", 3),
+        max_daily_real_cash_closed_losses=_int("MAX_DAILY_REAL_CASH_CLOSED_LOSSES", _int("MAX_DAILY_CLOSED_LOSSES", 3)),
         require_broker_review=_bool("REQUIRE_BROKER_REVIEW", True),
         pending_buy_recheck_seconds=_int("PENDING_BUY_RECHECK_SECONDS", 60),
         max_pending_order_price_drift_pct=_float("MAX_PENDING_ORDER_PRICE_DRIFT_PCT", 0.003),

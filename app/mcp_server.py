@@ -2192,9 +2192,12 @@ def _log_manual_broker_action(service_container, action: dict[str, Any]) -> dict
     limit_price = _float_or_none_value(action.get("limit_price", action.get("price")))
     fill_price = _float_or_none_value(action.get("fill_price", action.get("execution_price")))
     reviewed_price = _float_or_none_value(action.get("reviewed_price", action.get("reviewed_ask")))
+    pnl_dollars = _float_or_none_value(action.get("pnl_dollars", action.get("realized_pnl_dollars")))
     broker_snapshot_ts = _parse_manual_action_time(action.get("broker_snapshot_ts") or action.get("snapshot_ts"))
     execution_ts = _parse_manual_action_time(action.get("execution_ts") or action.get("filled_at") or action.get("submitted_at") or action.get("timestamp"))
     is_options_order = bool(action.get("is_options_order")) or bool(contract_symbol)
+    is_real_cash = _boolish(action.get("is_real_cash", action.get("real_cash", True)))
+    is_closing_action = _manual_action_is_close(action_type, order_status, side)
     submitted_dt = _parse_manual_action_time(action.get("submitted_at") or action.get("timestamp")) or datetime.now(UTC)
     submitted_at = submitted_dt.isoformat()
     pending_buy = _manual_action_is_pending_buy(action_type, order_status, side)
@@ -2221,10 +2224,14 @@ def _log_manual_broker_action(service_container, action: dict[str, Any]) -> dict
         "limit_price": limit_price,
         "fill_price": fill_price,
         "reviewed_price": reviewed_price,
+        "pnl_dollars": pnl_dollars,
         "submitted_at": submitted_at,
         "broker_snapshot_ts": broker_snapshot_ts.isoformat() if broker_snapshot_ts else None,
         "execution_ts": execution_ts.isoformat() if execution_ts else None,
         "is_options_order": is_options_order,
+        "is_real_cash": is_real_cash,
+        "is_closing_action": is_closing_action,
+        "real_cash_loss_countable": bool(is_real_cash and is_closing_action and pnl_dollars is not None and pnl_dollars < 0),
         "manual_execution_receipt_v1": execution_receipt,
         "execution_reconciliation": execution_receipt.get("reconciliation_status"),
         "mismatch_codes": execution_receipt.get("mismatch_codes"),
@@ -2566,7 +2573,7 @@ def _get_session_risk_guard(service_container, account_value: float = 50.0, prop
     proposed_risk = _float_or_zero(proposed_risk_dollars)
     trading_day_timezone = "America/Chicago"
     today = datetime.now(UTC).astimezone(ZoneInfo(trading_day_timezone)).date().isoformat()
-    max_daily_closed_losses = max(1, int(getattr(service_container.settings, "max_daily_closed_losses", 3) or 3))
+    max_daily_real_cash_closed_losses = max(1, int(getattr(service_container.settings, "max_daily_real_cash_closed_losses", 3) or 3))
     entries = [
         event
         for event in service_container.events.recent("manual_option_paper_entry", 500)
@@ -2577,6 +2584,10 @@ def _get_session_risk_guard(service_container, account_value: float = 50.0, prop
         for event in service_container.events.recent("manual_option_paper_close", 500)
         if (event.get("payload") or {}).get("status") == "PAPER_OPTION_CLOSED"
     ]
+    cash_actions = service_container.events.recent("manual_broker_action", 500)
+    real_cash_closes = [event for event in cash_actions if _manual_broker_event_is_real_cash_close(event)]
+    todays_real_cash_closes = [event for event in real_cash_closes if _event_local_date(event, trading_day_timezone) == today]
+    real_cash_entries = [event for event in cash_actions if _manual_broker_event_is_real_cash_entry(event)]
     closed_entry_ids = {(event.get("payload") or {}).get("entry_event_id") for event in closes}
     open_entries = [event for event in entries if event.get("id") not in closed_entry_ids]
     todays_closes = [event for event in closes if _event_local_date(event, trading_day_timezone) == today]
@@ -2585,6 +2596,12 @@ def _get_session_risk_guard(service_container, account_value: float = 50.0, prop
     daily_loss_count = sum(1 for pnl in daily_pnls if pnl < 0)
     daily_win_count = sum(1 for pnl in daily_pnls if pnl > 0)
     daily_flat_count = sum(1 for pnl in daily_pnls if pnl == 0)
+    real_cash_daily_pnls = [_float_or_zero((event.get("payload") or {}).get("pnl_dollars")) for event in todays_real_cash_closes]
+    real_cash_daily_closed_pnl = round(sum(real_cash_daily_pnls), 2)
+    real_cash_daily_loss_count = sum(1 for pnl in real_cash_daily_pnls if pnl < 0)
+    real_cash_daily_win_count = sum(1 for pnl in real_cash_daily_pnls if pnl > 0)
+    real_cash_daily_flat_count = sum(1 for pnl in real_cash_daily_pnls if pnl == 0)
+    real_cash_open_position_count = max(0, len(real_cash_entries) - len(real_cash_closes))
     open_risk = round(sum(_float_or_zero((event.get("payload") or {}).get("entry_debit_dollars")) for event in open_entries), 2)
     closed_pnl = round(sum(_float_or_zero((event.get("payload") or {}).get("pnl_dollars")) for event in closes), 2)
     per_trade_cap = round(account_value * service_container.settings.max_trade_risk_pct, 2)
@@ -2598,22 +2615,16 @@ def _get_session_risk_guard(service_container, account_value: float = 50.0, prop
 
     if proposed_risk > 0 and proposed_risk > per_trade_cap:
         blocking_reasons.append("Proposed risk exceeds per-trade journal risk cap.")
-    if len(open_entries) >= max_open_positions:
-        blocking_reasons.append("Max open paper/manual option positions already reached.")
-    if proposed_risk > 0 and projected_open_risk > total_open_cap:
-        blocking_reasons.append("Projected open option risk exceeds session open-risk cap.")
-    if open_risk >= total_open_cap:
-        blocking_reasons.append("Current open option risk is already at or above session cap.")
-    if daily_loss_count >= max_daily_closed_losses:
-        blocking_reasons.append(f"Daily closed-loss lockout reached ({daily_loss_count}/{max_daily_closed_losses} losses).")
-    if daily_closed_pnl <= -hard_lockout:
-        blocking_reasons.append("Daily closed paper/manual P/L reached hard lockout reference.")
-    elif daily_closed_pnl <= -soft_stop:
-        warnings.append("Daily closed paper/manual P/L is beyond soft-stop reference.")
-    elif daily_closed_pnl <= -warn_drawdown:
-        warnings.append("Daily closed paper/manual P/L is beyond warning reference.")
-    if open_risk >= account_value * service_container.settings.soft_stop_daily_drawdown_pct and open_risk < total_open_cap:
-        warnings.append("Current open option risk is elevated for the account reference.")
+    if real_cash_open_position_count >= max_open_positions:
+        blocking_reasons.append("Max user-reported real-cash option positions already reached.")
+    if real_cash_daily_loss_count >= max_daily_real_cash_closed_losses:
+        blocking_reasons.append(f"Real-cash daily closed-loss lockout reached ({real_cash_daily_loss_count}/{max_daily_real_cash_closed_losses} losses).")
+    if real_cash_daily_closed_pnl <= -hard_lockout:
+        blocking_reasons.append("Real-cash daily closed P/L reached hard lockout reference.")
+    elif real_cash_daily_closed_pnl <= -soft_stop:
+        warnings.append("Real-cash daily closed P/L is beyond soft-stop reference.")
+    elif real_cash_daily_closed_pnl <= -warn_drawdown:
+        warnings.append("Real-cash daily closed P/L is beyond warning reference.")
 
     if blocking_reasons:
         status = "SESSION_RISK_BLOCKED"
@@ -2653,18 +2664,33 @@ def _get_session_risk_guard(service_container, account_value: float = 50.0, prop
         "trading_day": today,
         "trading_day_timezone": trading_day_timezone,
         "open_position_count": len(open_entries),
+        "paper_open_position_count": len(open_entries),
+        "real_cash_open_position_count": real_cash_open_position_count,
         "max_open_positions": max_open_positions,
         "open_risk_dollars": open_risk,
+        "paper_open_risk_dollars": open_risk,
         "projected_open_risk_dollars": projected_open_risk,
         "closed_pnl_dollars": closed_pnl,
         "closed_trade_count": len(closes),
+        "paper_daily_closed_pnl_dollars": daily_closed_pnl,
+        "paper_daily_closed_trade_count": len(todays_closes),
+        "paper_daily_loss_count": daily_loss_count,
+        "paper_daily_win_count": daily_win_count,
+        "paper_daily_flat_count": daily_flat_count,
         "daily_closed_pnl_dollars": daily_closed_pnl,
         "daily_closed_trade_count": len(todays_closes),
         "daily_loss_count": daily_loss_count,
         "daily_win_count": daily_win_count,
         "daily_flat_count": daily_flat_count,
-        "daily_loss_lockout_count": max_daily_closed_losses,
-        "daily_loss_lockout_triggered": daily_loss_count >= max_daily_closed_losses,
+        "daily_loss_lockout_count": None,
+        "daily_loss_lockout_triggered": False,
+        "real_cash_daily_closed_pnl_dollars": real_cash_daily_closed_pnl,
+        "real_cash_daily_closed_trade_count": len(todays_real_cash_closes),
+        "real_cash_daily_loss_count": real_cash_daily_loss_count,
+        "real_cash_daily_win_count": real_cash_daily_win_count,
+        "real_cash_daily_flat_count": real_cash_daily_flat_count,
+        "real_cash_daily_loss_lockout_count": max_daily_real_cash_closed_losses,
+        "real_cash_daily_loss_lockout_triggered": real_cash_daily_loss_count >= max_daily_real_cash_closed_losses,
         "blocking_reasons": blocking_reasons,
         "warnings": warnings,
         "open_entries": open_summaries,
@@ -2678,9 +2704,9 @@ def _get_session_risk_guard(service_container, account_value: float = 50.0, prop
         },
         "rules": [
             "This guard uses MCP journal evidence only; it does not know actual broker balances or positions.",
-            "There is no hard daily trade-count cap for review/paper research.",
-            f"Block new manual/cash escalation after {max_daily_closed_losses} closed losses in the current trading day.",
-            "Do not add exposure if pending-buy recheck, daily loss lockout, hard lockout, max open positions, or projected open-risk cap is triggered.",
+            "Paper/research scanning, paper entries, and paper closes are uncapped for learning.",
+            f"Block real-cash/autonomous escalation after {max_daily_real_cash_closed_losses} user-reported real-cash closed losses in the current trading day.",
+            "Do not add real-cash exposure if pending-buy recheck, real-cash daily loss lockout, real-cash hard lockout, or max user-reported real-cash positions is triggered.",
             "Live review cycle and manual trade desk are still required before any broker-side manual action.",
             "No market orders.",
         ],
@@ -3459,6 +3485,56 @@ def _float_or_none_value(value: Any) -> float | None:
         return float(value)
     except Exception:
         return None
+
+
+def _boolish(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    return str(value).strip().lower() in {"1", "true", "yes", "on", "y"}
+
+
+def _manual_action_is_close(action_type: str, order_status: str, side: str) -> bool:
+    action = str(action_type or "").lower()
+    status = str(order_status or "").lower()
+    normalized_side = str(side or "").lower()
+    close_markers = {"close", "closed", "exit", "sell_to_close", "stc", "filled_close", "manual_close"}
+    if action in close_markers or normalized_side in {"sell", "sell_to_close", "stc", "close"}:
+        return True
+    return "close" in action or (status in {"filled", "executed", "complete", "completed"} and normalized_side.startswith("sell"))
+
+
+def _manual_action_is_entry(action_type: str, order_status: str, side: str) -> bool:
+    action = str(action_type or "").lower()
+    status = str(order_status or "").lower()
+    normalized_side = str(side or "").lower()
+    entry_markers = {"buy", "open", "entry", "buy_to_open", "bto", "filled_entry", "manual_entry"}
+    if action in entry_markers or normalized_side in {"buy", "buy_to_open", "bto", "open"}:
+        return True
+    return "open" in action or "entry" in action or (status in {"filled", "executed", "complete", "completed"} and normalized_side.startswith("buy"))
+
+
+def _manual_broker_event_is_real_cash_close(event: dict[str, Any]) -> bool:
+    payload = event.get("payload") or {}
+    pnl = _float_or_none_value(payload.get("pnl_dollars"))
+    return bool(payload.get("is_real_cash", True)) and bool(payload.get("is_closing_action")) and pnl is not None
+
+
+def _manual_broker_event_is_real_cash_entry(event: dict[str, Any]) -> bool:
+    payload = event.get("payload") or {}
+    if not bool(payload.get("is_real_cash", True)):
+        return False
+    if payload.get("is_closing_action"):
+        return False
+    if payload.get("pending_buy"):
+        return False
+    action_type = str(payload.get("action_type") or "")
+    order_status = str(payload.get("order_status") or "")
+    side = str(payload.get("side") or "")
+    if order_status not in {"filled", "executed", "complete", "completed", "open", "entry", "manual_entry"}:
+        return False
+    return _manual_action_is_entry(action_type, order_status, side)
 
 
 def _event_local_date(event: dict[str, Any], timezone_name: str) -> str | None:

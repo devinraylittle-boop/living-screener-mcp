@@ -2031,14 +2031,14 @@ def _session_risk_guard_html(payload: dict[str, Any]) -> HTMLResponse:
     ("Status", result.get("status")),
     ("Account Ref.", result.get("account_value_reference")),
     ("Per-Trade Cap", result.get("per_trade_cap_dollars")),
-    ("Open Risk", result.get("open_risk_dollars")),
-    ("Projected Open Risk", result.get("projected_open_risk_dollars")),
     ("Today", result.get("trading_day")),
-    ("Daily Closed P/L", result.get("daily_closed_pnl_dollars")),
-    ("Daily Losses", f"{result.get('daily_loss_count')} / {result.get('daily_loss_lockout_count')}"),
-    ("Daily Closed Trades", result.get("daily_closed_trade_count")),
-    ("All Journal Closed P/L", result.get("closed_pnl_dollars")),
-    ("Open Positions", f"{result.get('open_position_count')} / {result.get('max_open_positions')}"),
+    ("Paper Daily Losses", result.get("paper_daily_loss_count")),
+    ("Paper Daily Closed Trades", result.get("paper_daily_closed_trade_count")),
+    ("Paper Daily Closed P/L", result.get("paper_daily_closed_pnl_dollars")),
+    ("Real-Cash Daily Losses", f"{result.get('real_cash_daily_loss_count')} / {result.get('real_cash_daily_loss_lockout_count')}"),
+    ("Real-Cash Daily Closed P/L", result.get("real_cash_daily_closed_pnl_dollars")),
+    ("Real-Cash Open Positions", f"{result.get('real_cash_open_position_count')} / {result.get('max_open_positions')}"),
+    ("Paper Open Positions", result.get("paper_open_position_count")),
     ("Next Action", result.get("next_action")),
     ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
 ])}
@@ -2060,6 +2060,55 @@ def _session_risk_guard_html(payload: dict[str, Any]) -> HTMLResponse:
 {_list(result.get("rules") or [])}
 """
     return _html_page("Session Risk Guard", body, payload)
+
+
+def _health_full_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    safety = result.get("safety") or {}
+    options_data = result.get("options_data_status") or {}
+    truth = result.get("truth_source_status") or {}
+    cash_readiness = truth.get("cash_readiness") or {}
+    schemas = result.get("schema_versions") or {}
+    required_tools = result.get("required_tools") or {}
+    missing_tools = [name for name, exposed in required_tools.items() if not exposed]
+    readable_status = result.get("status") or "UNKNOWN"
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Full Health</h1>
+    <p>Readable deployment, safety, tool, and truth-source check. This page does not run a scan or contact a broker.</p>
+  </div>
+  <div><span class="badge {_status_class(readable_status)}">{escape(str(readable_status))}</span></div>
+</div>
+{_field_grid([
+    ("Build", result.get("build_version")),
+    ("Expected Build", result.get("expected_build_version")),
+    ("Build Match", result.get("build_matches_expected")),
+    ("Tool Count", result.get("tool_count")),
+    ("Missing Required Tools", len(missing_tools)),
+    ("Review Only", safety.get("review_only")),
+    ("Can Place Orders", safety.get("can_place_order_from_this_mcp")),
+    ("Can Cancel Orders", safety.get("can_cancel_order_from_this_mcp")),
+    ("Market Orders Allowed", safety.get("market_orders_allowed")),
+])}
+<h2>Options Truth</h2>
+{_field_grid([
+    ("Options Provider", options_data.get("configured_provider")),
+    ("Realtime Required", options_data.get("options_realtime_required")),
+    ("Realtime Available", options_data.get("automated_realtime_options_available")),
+    ("Real-Money Truth", options_data.get("real_money_options_truth_status")),
+    ("Broker Snapshot Required", options_data.get("broker_snapshot_required")),
+    ("Cash Ready", cash_readiness.get("cash_ready")),
+    ("Reason", cash_readiness.get("reason")),
+])}
+<h2>Schema Versions</h2>
+{_field_grid([(str(key), value) for key, value in schemas.items()])}
+<h2>Missing Required Tools</h2>
+{_list(missing_tools)}
+<h2>Next Steps</h2>
+{_list(result.get("next_steps") or [])}
+"""
+    return _html_page("Full Health", body, payload)
 
 
 def _journal_checkpoint_html(payload: dict[str, Any]) -> HTMLResponse:
@@ -3097,13 +3146,16 @@ async def fallback_evidence_summary(request: Request) -> JSONResponse:
     return JSONResponse(_review_only_envelope({"result": result}))
 
 
-async def fallback_health_full(request: Request) -> JSONResponse:
+async def fallback_health_full(request: Request) -> JSONResponse | HTMLResponse:
     listed_tools = await container.mcp.list_tools() if hasattr(container, "mcp") else await _mcp_tools_for_debug()
     names = [getattr(tool, "name", str(tool)) for tool in listed_tools]
     expected = request.query_params.get("expected_build_version")
     result = await container.debug_validation.full_health(names, expected)
     status_code = 200 if result["status"] == "OK" else 409
-    return JSONResponse(_review_only_envelope({"result": result}), status_code=status_code)
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _health_full_html(payload)
+    return JSONResponse(payload, status_code=status_code)
 
 
 async def fallback_debug_tool_manifest(request: Request) -> JSONResponse:
