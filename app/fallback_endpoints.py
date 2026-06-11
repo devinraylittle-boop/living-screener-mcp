@@ -2315,6 +2315,8 @@ def _paper_option_summary_html(payload: dict[str, Any]) -> HTMLResponse:
 
 def _paper_exploration_html(payload: dict[str, Any]) -> HTMLResponse:
     result = payload.get("result") or {}
+    if str(result.get("mode") or "") == "paper_exploration_followup" or str(result.get("status") or "").startswith("PAPER_EXPLORATION_FOLLOWUP"):
+        return _paper_exploration_followup_html(payload)
     trial_rows = []
     for item in result.get("trials") or []:
         trial_rows.append(
@@ -2362,6 +2364,95 @@ def _paper_exploration_html(payload: dict[str, Any]) -> HTMLResponse:
 ])}
 """
     return _html_page("Paper Exploration", body, payload)
+
+
+def _paper_exploration_followup_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    outcome_rows = []
+    for item in result.get("outcomes") or []:
+        outcome_rows.append(
+            "<tr>"
+            f"<td><strong>{escape(str(item.get('ticker') or ''))}</strong></td>"
+            f"<td>{escape(str(item.get('direction') or ''))}</td>"
+            f"<td><span class=\"badge {_status_class(str(item.get('verdict') or ''))}\">{escape(str(item.get('verdict') or ''))}</span></td>"
+            f"<td>{escape(_pct(item.get('current_return_pct')))}</td>"
+            f"<td>{escape(_pct(item.get('max_favorable_excursion')))}</td>"
+            f"<td>{escape(_pct(item.get('max_adverse_excursion')))}</td>"
+            f"<td>{escape(str(item.get('entry_reference') or ''))}</td>"
+            f"<td>{escape(str(item.get('latest_price') or ''))}</td>"
+            f"<td>{escape(str(item.get('paper_quality') or ''))}</td>"
+            "</tr>"
+        )
+    classification_rows = []
+    for item in result.get("classifications") or []:
+        outcome = item.get("outcome_summary") or {}
+        tags = ", ".join(str(tag) for tag in (item.get("lesson_tags") or []))
+        classification_rows.append(
+            "<tr>"
+            f"<td><strong>{escape(str(item.get('ticker') or ''))}</strong></td>"
+            f"<td>{escape(str(item.get('classification') or ''))}</td>"
+            f"<td>{escape(str(outcome.get('verdict') or ''))}</td>"
+            f"<td>{escape(_pct(outcome.get('directional_return')))}</td>"
+            f"<td>{escape(tags)}</td>"
+            f"<td>{escape(str(item.get('reason') or ''))}</td>"
+            "</tr>"
+        )
+    summary = result.get("learning_summary") or {}
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Paper Exploration Follow-Up</h1>
+    <p>Outcome review for aggressive paper-only entries. This page grades what helped, hurt, or went flat; cash gates are not changed.</p>
+  </div>
+  <div><span class="badge {_status_class(result.get('status'))}">{escape(str(result.get('status') or 'UNKNOWN'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Source Runs", result.get("source_run_count")),
+    ("Items Checked", result.get("items_checked")),
+    ("Helped", result.get("helped_count")),
+    ("Hurt", result.get("hurt_count")),
+    ("Unavailable", result.get("outcome_unavailable_count")),
+    ("Avg Directional Return", _pct(summary.get("average_directional_return"))),
+    ("Cash Gates Changed", False),
+])}
+<h2>Outcome Table</h2>
+<table>
+  <thead><tr><th>Ticker</th><th>Dir.</th><th>Verdict</th><th>Now</th><th>Best Move</th><th>Worst Move</th><th>Entry Ref.</th><th>Latest</th><th>Paper Quality</th></tr></thead>
+  <tbody>{''.join(outcome_rows) if outcome_rows else '<tr><td colspan="9">No follow-up outcomes available yet.</td></tr>'}</tbody>
+</table>
+<h2>Learning Labels</h2>
+<table>
+  <thead><tr><th>Ticker</th><th>Label</th><th>Verdict</th><th>Move</th><th>Tags</th><th>Reason</th></tr></thead>
+  <tbody>{''.join(classification_rows) if classification_rows else '<tr><td colspan="6">No learning labels generated yet.</td></tr>'}</tbody>
+</table>
+<h2>Learning Summary</h2>
+<pre>{escape(json.dumps({
+    "sample_size": summary.get("sample_size"),
+    "classification_counts": summary.get("classification_counts"),
+    "top_lesson_tags": summary.get("top_lesson_tags"),
+    "average_directional_return": summary.get("average_directional_return"),
+}, indent=2, default=str))}</pre>
+<h2>Next Action</h2>
+<p>{escape(str(result.get("next_action") or ""))}</p>
+<h2>Hard Rule</h2>
+{_list([
+    "Paper exploration is intentionally noisy.",
+    "Follow-up grades research entries; it is not a cash-trading approval.",
+    "This endpoint cannot place, submit, simulate, modify, or cancel broker orders.",
+])}
+"""
+    return _html_page("Paper Exploration Follow-Up", body, payload)
+
+
+def _pct(value: Any) -> str:
+    try:
+        if value is None or value == "":
+            return ""
+        return f"{float(value) * 100:.2f}%"
+    except Exception:
+        return str(value)
 
 
 def _paper_exploration_summary_html(payload: dict[str, Any]) -> HTMLResponse:

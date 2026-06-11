@@ -1,1 +1,1 @@
-BUILD_VERSION = "2026.06.11-alert-candidate-clarity"
+BUILD_VERSION = "2026.06.11-paper-followup-clarity"
