@@ -1,6 +1,6 @@
 # Scheduler Pinger
 
-Build: `2026.06.11-scheduler-pinger`
+Build: `2026.06.11-three-loss-guard`
 
 This package adds two ways to keep Living Screener awake and logging review-only scan evidence.
 
@@ -63,13 +63,13 @@ After deployment:
 ```text
 /version
 /tools
-/health/full?expected_build_version=2026.06.11-scheduler-pinger
+/health/full?expected_build_version=2026.06.11-three-loss-guard
 /ops/autonomous-morning-scan?format=html
 ```
 
 Expected:
 
-- Build version: `2026.06.11-scheduler-pinger`
+- Build version: `2026.06.11-three-loss-guard`
 - Tool count: `72`
 - Full health: `OK`
 - Autonomous scan returns a review-only status and a next refresh interval.

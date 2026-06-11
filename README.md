@@ -78,7 +78,7 @@ Paper option ledger tools let you study manual or hypothetical option decisions 
 
 Manual option position watch helps manage an open manual/paper option after entry. Use `watch_manual_option_position` or `/paper/options/watch` with the open entry ID or contract symbol plus current broker-visible bid/ask/mark. It returns `POSITION_HOLD_REVIEW`, `POSITION_PROFIT_WATCH`, `POSITION_PROFIT_REVIEW`, `POSITION_STOP_REVIEW`, or `POSITION_WATCH_NEEDS_LIVE_QUOTE`, prepares a `/paper/options/close` payload, and keeps all broker action outside the MCP.
 
-Session risk guard checks the journal before adding another manual idea. Use `get_session_risk_guard` or `/risk/session` with account value, proposed risk, and max open positions. It summarizes journaled open entries, closed paper/manual P/L, per-trade cap, total open-risk cap, and warning/soft/hard references. This is journal evidence only; it does not verify broker balances or broker positions and cannot execute broker actions.
+Session risk guard checks the journal before adding another manual idea. Use `get_session_risk_guard` or `/risk/session` with account value, proposed risk, and max open positions. It summarizes journaled open entries, current-day closed losses, closed paper/manual P/L, per-trade cap, total open-risk cap, and warning/soft/hard references. There is no hard daily trade-count cap for research, but new manual/cash escalation is blocked after 3 closed losses in the current trading day. This is journal evidence only; it does not verify broker balances or broker positions and cannot execute broker actions.
 
 Tomorrow control pages are session-risk aware. The command center, launch checklist, morning autopilot, live review cycle, and heartbeat now surface session risk before manual review. If session risk is blocked, the live cycle and heartbeat do not treat ranked candidates as manual-ready, even when stock/options gates are otherwise clean.
 
@@ -263,7 +263,7 @@ Opening `/ops/day-alerts` returns the attention queue from recent journal events
 
 Opening `/trade/manual-action` records a user-reported broker-side decision and returns a pending-buy recheck card when needed. Opening `/trade/pending-recheck` runs the review-only stale pending-buy check. Neither route can verify broker state or perform broker actions.
 
-Opening `/risk/session` returns the session risk guard: current journaled open option risk, closed paper/manual P/L, proposed-risk check, max-open-position check, blocking reasons, warnings, and next action links. Use it before adding another manual idea.
+Opening `/risk/session` returns the session risk guard: current journaled open option risk, current-day closed-loss count, closed paper/manual P/L, proposed-risk check, max-open-position check, blocking reasons, warnings, and next action links. Use it before adding another manual idea.
 
 Opening `/paper/options/summary` shows the paper option ledger: open paper entries, recent closes, paper P/L, and learning labels. Use it to study what would have happened after a manual/paper idea without creating a broker action.
 

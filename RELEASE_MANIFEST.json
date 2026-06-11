@@ -1,7 +1,7 @@
 {
   "service": "Living Screener MCP",
-  "release_folder": "living-screener-mcp-scheduler-pinger-20260611-001500",
-  "target_build_version": "2026.06.11-scheduler-pinger",
+  "release_folder": "living-screener-mcp-three-loss-guard-20260611-003500",
+  "target_build_version": "2026.06.11-three-loss-guard",
   "expected_live_tool_count": 72,
   "safety_invariants": {
     "review_only": true,
@@ -36,7 +36,7 @@
   "live_validation_endpoints": [
     "/version",
     "/tools",
-    "/health/full?expected_build_version=2026.06.11-scheduler-pinger",
+    "/health/full?expected_build_version=2026.06.11-three-loss-guard",
     "/ops/autonomous-morning-scan?format=html",
     "/truth/source-status",
     "/market/data-health",

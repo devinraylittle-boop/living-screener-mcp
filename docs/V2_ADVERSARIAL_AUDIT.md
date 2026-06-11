@@ -1,6 +1,6 @@
-﻿# Living Screener MCP V2.0 Adversarial Audit
+# Living Screener MCP V2.0 Adversarial Audit
 
-Build reviewed: `2026.06.11-scheduler-pinger`
+Build reviewed: `2026.06.11-three-loss-guard`
 
 ## 1. Executive Summary
 
@@ -34,7 +34,7 @@ Current readiness:
 10. **Catalyst/news gap.** Earnings, FDA, lawsuits, analyst events, macro data, and halts are mostly manual or missing.
 11. **Market open instability.** Tools acknowledge it, but the model does not fully learn opening-spread behavior by minute bucket.
 12. **Power-hour instability.** No dedicated close-window penalty/calibration yet.
-13. **Confidence miscalibration.** â€œLow-mediumâ€ and priority scores are not yet mapped to empirical win/expectancy buckets.
+13. **Confidence miscalibration.** “Low-medium” and priority scores are not yet mapped to empirical win/expectancy buckets.
 14. **Setup memory contamination risk.** Similarity can learn from weak outcomes if labels are noisy or manually entered late.
 15. **PASS quality is undermeasured.** The system logs PASS, but needs formal false-negative and good-pass rates.
 16. **Small-account caps are static.** A $1 cap is useful, but cap quality should depend on account size, spread, DTE, liquidity, and expectancy.
@@ -98,7 +98,7 @@ Leakage controls:
 - No future option volume/OI unless timestamped and known at decision time.
 - No future news.
 - No survivor-only ticker universe.
-- No using the later â€œbest contractâ€ if it was not acceptable at the timestamp.
+- No using the later “best contract” if it was not acceptable at the timestamp.
 
 Success metrics:
 

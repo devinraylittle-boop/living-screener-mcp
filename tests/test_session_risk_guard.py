@@ -51,6 +51,29 @@ class SessionRiskGuardTests(unittest.TestCase):
         self.assertIn("Max open paper/manual option positions already reached.", result["blocking_reasons"])
         self.assertFalse(result["broker_action"])
 
+    def test_blocks_after_three_closed_losses_today_without_daily_trade_cap(self) -> None:
+        with TempContainer() as container:
+            for index in range(2):
+                container.events.log(
+                    "manual_option_paper_close",
+                    {"status": "PAPER_OPTION_CLOSED", "entry_event_id": index + 1, "pnl_dollars": -1.0},
+                )
+            two_loss_result = _get_session_risk_guard(container, account_value=50, proposed_risk_dollars=1, max_open_positions=2)
+            container.events.log(
+                "manual_option_paper_close",
+                {"status": "PAPER_OPTION_CLOSED", "entry_event_id": 3, "pnl_dollars": -1.0},
+            )
+            three_loss_result = _get_session_risk_guard(container, account_value=50, proposed_risk_dollars=1, max_open_positions=2)
+
+        self.assertNotEqual(two_loss_result["status"], "SESSION_RISK_BLOCKED")
+        self.assertEqual(two_loss_result["daily_loss_count"], 2)
+        self.assertEqual(three_loss_result["status"], "SESSION_RISK_BLOCKED")
+        self.assertEqual(three_loss_result["daily_loss_count"], 3)
+        self.assertEqual(three_loss_result["daily_loss_lockout_count"], 3)
+        self.assertTrue(three_loss_result["daily_loss_lockout_triggered"])
+        self.assertIn("There is no hard daily trade-count cap for review/paper research.", three_loss_result["rules"])
+        self.assertIn("Daily closed-loss lockout reached (3/3 losses).", three_loss_result["blocking_reasons"])
+
 
 if __name__ == "__main__":
     unittest.main()
