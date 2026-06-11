@@ -1817,6 +1817,9 @@ def _build_manual_trade_preflight_ticket(service_container, snapshot: dict[str, 
     option_validation = service_container.options.validate_broker_snapshot(snapshot, effective_max_contract_price)
     accepted_contracts = option_validation.get("accepted_contracts") or []
     selected = accepted_contracts[0] if accepted_contracts else None
+    option_snapshot = option_validation.get("option_snapshot_v2") or {}
+    liquidity_gate = option_validation.get("liquidity_gate_result") or {}
+    mismatch_codes = option_validation.get("mismatch_codes") or []
     ticker = str(option_validation.get("ticker") or snapshot.get("ticker") or snapshot.get("underlying") or "").upper()
     direction = str(option_validation.get("direction") or snapshot.get("direction") or "call").lower()
     normalized_direction = Direction.SHORT if direction in {"put", "puts", "short"} else Direction.LONG
@@ -1840,6 +1843,10 @@ def _build_manual_trade_preflight_ticket(service_container, snapshot: dict[str, 
         blocking_reasons.append("Broker-visible option snapshot failed options quality validation.")
     if not selected:
         blocking_reasons.append("No accepted contract is available from the broker snapshot.")
+    if mismatch_codes:
+        blocking_reasons.extend([f"Broker snapshot mismatch: {code}" for code in mismatch_codes])
+    if liquidity_gate.get("status") == "LIQUIDITY_GATE_BLOCK":
+        blocking_reasons.append("Broker-visible liquidity/freshness gate blocked this snapshot.")
     if risk_check.get("status") != "APPROVE_FOR_REVIEW":
         blocking_reasons.extend(risk_check.get("reasons") or ["Risk check blocked this review."])
     if selected and selected.get("spread_pct") is not None and float(selected.get("spread_pct") or 0) > 0.08:
@@ -1856,6 +1863,9 @@ def _build_manual_trade_preflight_ticket(service_container, snapshot: dict[str, 
         "max_contract_price_used": effective_max_contract_price,
         "selected_contract": selected,
         "option_validation": option_validation,
+        "option_snapshot_v2": option_snapshot,
+        "liquidity_gate_result": liquidity_gate,
+        "mismatch_codes": mismatch_codes,
         "risk_check": risk_check,
         "blocking_reasons": blocking_reasons,
         "warnings": warnings,
@@ -1868,10 +1878,26 @@ def _build_manual_trade_preflight_ticket(service_container, snapshot: dict[str, 
             "broker_action_required": True if status == "MANUAL_PREFLIGHT_READY" else False,
             "mcp_can_execute": False,
             "approval_phrase_required_outside_mcp": service_container.settings.approval_phrase,
+            "decision_record_v2": {
+                "schema_version": "DecisionRecordV2",
+                "decision_ts_utc": utc_now(),
+                "rule_hash": _rules_hash(),
+                "scan_receipt_id": snapshot.get("scan_id") or snapshot.get("scan_receipt_id"),
+                "broker_snapshot_id": option_snapshot.get("source_receipt_time_utc"),
+                "liquidity_gate_result": liquidity_gate.get("status"),
+                "data_health_result": "SNAPSHOT_ACCEPTED" if not mismatch_codes else "SNAPSHOT_BLOCKED",
+                "abstain_reason_codes": blocking_reasons,
+                "evidence_refs": {
+                    "option_snapshot_v2": option_snapshot,
+                    "option_validation_event_id": option_validation.get("id"),
+                },
+            },
         },
         "checklist": [
             "Confirm the broker screen still matches this contract symbol.",
+            "Confirm the quote timestamp is fresh and copied from the broker screen or captured now.",
             "Confirm bid/ask, volume, open interest, DTE, and max loss still pass.",
+            "Confirm the contract is not adjusted/non-standard unless it has separate manual OCC review.",
             "Use limit-only review; no market orders.",
             "Do not chase if spread widens or underlying setup weakens.",
             "If placed manually outside this MCP, recheck any pending buy after 60 seconds.",
@@ -1937,7 +1963,9 @@ def _build_manual_trade_desk(
         },
         "next_steps": [
             "Confirm the broker screen still shows this exact contract symbol.",
+            "Confirm the broker snapshot timestamp is fresh; stale or missing timestamp means PASS.",
             "Confirm bid/ask, volume, open interest, DTE, strike, and max loss still match or improve this ticket.",
+            "Confirm mismatch_codes is empty and liquidity_gate_result is LIQUIDITY_GATE_PASS.",
             "Confirm session risk guard remains clear before adding exposure.",
             "Use limit-only discipline; no market orders.",
             "If you manually act outside this MCP, log the paper/manual fill through /paper/options/entry for learning.",
@@ -1976,6 +2004,10 @@ def _log_manual_broker_action(service_container, action: dict[str, Any]) -> dict
         normalized_direction = "put" if "P" in contract_symbol.upper()[-12:] else "call"
     quantity = max(1, int(_float_or_zero(action.get("quantity")) or 1))
     limit_price = _float_or_none_value(action.get("limit_price", action.get("price")))
+    fill_price = _float_or_none_value(action.get("fill_price", action.get("execution_price")))
+    reviewed_price = _float_or_none_value(action.get("reviewed_price", action.get("reviewed_ask")))
+    broker_snapshot_ts = _parse_manual_action_time(action.get("broker_snapshot_ts") or action.get("snapshot_ts"))
+    execution_ts = _parse_manual_action_time(action.get("execution_ts") or action.get("filled_at") or action.get("submitted_at") or action.get("timestamp"))
     is_options_order = bool(action.get("is_options_order")) or bool(contract_symbol)
     submitted_dt = _parse_manual_action_time(action.get("submitted_at") or action.get("timestamp")) or datetime.now(UTC)
     submitted_at = submitted_dt.isoformat()
@@ -1989,6 +2021,7 @@ def _log_manual_broker_action(service_container, action: dict[str, Any]) -> dict
         "direction": normalized_direction,
         "mode": action.get("mode") or "scalp_review",
     } if pending_buy else None
+    execution_receipt = _manual_execution_receipt(action, submitted_at, broker_snapshot_ts, execution_ts, reviewed_price, fill_price, limit_price)
     payload = {
         "status": "MANUAL_ACTION_PENDING_RECHECK_REQUIRED" if pending_buy else "MANUAL_ACTION_LOGGED",
         "build_version": BUILD_VERSION,
@@ -2000,8 +2033,15 @@ def _log_manual_broker_action(service_container, action: dict[str, Any]) -> dict
         "direction": normalized_direction,
         "quantity": quantity,
         "limit_price": limit_price,
+        "fill_price": fill_price,
+        "reviewed_price": reviewed_price,
         "submitted_at": submitted_at,
+        "broker_snapshot_ts": broker_snapshot_ts.isoformat() if broker_snapshot_ts else None,
+        "execution_ts": execution_ts.isoformat() if execution_ts else None,
         "is_options_order": is_options_order,
+        "manual_execution_receipt_v1": execution_receipt,
+        "execution_reconciliation": execution_receipt.get("reconciliation_status"),
+        "mismatch_codes": execution_receipt.get("mismatch_codes"),
         "pending_buy": pending_buy,
         "pending_buy_recheck_seconds": service_container.settings.pending_buy_recheck_seconds,
         "recheck_after": recheck_after.isoformat() if recheck_after else None,
@@ -2063,6 +2103,9 @@ def _log_manual_option_paper_entry(service_container, ticket: dict[str, Any], fi
     ticker = str(ticket.get("ticker") or selected.get("ticker") or "").upper()
     direction = str(ticket.get("direction") or selected.get("direction") or "").lower()
     max_loss = round(fill * 100 * quantity, 2)
+    selected_snapshot = ticket.get("option_snapshot_v2") or (ticket.get("option_validation") or {}).get("option_snapshot_v2") or {}
+    reviewed_ask = _float_or_none_value((ticket.get("manual_ticket") or {}).get("max_review_ask") or (ticket.get("selected_contract") or {}).get("ask"))
+    price_drift = round(fill - reviewed_ask, 4) if reviewed_ask is not None else None
     payload = {
         "status": "PAPER_OPTION_ENTRY_OPEN",
         "build_version": BUILD_VERSION,
@@ -2073,6 +2116,12 @@ def _log_manual_option_paper_entry(service_container, ticket: dict[str, Any], fi
         "quantity": quantity,
         "entry_debit_dollars": max_loss,
         "underlying_entry_price": underlying_price,
+        "spread_at_decision": selected_snapshot.get("spread_pct_mid"),
+        "spread_at_action": selected_snapshot.get("spread_pct_mid"),
+        "reviewed_ask": reviewed_ask,
+        "price_drift": price_drift,
+        "decision_record_v2": (ticket.get("manual_ticket") or {}).get("decision_record_v2"),
+        "option_snapshot_v2": selected_snapshot,
         "entry_timestamp": utc_now(),
         "source_ticket_status": ticket.get("status"),
         "source_preflight": ticket,
@@ -2132,6 +2181,8 @@ def _close_manual_option_paper_trade(service_container, entry_id: int | None, co
     }
     snapshot = entry.get("source_preflight") or entry
     classification = service_container.learning.classify_review_outcome(snapshot, outcome)
+    signal_label = "SIGNAL_HELPED" if pnl > 0 else "SIGNAL_HURT" if pnl < 0 else "SIGNAL_FLAT"
+    execution_label = _execution_outcome_label(entry, exit_value)
     payload = {
         "status": "PAPER_OPTION_CLOSED",
         "build_version": BUILD_VERSION,
@@ -2144,6 +2195,19 @@ def _close_manual_option_paper_trade(service_container, entry_id: int | None, co
         "quantity": quantity,
         "pnl_dollars": pnl,
         "return_pct": return_pct,
+        "outcome_record_v2": {
+            "schema_version": "OutcomeRecordV2",
+            "signal_outcome_label": signal_label,
+            "execution_outcome_label": execution_label,
+            "actual_human_action": "paper_close",
+            "actual_broker_result": "paper_only_no_broker_truth",
+            "reconciliation_status": "PAPER_ONLY_UNRECONCILED",
+            "price_drift": entry.get("price_drift"),
+            "spread_at_decision": entry.get("spread_at_decision"),
+            "spread_at_action": entry.get("spread_at_action"),
+        },
+        "signal_outcome_label": signal_label,
+        "execution_outcome_label": execution_label,
         "exit_reason": exit_reason,
         "exit_timestamp": utc_now(),
         "outcome": outcome,
@@ -3204,6 +3268,78 @@ def _parse_manual_action_time(value: Any) -> datetime | None:
         return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     except Exception:
         return None
+
+
+def _rules_hash() -> str:
+    payload = {
+        "build_version": BUILD_VERSION,
+        "review_only": True,
+        "no_market_orders": True,
+        "manual_snapshot_required": True,
+        "pending_recheck_seconds": 60,
+        "truth_layer": "OptionSnapshotV2/DecisionRecordV2/OutcomeRecordV2",
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[:16]
+
+
+def _manual_execution_receipt(
+    action: dict[str, Any],
+    submitted_at: str,
+    broker_snapshot_ts: datetime | None,
+    execution_ts: datetime | None,
+    reviewed_price: float | None,
+    fill_price: float | None,
+    limit_price: float | None,
+) -> dict[str, Any]:
+    contract_symbol = str(action.get("contract_symbol") or action.get("symbol") or "")
+    expected_contract_symbol = str(action.get("expected_contract_symbol") or action.get("reviewed_contract_symbol") or "")
+    quantity = int(_float_or_zero(action.get("quantity")) or 1)
+    mismatch_codes: list[str] = []
+    if expected_contract_symbol and contract_symbol and expected_contract_symbol != contract_symbol:
+        mismatch_codes.append("BROKER_CONTRACT_MISMATCH")
+    if broker_snapshot_ts is None:
+        mismatch_codes.append("BROKER_SNAPSHOT_TS_MISSING")
+    if action.get("action_type") in {"filled", "manual_fill"} and execution_ts is None:
+        mismatch_codes.append("EXECUTION_TS_MISSING")
+    if fill_price is not None and limit_price is not None and fill_price > limit_price:
+        mismatch_codes.append("FILL_ABOVE_LIMIT")
+    price_drift = round(fill_price - reviewed_price, 4) if fill_price is not None and reviewed_price is not None else None
+    if price_drift is not None and price_drift > 0:
+        mismatch_codes.append("FILL_WORSE_THAN_REVIEWED_PRICE")
+    reconciliation_status = "RECONCILED_USER_RECEIPT" if not mismatch_codes else "RECONCILIATION_NEEDS_REVIEW"
+    return {
+        "schema_version": "ManualExecutionReceiptV1",
+        "receipt_id": hashlib.sha256(json.dumps(action, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16],
+        "ticker": str(action.get("ticker") or action.get("underlying") or "").upper(),
+        "contract_symbol": contract_symbol,
+        "expected_contract_symbol": expected_contract_symbol or None,
+        "quantity": quantity,
+        "side": str(action.get("side") or "buy").lower(),
+        "order_status": str(action.get("order_status") or action.get("status") or "").lower(),
+        "submitted_at": submitted_at,
+        "broker_snapshot_ts": broker_snapshot_ts.isoformat() if broker_snapshot_ts else None,
+        "execution_ts": execution_ts.isoformat() if execution_ts else None,
+        "reviewed_price": reviewed_price,
+        "limit_price": limit_price,
+        "fill_price": fill_price,
+        "price_drift": price_drift,
+        "screenshot_hash": action.get("screenshot_hash") or action.get("proof_hash"),
+        "operator_id": action.get("operator_id") or "manual_operator",
+        "reconciliation_status": reconciliation_status,
+        "mismatch_codes": mismatch_codes,
+        "notes": "User-reported receipt only; this MCP did not verify broker state or execute an order.",
+    }
+
+
+def _execution_outcome_label(entry: dict[str, Any], exit_value: float) -> str:
+    drift = _float_or_zero(entry.get("price_drift"))
+    if entry.get("option_snapshot_v2") and (entry.get("option_snapshot_v2") or {}).get("mismatch_codes"):
+        return "EXECUTION_TRUTH_DIRTY"
+    if drift > 0:
+        return "EXECUTION_WORSE_THAN_REVIEW"
+    if exit_value <= 0:
+        return "EXECUTION_EXITED_WORTHLESS_OR_ZERO"
+    return "EXECUTION_TRACKED_PAPER_ONLY"
 
 
 def _manual_action_is_pending_buy(action_type: str, order_status: str, side: str) -> bool:

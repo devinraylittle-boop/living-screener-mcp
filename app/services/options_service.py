@@ -49,21 +49,57 @@ class OptionsService:
         bid = self._float(snapshot.get("bid")) or 0.0
         ask = self._float(snapshot.get("ask")) or 0.0
         last = self._float(snapshot.get("last_price", snapshot.get("last"))) or 0.0
+        now = datetime.now(UTC)
+        receipt_ts = self._parse_timestamp(snapshot.get("broker_snapshot_ts") or snapshot.get("snapshot_ts") or snapshot.get("quote_ts") or snapshot.get("timestamp")) or now
+        quote_ts = self._parse_timestamp(snapshot.get("option_quote_ts") or snapshot.get("quote_ts") or snapshot.get("timestamp")) or receipt_ts
+        quote_time_source = "provided" if any(snapshot.get(key) for key in ["option_quote_ts", "quote_ts", "timestamp"]) else "captured_at_validation"
+        quote_age_seconds = round((now - quote_ts).total_seconds(), 3) if quote_ts else None
+        contract_symbol = str(snapshot.get("contract_symbol") or snapshot.get("symbol") or "")
+        displayed_symbol = str(snapshot.get("displayed_symbol") or contract_symbol)
+        expected_contract_symbol = str(snapshot.get("expected_contract_symbol") or snapshot.get("reviewed_contract_symbol") or "")
+        multiplier = self._int(snapshot.get("multiplier")) or 100
+        deliverable = str(snapshot.get("deliverable") or "100 shares")
+        bid_size = self._int(snapshot.get("bid_size", snapshot.get("bidSize"))) or None
+        ask_size = self._int(snapshot.get("ask_size", snapshot.get("askSize"))) or None
+        adjusted_raw = snapshot.get("is_adjusted", snapshot.get("adjusted_contract"))
+        is_adjusted = str(adjusted_raw).strip().lower() in {"1", "true", "yes", "y", "on"} if adjusted_raw is not None else False
+        event_flags = self._event_flags(snapshot, is_adjusted)
+        mismatch_codes = self._snapshot_mismatch_codes(
+            symbol=symbol,
+            contract_symbol=contract_symbol,
+            displayed_symbol=displayed_symbol,
+            expected_contract_symbol=expected_contract_symbol,
+            bid=bid,
+            ask=ask,
+            quote_age_seconds=quote_age_seconds,
+            is_adjusted=is_adjusted,
+            event_flags=event_flags,
+        )
         contract = {
-            "contract_symbol": str(snapshot.get("contract_symbol") or snapshot.get("symbol") or ""),
+            "contract_symbol": contract_symbol,
             "ticker": symbol,
             "expiration": snapshot.get("expiration"),
             "days_to_expiration": self._int(snapshot.get("days_to_expiration", snapshot.get("dte"))) or 0,
             "strike": self._float(snapshot.get("strike")),
             "bid": bid,
             "ask": ask,
+            "bid_size": bid_size,
+            "ask_size": ask_size,
             "last_price": last,
             "midpoint": round((bid + ask) / 2, 4) if bid > 0 and ask > 0 else last,
             "volume": self._int(snapshot.get("volume")) or 0,
             "open_interest": self._int(snapshot.get("open_interest", snapshot.get("openInterest"))) or 0,
             "implied_volatility": self._float(snapshot.get("implied_volatility", snapshot.get("iv"))),
-            "max_loss_dollars": round(ask * 100, 2) if ask > 0 else None,
+            "max_loss_dollars": round(ask * multiplier, 2) if ask > 0 else None,
             "break_even": None,
+            "multiplier": multiplier,
+            "deliverable": deliverable,
+            "is_adjusted": is_adjusted,
+            "event_flags": event_flags,
+            "quote_age_seconds": quote_age_seconds,
+            "source": str(snapshot.get("source") or "manual_broker_snapshot"),
+            "displayed_symbol": displayed_symbol,
+            "expected_contract_symbol": expected_contract_symbol or None,
         }
         scored = self._score_contract(contract, max_contract_price)
         missing_required = []
@@ -75,7 +111,42 @@ class OptionsService:
             scored = dict(scored)
             scored["reasons"] = missing_required + scored["reasons"]
             scored["quality_status"] = "REJECTED"
+        if mismatch_codes:
+            scored = dict(scored)
+            scored["reasons"] = [*mismatch_codes, *scored["reasons"]]
+            scored["quality_status"] = "REJECTED"
         accepted = scored["quality_status"] == "ACCEPTABLE"
+        liquidity_gate = self._liquidity_gate(scored)
+        option_snapshot_v2 = {
+            "schema_version": "OptionSnapshotV2",
+            "source": str(snapshot.get("source") or "manual_broker_snapshot"),
+            "source_receipt_time_utc": receipt_ts.isoformat() if receipt_ts else now.isoformat(),
+            "option_quote_time_utc": quote_ts.isoformat() if quote_ts else None,
+            "quote_time_source": quote_time_source,
+            "quote_age_seconds": quote_age_seconds,
+            "underlying": symbol,
+            "displayed_symbol": displayed_symbol,
+            "contract_symbol": contract_symbol,
+            "expected_contract_symbol": expected_contract_symbol or None,
+            "expiration": contract.get("expiration"),
+            "strike": contract.get("strike"),
+            "right": "put" if side == "puts" else "call",
+            "multiplier": multiplier,
+            "deliverable": deliverable,
+            "bid": bid,
+            "ask": ask,
+            "bid_size": bid_size,
+            "ask_size": ask_size,
+            "spread_abs": liquidity_gate["spread_abs"],
+            "spread_pct_mid": liquidity_gate["spread_pct_mid"],
+            "volume": contract["volume"],
+            "open_interest": contract["open_interest"],
+            "mark": self._float(snapshot.get("mark")) or scored.get("midpoint"),
+            "is_adjusted": is_adjusted,
+            "event_flags": event_flags,
+            "mismatch_codes": mismatch_codes,
+            "liquidity_gate_result": liquidity_gate,
+        }
         result = {
             "ticker": symbol,
             "direction": "put" if side == "puts" else "call",
@@ -85,6 +156,9 @@ class OptionsService:
             "chain_provider": "broker_snapshot_manual",
             "max_contract_price_used": max_contract_price,
             "quality_gate": self._quality_gate_from_reasons(scored["reasons"]),
+            "option_snapshot_v2": option_snapshot_v2,
+            "mismatch_codes": mismatch_codes,
+            "liquidity_gate_result": liquidity_gate,
             "accepted_contracts": [scored] if accepted else [],
             "rejected_sample": [] if accepted else [scored],
             "best_rejected_contracts": [] if accepted else [scored],
@@ -153,6 +227,10 @@ class OptionsService:
             reasons.append("Contract volume below floor.")
         if contract["open_interest"] < self.settings.min_option_open_interest:
             reasons.append("Open interest below floor.")
+        if contract.get("is_adjusted"):
+            reasons.append("Adjusted/non-standard contract requires separate OCC/manual review.")
+        if contract.get("event_flags"):
+            reasons.append("Event flag present; manual event-risk review required.")
         if contract["days_to_expiration"] < self.settings.min_option_days_to_expiration:
             reasons.append("Expiration is too close.")
         if contract["days_to_expiration"] > self.settings.max_option_days_to_expiration:
@@ -168,6 +246,68 @@ class OptionsService:
         enriched["reasons"] = reasons
         enriched["closest_to_pass_reason"] = self._closest_to_pass_reason(enriched, reasons, max_contract_price)
         return enriched
+
+    def _liquidity_gate(self, contract: dict[str, Any]) -> dict[str, Any]:
+        bid = float(contract.get("bid") or 0)
+        ask = float(contract.get("ask") or 0)
+        midpoint = contract.get("midpoint") or ((bid + ask) / 2 if bid > 0 and ask > 0 else 0.0)
+        spread_abs = round(ask - bid, 4) if ask >= bid and bid > 0 else None
+        spread_pct_mid = round((ask - bid) / midpoint, 4) if midpoint and bid > 0 and ask >= bid else None
+        reasons = list(contract.get("reasons") or [])
+        passed = contract.get("quality_status") == "ACCEPTABLE"
+        return {
+            "status": "LIQUIDITY_GATE_PASS" if passed else "LIQUIDITY_GATE_BLOCK",
+            "spread_abs": spread_abs,
+            "spread_pct_mid": spread_pct_mid,
+            "bid_size": contract.get("bid_size"),
+            "ask_size": contract.get("ask_size"),
+            "volume": contract.get("volume"),
+            "open_interest": contract.get("open_interest"),
+            "max_loss_dollars": contract.get("max_loss_dollars"),
+            "reason_codes": reasons,
+        }
+
+    def _snapshot_mismatch_codes(
+        self,
+        *,
+        symbol: str,
+        contract_symbol: str,
+        displayed_symbol: str,
+        expected_contract_symbol: str,
+        bid: float,
+        ask: float,
+        quote_age_seconds: float | None,
+        is_adjusted: bool,
+        event_flags: list[str],
+    ) -> list[str]:
+        codes: list[str] = []
+        if not symbol:
+            codes.append("MISSING_UNDERLYING")
+        if not contract_symbol:
+            codes.append("MISSING_CONTRACT_SYMBOL")
+        if expected_contract_symbol and contract_symbol and expected_contract_symbol != contract_symbol:
+            codes.append("BROKER_CONTRACT_MISMATCH")
+        if displayed_symbol and contract_symbol and displayed_symbol != contract_symbol:
+            codes.append("DISPLAYED_SYMBOL_MISMATCH")
+        if bid <= 0 or ask <= 0 or ask < bid:
+            codes.append("INVALID_BID_ASK")
+        if quote_age_seconds is not None and quote_age_seconds > 60:
+            codes.append("STALE_OPTION_QUOTE")
+        if is_adjusted:
+            codes.append("ADJUSTED_CONTRACT")
+        for flag in event_flags:
+            codes.append(f"EVENT_FLAG_{flag.upper()}")
+        return codes
+
+    def _event_flags(self, snapshot: dict[str, Any], is_adjusted: bool) -> list[str]:
+        flags: list[str] = []
+        for key in ["earnings_window", "ex_div_window", "halted", "luld", "expiration_day", "zero_dte"]:
+            raw = snapshot.get(key)
+            if str(raw).strip().lower() in {"1", "true", "yes", "y", "on"}:
+                flags.append(key)
+        if is_adjusted:
+            flags.append("adjusted_contract")
+        return sorted(set(flags))
 
     def _log_no_trade(self, ticker: str, reasons: list[str], side: str) -> dict:
         result = {
@@ -198,6 +338,8 @@ class OptionsService:
             "open_interest": "Open interest below floor." not in reasons,
             "expiration_risk": not any(reason in reasons for reason in ["Expiration is too close.", "Expiration is too far for this review profile."]),
             "max_loss": not any(reason in reasons for reason in ["Max loss is unavailable.", "Ask exceeds configured max contract price."]),
+            "contract_identity": not any(reason in reasons for reason in ["BROKER_CONTRACT_MISMATCH", "DISPLAYED_SYMBOL_MISMATCH", "ADJUSTED_CONTRACT", "Adjusted/non-standard contract requires separate OCC/manual review."]),
+            "freshness": "STALE_OPTION_QUOTE" not in reasons,
         }
 
     def _quality_gate_summary(self, scored_contracts: list[dict[str, Any]]) -> dict:
@@ -244,6 +386,20 @@ class OptionsService:
         if "Max loss is unavailable." in reasons:
             return "Needs an ask price so max loss can be calculated."
         return "Multiple gates need improvement before this contract can pass."
+
+    def _parse_timestamp(self, value: Any) -> datetime | None:
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, datetime):
+            return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
+        raw = str(value).strip()
+        if not raw:
+            return None
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+        except ValueError:
+            return None
 
     def _parse_expiration(self, value: str) -> date | None:
         try:

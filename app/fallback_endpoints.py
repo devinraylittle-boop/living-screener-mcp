@@ -1690,6 +1690,9 @@ def _manual_snapshot_form_html(payload: dict[str, Any]) -> HTMLResponse:
   <div class="grid">
     <label class="panel"><span class="label">Ticker</span><input name="ticker" required placeholder="SOFI"></label>
     <label class="panel"><span class="label">Contract Symbol</span><input name="contract_symbol" required placeholder="SOFI260612P00015000"></label>
+    <label class="panel"><span class="label">Expected Contract Symbol</span><input name="expected_contract_symbol" placeholder="from MCP review, if available"></label>
+    <label class="panel"><span class="label">Broker Snapshot Time</span><input name="broker_snapshot_ts" required placeholder="2026-06-11T14:35:00Z"></label>
+    <label class="panel"><span class="label">Option Quote Time</span><input name="option_quote_ts" required placeholder="2026-06-11T14:35:00Z"></label>
     <label class="panel"><span class="label">Direction</span>
       <select name="direction">
         <option value="put">put</option>
@@ -1698,15 +1701,23 @@ def _manual_snapshot_form_html(payload: dict[str, Any]) -> HTMLResponse:
     </label>
     <label class="panel"><span class="label">Bid</span><input name="bid" required type="number" min="0" step="0.01" placeholder="0.04"></label>
     <label class="panel"><span class="label">Ask</span><input name="ask" required type="number" min="0" step="0.01" placeholder="0.05"></label>
+    <label class="panel"><span class="label">Bid Size</span><input name="bid_size" type="number" min="0" step="1" placeholder="10"></label>
+    <label class="panel"><span class="label">Ask Size</span><input name="ask_size" type="number" min="0" step="1" placeholder="10"></label>
     <label class="panel"><span class="label">Volume</span><input name="volume" required type="number" min="0" step="1" placeholder="500"></label>
     <label class="panel"><span class="label">Open Interest</span><input name="open_interest" required type="number" min="0" step="1" placeholder="2000"></label>
     <label class="panel"><span class="label">DTE</span><input name="dte" required type="number" min="0" step="1" placeholder="3"></label>
     <label class="panel"><span class="label">Strike</span><input name="strike" required type="number" min="0" step="0.5" placeholder="15"></label>
+    <label class="panel"><span class="label">Expiration</span><input name="expiration" placeholder="2026-06-12"></label>
+    <label class="panel"><span class="label">Multiplier</span><input name="multiplier" type="number" min="1" step="1" value="100"></label>
+    <label class="panel"><span class="label">Deliverable</span><input name="deliverable" value="100 shares"></label>
     <label class="panel"><span class="label">Underlying Price</span><input name="underlying_price" type="number" min="0" step="0.01" placeholder="16.50"></label>
     <label class="panel"><span class="label">Underlying VWAP</span><input name="underlying_vwap" type="number" min="0" step="0.01" placeholder="16.80"></label>
     <label class="panel"><span class="label">Account Value Ref.</span><input name="account_value" type="number" min="0" step="0.01" value="50"></label>
     <label class="panel"><span class="label">Max Contract Price</span><input name="max_contract_price" type="number" min="0" step="0.01" value="1.00"></label>
     <label class="panel"><span class="label">Max Open Positions</span><input name="max_open_positions" type="number" min="1" max="5" step="1" value="2"></label>
+    <label class="panel"><span class="label">Adjusted Contract?</span><select name="is_adjusted"><option value="false">false</option><option value="true">true</option></select></label>
+    <label class="panel"><span class="label">Earnings Window?</span><select name="earnings_window"><option value="false">false</option><option value="true">true</option></select></label>
+    <label class="panel"><span class="label">Halted / LULD?</span><select name="halted"><option value="false">false</option><option value="true">true</option></select></label>
   </div>
   <p style="margin-top: 14px;"><button type="submit">Open Manual Trade Desk</button></p>
 </form>
@@ -2448,14 +2459,30 @@ async def fallback_manual_trade_desk(request: Request) -> JSONResponse | HTMLRes
             "underlying": params.get("underlying"),
             "underlying_price": _float_or_none(params.get("underlying_price")),
             "contract_symbol": params.get("contract_symbol"),
+            "expected_contract_symbol": params.get("expected_contract_symbol"),
+            "displayed_symbol": params.get("displayed_symbol"),
             "direction": params.get("direction"),
             "bid": _float_or_none(params.get("bid")),
             "ask": _float_or_none(params.get("ask")),
+            "bid_size": _int_or_default(params.get("bid_size"), 0),
+            "ask_size": _int_or_default(params.get("ask_size"), 0),
             "volume": _int_or_default(params.get("volume"), 0),
             "open_interest": _int_or_default(params.get("open_interest"), 0),
             "dte": _int_or_default(params.get("dte"), 0),
             "strike": _float_or_none(params.get("strike")),
             "expiration": params.get("expiration"),
+            "broker_snapshot_ts": params.get("broker_snapshot_ts"),
+            "option_quote_ts": params.get("option_quote_ts") or params.get("quote_ts"),
+            "source": params.get("source") or "manual_broker_snapshot",
+            "multiplier": _int_or_default(params.get("multiplier"), 100),
+            "deliverable": params.get("deliverable"),
+            "is_adjusted": _truthy(params.get("is_adjusted")),
+            "earnings_window": _truthy(params.get("earnings_window")),
+            "ex_div_window": _truthy(params.get("ex_div_window")),
+            "halted": _truthy(params.get("halted")),
+            "luld": _truthy(params.get("luld")),
+            "expiration_day": _truthy(params.get("expiration_day")),
+            "zero_dte": _truthy(params.get("zero_dte")),
             "account_value": _float_or_none(params.get("account_value")),
             "max_contract_price": _float_or_none(params.get("max_contract_price")),
             "max_open_positions": _int_or_default(params.get("max_open_positions"), 2),
@@ -2519,8 +2546,15 @@ async def fallback_manual_broker_action(request: Request) -> JSONResponse | HTML
             "side": params.get("side"),
             "direction": params.get("direction"),
             "limit_price": _float_or_none(params.get("limit_price")),
+            "reviewed_price": _float_or_none(params.get("reviewed_price") or params.get("reviewed_ask")),
+            "fill_price": _float_or_none(params.get("fill_price") or params.get("execution_price")),
             "quantity": _int_or_default(params.get("quantity"), 1),
             "submitted_at": params.get("submitted_at"),
+            "broker_snapshot_ts": params.get("broker_snapshot_ts") or params.get("snapshot_ts"),
+            "execution_ts": params.get("execution_ts") or params.get("filled_at"),
+            "expected_contract_symbol": params.get("expected_contract_symbol"),
+            "screenshot_hash": params.get("screenshot_hash") or params.get("proof_hash"),
+            "operator_id": params.get("operator_id"),
             "is_options_order": (params.get("is_options_order") or "").strip().lower() in {"1", "true", "yes"},
             "mode": params.get("mode"),
             "notes": params.get("notes"),
