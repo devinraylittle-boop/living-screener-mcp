@@ -2909,15 +2909,25 @@ def _summarize_trading_day_alerts(service_container, limit: int = 50) -> dict:
         payload = event.get("payload") or {}
         status = payload.get("status")
         if status == "HEARTBEAT_MANUAL_REVIEW_READY":
+            top = _extract_alert_candidate(payload)
+            ticker = top.get("ticker")
+            contract = top.get("contract_symbol")
+            direction = top.get("direction")
             alerts.append(
                 {
                     "priority": 90,
                     "level": "REVIEW",
                     "type": "MANUAL_REVIEW_READY",
-                    "title": "Heartbeat found a candidate ready for manual broker inspection",
+                    "title": _candidate_alert_title("Heartbeat found a candidate ready for manual broker inspection", ticker, direction, contract),
                     "timestamp": event.get("timestamp"),
                     "source_event_id": event.get("id"),
                     "status": status,
+                    "ticker": ticker,
+                    "direction": direction,
+                    "contract_symbol": contract,
+                    "candidate_status": top.get("status"),
+                    "is_current": _alert_matches_latest_event(event, heartbeats),
+                    "age_bucket": _alert_age_bucket(event.get("timestamp")),
                     "next_action": payload.get("next_action"),
                     "link": (payload.get("action_links") or {}).get("manual_trade_desk") or "/trade/manual-desk",
                 }
@@ -2956,17 +2966,24 @@ def _summarize_trading_day_alerts(service_container, limit: int = 50) -> dict:
         ranked = payload.get("ranked_candidates") or []
         if ranked:
             top = ranked[0] if isinstance(ranked[0], dict) else {}
+            ticker = top.get("ticker")
+            contract = top.get("selected_contract") or top.get("contract_symbol")
+            direction = top.get("direction")
             alerts.append(
                 {
                     "priority": 85,
                     "level": "REVIEW",
                     "type": "LIVE_CYCLE_CANDIDATE",
-                    "title": f"Live review cycle has ranked candidate {top.get('ticker') or ''}".strip(),
+                    "title": _candidate_alert_title("Live review cycle has ranked candidate", ticker, direction, contract),
                     "timestamp": event.get("timestamp"),
                     "source_event_id": event.get("id"),
                     "status": payload.get("status"),
-                    "ticker": top.get("ticker"),
-                    "contract_symbol": top.get("selected_contract") or top.get("contract_symbol"),
+                    "ticker": ticker,
+                    "direction": direction,
+                    "contract_symbol": contract,
+                    "candidate_status": top.get("status"),
+                    "is_current": _alert_matches_latest_event(event, live_cycles),
+                    "age_bucket": _alert_age_bucket(event.get("timestamp")),
                     "next_action": "Use broker-visible fields with /trade/manual-desk before any manual action.",
                     "link": "/trade/manual-desk",
                 }
@@ -3051,10 +3068,61 @@ def _summarize_trading_day_alerts(service_container, limit: int = 50) -> dict:
         "notes": [
             "Alerts summarize existing review-only journal events; they do not run broker actions.",
             "Manual review alerts still require broker-visible inspection and manual trade desk preflight.",
+            "Only alerts marked current should be treated as live review focus; stale alerts are for learning/history.",
             "Checkpoint reminders preserve learning evidence but are not execution records.",
         ],
     }
     return service_container.events.log("trading_day_alert_summary", payload)
+
+
+def _extract_alert_candidate(payload: dict[str, Any]) -> dict[str, Any]:
+    operation_result = payload.get("operation_result") if isinstance(payload.get("operation_result"), dict) else {}
+    ranked = operation_result.get("ranked_candidates") or payload.get("ranked_candidates") or []
+    if ranked and isinstance(ranked[0], dict):
+        top = dict(ranked[0])
+        top["contract_symbol"] = top.get("selected_contract") or top.get("contract_symbol")
+        return top
+    harvest = operation_result.get("harvest") if isinstance(operation_result.get("harvest"), dict) else {}
+    ranked = harvest.get("ranked_candidates") or []
+    if ranked and isinstance(ranked[0], dict):
+        top = dict(ranked[0])
+        top["contract_symbol"] = top.get("selected_contract") or top.get("contract_symbol")
+        return top
+    return {}
+
+
+def _candidate_alert_title(prefix: str, ticker: Any, direction: Any, contract: Any) -> str:
+    parts = [str(prefix).strip()]
+    if ticker:
+        parts.append(str(ticker).upper())
+    if direction:
+        parts.append(str(direction).upper())
+    if contract:
+        parts.append(str(contract))
+    return " - ".join(part for part in parts if part)
+
+
+def _alert_matches_latest_event(event: dict[str, Any], events: list[dict[str, Any]]) -> bool:
+    if not events:
+        return False
+    return event.get("id") == events[0].get("id")
+
+
+def _alert_age_bucket(timestamp: Any) -> str:
+    if not timestamp:
+        return "unknown"
+    try:
+        parsed = datetime.fromisoformat(str(timestamp).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=UTC)
+        minutes = (datetime.now(UTC) - parsed.astimezone(UTC)).total_seconds() / 60
+    except Exception:
+        return "unknown"
+    if minutes <= 5:
+        return "current_0_5m"
+    if minutes <= 15:
+        return "recent_5_15m"
+    return "stale_over_15m"
 
 
 def _run_morning_readiness_autopilot(service_container, tickers: list[str] | None, account_value: float, max_candidates: int) -> dict:

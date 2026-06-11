@@ -1,6 +1,6 @@
 # Scheduler Pinger
 
-Build: `2026.06.11-proof-gate-prebuild`
+Build: `2026.06.11-broker-proof-bridge`
 
 This package adds two ways to keep Living Screener awake and logging review-only scan evidence.
 
@@ -63,13 +63,13 @@ After deployment:
 ```text
 /version
 /tools
-/health/full?expected_build_version=2026.06.11-proof-gate-prebuild
+/health/full?expected_build_version=2026.06.11-broker-proof-bridge
 /ops/autonomous-morning-scan?format=html
 ```
 
 Expected:
 
-- Build version: `2026.06.11-proof-gate-prebuild`
+- Build version: `2026.06.11-broker-proof-bridge`
 - Tool count: `81`
 - Full health: `OK`
 - Autonomous scan returns a review-only status and a next refresh interval.

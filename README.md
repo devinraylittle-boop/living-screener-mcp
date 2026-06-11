@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.11-proof-gate-prebuild
+2026.06.11-broker-proof-bridge
 ```
 
 ## Render Environment
@@ -88,6 +88,8 @@ Autonomous firewall tools convert the moonshot goal into a safe operating system
 
 Real-cash proof gate is the final prebuild checkpoint before any autonomous execution build. Use `get_real_cash_proof_gate` or `/ops/real-cash-proof-gate` to classify each required proof item as `PROVEN`, `MISSING`, `BLOCKED`, or `WARNING`. It separates `autonomous_scanning`, `aggressive_paper_learning`, `manual_real_cash_review`, and `fully_autonomous_real_cash_execution` so a missing broker/order/position proof cannot be hidden behind good scan results. Operator-supplied broker confirmations may support manual review, but they are labeled as operator proof and do not become machine-verified broker integration.
 
+Broker proof bridge turns broker-visible facts into a reusable proof packet. Use `get_broker_proof_bridge` or `/ops/broker-proof-bridge` with account identifier, buying power, open-order count, open-position count, duplicate-order status, limit-order preview fields, max loss, and fresh options-snapshot validation. If the bridge returns `BROKER_PROOF_MANUAL_READY`, it provides a proof-gate link carrying the manual confirmations forward. If it returns `BROKER_PROOF_INCOMPLETE`, do not treat the trade as cash-review ready. `BROKER_PROOF_AUTONOMY_READY` requires machine-verified broker proof plus a separate broker executor; operator-supplied fields are not enough for full autonomous execution.
+
 Manual option position watch helps manage an open manual/paper option after entry. Use `watch_manual_option_position` or `/paper/options/watch` with the open entry ID or contract symbol plus current broker-visible bid/ask/mark. It returns `POSITION_HOLD_REVIEW`, `POSITION_PROFIT_WATCH`, `POSITION_PROFIT_REVIEW`, `POSITION_STOP_REVIEW`, or `POSITION_WATCH_NEEDS_LIVE_QUOTE`, prepares a `/paper/options/close` payload, and keeps all broker action outside the MCP.
 
 Session risk guard checks the journal before adding another manual idea. Use `get_session_risk_guard` or `/risk/session` with account value, proposed risk, and max open positions. It summarizes paper/research activity separately from user-reported real-cash activity. Paper scans, paper entries, paper closes, and learning are uncapped because there is no broker downside. New real-cash/autonomous escalation is blocked after 3 user-reported real-cash closed losses in the current trading day. This is journal evidence only; it does not verify broker balances or broker positions and cannot execute broker actions.
@@ -146,7 +148,7 @@ These routes call the same review-only services as the MCP tools. They exist so 
 GET /safety
 GET /
 GET /release-manifest
-GET /health/full?expected_build_version=2026.06.11-proof-gate-prebuild
+GET /health/full?expected_build_version=2026.06.11-broker-proof-bridge
 GET /ops/event-radar?format=html
 GET /ops/broad-opportunity-scan?format=html
 GET /ops/data-truth-cockpit?format=html
@@ -224,7 +226,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.11-proof-gate-prebuild
+GET /debug/scan-schema?expected_build_version=2026.06.11-broker-proof-bridge
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -243,7 +245,7 @@ If Render is still building, run the watcher instead:
 .\tools\watch_deploy.ps1
 ```
 
-It polls `/version` every 30 seconds. When `2026.06.11-proof-gate-prebuild` appears, it automatically runs `validate_live.ps1`.
+It polls `/version` every 30 seconds. When `2026.06.11-broker-proof-bridge` appears, it automatically runs `validate_live.ps1`.
 
 On market morning, after validation passes, run:
 
@@ -352,7 +354,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.11-proof-gate-prebuild",
+  "build_version": "2026.06.11-broker-proof-bridge",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false

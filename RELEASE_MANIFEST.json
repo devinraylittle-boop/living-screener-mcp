@@ -1,8 +1,8 @@
 {
     "service":  "Living Screener MCP",
-    "release_folder":  "living-screener-mcp-proof-gate-prebuild-20260611-114500",
-    "target_build_version":  "2026.06.11-proof-gate-prebuild",
-    "expected_live_tool_count":  85,
+    "release_folder":  "living-screener-mcp-broker-proof-bridge-20260611-121500",
+    "target_build_version":  "2026.06.11-broker-proof-bridge",
+    "expected_live_tool_count":  86,
     "safety_invariants":  {
                               "review_only":  true,
                               "place_orders":  false,
@@ -36,7 +36,7 @@
     "live_validation_endpoints":  [
                                       "/version",
                                       "/tools",
-                                      "/health/full?expected_build_version=2026.06.11-proof-gate-prebuild",
+                                      "/health/full?expected_build_version=2026.06.11-broker-proof-bridge",
                                       "/ops/autonomous-morning-scan?format=html",
                                       "/ops/event-radar?format=html",
                                       "/ops/broad-opportunity-scan?format=html",
@@ -46,6 +46,7 @@
                                       "/ops/shared-intelligence?format=html",
                                       "/ops/autonomous-launch-decision?account_value=100\u0026intended_cash=100\u0026format=html",
                                       "/ops/real-cash-proof-gate?account_value=100\u0026intended_cash=100\u0026format=html",
+                                      "/ops/broker-proof-bridge?account_value=100\u0026intended_cash=100\u0026format=html",
                                       "/ops/event-volatility-playbook?format=html",
                                       "/ops/event-volatility-scan?format=html",
                                       "/truth/source-status",

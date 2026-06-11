@@ -1575,10 +1575,16 @@ def _trading_day_alerts_html(payload: dict[str, Any]) -> HTMLResponse:
     alert_rows = []
     for alert in result.get("alerts") or []:
         link = str(alert.get("link") or "")
+        current_label = "YES" if alert.get("is_current") else "NO"
         alert_rows.append(
             "<tr>"
             f"<td>{escape(str(alert.get('level') or ''))}</td>"
             f"<td>{escape(str(alert.get('type') or ''))}</td>"
+            f"<td><strong>{escape(str(alert.get('ticker') or ''))}</strong></td>"
+            f"<td>{escape(str(alert.get('direction') or ''))}</td>"
+            f"<td>{escape(str(alert.get('contract_symbol') or ''))}</td>"
+            f"<td>{escape(str(alert.get('age_bucket') or ''))}</td>"
+            f"<td>{escape(current_label)}</td>"
             f"<td>{escape(str(alert.get('title') or ''))}</td>"
             f"<td>{escape(str(alert.get('timestamp') or ''))}</td>"
             f"<td>{escape(str(alert.get('next_action') or ''))}</td>"
@@ -1611,8 +1617,8 @@ def _trading_day_alerts_html(payload: dict[str, Any]) -> HTMLResponse:
 ])}
 <h2>Alerts</h2>
 <table>
-  <thead><tr><th>Level</th><th>Type</th><th>Title</th><th>Time</th><th>Next Action</th><th>Link</th></tr></thead>
-  <tbody>{''.join(alert_rows) if alert_rows else '<tr><td colspan="6">No attention alerts.</td></tr>'}</tbody>
+  <thead><tr><th>Level</th><th>Type</th><th>Ticker</th><th>Direction</th><th>Contract</th><th>Age</th><th>Current?</th><th>Title</th><th>Time</th><th>Next Action</th><th>Link</th></tr></thead>
+  <tbody>{''.join(alert_rows) if alert_rows else '<tr><td colspan="11">No attention alerts.</td></tr>'}</tbody>
 </table>
 <h2>Action Links</h2>
 <table>
