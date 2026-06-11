@@ -1,0 +1,109 @@
+name: Living Screener Morning Pinger
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Living Screener base URL"
+        required: false
+        default: "https://living-screener-mcp.onrender.com"
+      tickers:
+        description: "Comma-separated scan universe"
+        required: false
+        default: "AMZN,SOFI,SHOP,XOM,LULU,AAPL,QQQ,IWM,MSFT,NVDA,AMD,META,AVGO,SMCI,RBLX,CVX,LLY,UNH,HOOD,TSLA"
+  schedule:
+    # Weekdays, approximately 7:00am-4:00pm America/Chicago during U.S. daylight time.
+    # GitHub cron uses UTC. This keeps the Render app warm and records review-only scan evidence.
+    - cron: "*/5 12-21 * * 1-5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: living-screener-morning-pinger
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      DEFAULT_BASE_URL: "https://living-screener-mcp.onrender.com"
+      EXPECTED_BUILD: "2026.06.11-cash-paper-split"
+      DEFAULT_TICKERS: "AMZN,SOFI,SHOP,XOM,LULU,AAPL,QQQ,IWM,MSFT,NVDA,AMD,META,AVGO,SMCI,RBLX,CVX,LLY,UNH,HOOD,TSLA"
+    steps:
+      - name: Resolve inputs
+        id: cfg
+        shell: bash
+        run: |
+          BASE_URL="${{ github.event.inputs.base_url }}"
+          TICKERS="${{ github.event.inputs.tickers }}"
+          if [ -z "$BASE_URL" ]; then BASE_URL="$DEFAULT_BASE_URL"; fi
+          if [ -z "$TICKERS" ]; then TICKERS="$DEFAULT_TICKERS"; fi
+          echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
+          echo "tickers=$TICKERS" >> "$GITHUB_OUTPUT"
+
+      - name: Check build and safety surface
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="${{ steps.cfg.outputs.base_url }}/health/full?expected_build_version=${EXPECTED_BUILD}"
+          echo "Checking $URL"
+          curl --fail --show-error --silent --max-time 45 "$URL" | tee health.json
+          python - <<'PY'
+          import json
+          body = json.load(open("health.json", encoding="utf-8"))
+          result = body.get("result", {})
+          assert result.get("status") == "OK", result
+          assert result.get("build_version") == "2026.06.11-cash-paper-split", result
+          assert result.get("safety", {}).get("can_place_order_from_this_mcp") is False, result
+          PY
+
+      - name: Run one autonomous review-only scan tick
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import urllib.parse
+          base = "${{ steps.cfg.outputs.base_url }}"
+          tickers = "${{ steps.cfg.outputs.tickers }}"
+          params = {
+              "tickers": tickers,
+              "account_value": "50",
+              "max_candidates": "25",
+              "review_top_n": "8",
+              "max_contract_price": "1.00",
+              "catalyst_top_n": "8",
+              "format": "json",
+          }
+          print(base + "/ops/autonomous-morning-scan?" + urllib.parse.urlencode(params))
+          PY
+          URL=$(python - <<'PY'
+          import urllib.parse
+          base = "${{ steps.cfg.outputs.base_url }}"
+          tickers = "${{ steps.cfg.outputs.tickers }}"
+          params = {
+              "tickers": tickers,
+              "account_value": "50",
+              "max_candidates": "25",
+              "review_top_n": "8",
+              "max_contract_price": "1.00",
+              "catalyst_top_n": "8",
+              "format": "json",
+          }
+          print(base + "/ops/autonomous-morning-scan?" + urllib.parse.urlencode(params))
+          PY
+          )
+          curl --fail --show-error --silent --max-time 60 "$URL" | tee scan.json
+          python - <<'PY'
+          import json
+          body = json.load(open("scan.json", encoding="utf-8"))
+          result = body.get("result", {})
+          print("status:", result.get("status"))
+          print("next_refresh_seconds:", result.get("next_refresh_seconds"))
+          print("next_action:", result.get("next_action"))
+          assert body.get("can_place_order_from_this_mcp") is False, body
+          assert body.get("can_cancel_order_from_this_mcp") is False, body
+          assert result.get("schema_version") == "autonomous_morning_scan_v1", result
+          PY
