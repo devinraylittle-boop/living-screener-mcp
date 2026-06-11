@@ -150,6 +150,36 @@ def get_autonomous_launch_decision(account_value: float = 100.0, intended_cash: 
 
 
 @mcp.tool
+def get_real_cash_proof_gate(
+    account_value: float = 100.0,
+    intended_cash: float = 100.0,
+    tickers: list[str] | None = None,
+    broker_account_confirmed: bool = False,
+    buying_power_confirmed: bool = False,
+    open_orders_checked: bool = False,
+    open_positions_checked: bool = False,
+    no_duplicate_order_confirmed: bool = False,
+    order_preview_confirmed: bool = False,
+    options_snapshot_validated: bool = False,
+    separate_broker_executor_proven: bool = False,
+) -> dict:
+    return _get_real_cash_proof_gate(
+        container,
+        account_value,
+        intended_cash,
+        tickers,
+        broker_account_confirmed,
+        buying_power_confirmed,
+        open_orders_checked,
+        open_positions_checked,
+        no_duplicate_order_confirmed,
+        order_preview_confirmed,
+        options_snapshot_validated,
+        separate_broker_executor_proven,
+    )
+
+
+@mcp.tool
 def market_readiness_check(tickers: list[str] | None = None, max_candidates: int = 25) -> dict:
     return _market_readiness_check(container, tickers, max_candidates)
 
@@ -1503,6 +1533,127 @@ def _get_autonomous_launch_decision(service_container, account_value: float, int
         "broker_action": False,
     }
     return service_container.events.log("autonomous_launch_decision", payload)
+
+
+def _proof_item(category: str, name: str, status: str, evidence: str, required_for: list[str]) -> dict[str, Any]:
+    return {
+        "category": category,
+        "name": name,
+        "status": status,
+        "evidence": evidence,
+        "required_for": required_for,
+    }
+
+
+def _get_real_cash_proof_gate(
+    service_container,
+    account_value: float,
+    intended_cash: float,
+    tickers: list[str] | None,
+    broker_account_confirmed: bool,
+    buying_power_confirmed: bool,
+    open_orders_checked: bool,
+    open_positions_checked: bool,
+    no_duplicate_order_confirmed: bool,
+    order_preview_confirmed: bool,
+    options_snapshot_validated: bool,
+    separate_broker_executor_proven: bool,
+) -> dict:
+    account_value = _float_or_zero(account_value) or 100.0
+    intended_cash = _float_or_zero(intended_cash) or account_value
+    universe = _resolve_universe(service_container, tickers)
+    safety = get_safety_config()
+    truth = _get_data_truth_cockpit(service_container, universe, 12)
+    options_status = service_container.options.options_data_status()
+    session_risk = _get_session_risk_guard(service_container, account_value, None, 2)
+    paper = _summarize_paper_exploration(service_container, 100)
+    manual_paper = _summarize_manual_option_paper_trades(service_container, 100)
+    intelligence = _get_shared_intelligence_layer(service_container, universe, 100)
+    options_truth_ready = options_status.get("real_money_options_truth_status") == "REAL_MONEY_OPTIONS_TRUTH_READY" or bool(options_snapshot_validated)
+    market_health = (truth.get("market_data_health") or {}).get("status")
+    market_data_ready = market_health in {"MARKET_DATA_HEALTHY", "MARKET_DATA_PARTIAL"}
+    session_risk_clear = session_risk.get("status") != "SESSION_RISK_BLOCKED"
+    paper_sample_size = int(paper.get("opened_entry_count") or 0) + int(manual_paper.get("closed_count") or 0)
+    proof_items = [
+        _proof_item("build", "Expected build is running", "PROVEN", BUILD_VERSION, ["scan", "manual_cash_review", "autonomous_execution"]),
+        _proof_item("safety", "MCP cannot place or cancel broker orders", "PROVEN", "can_place_order_from_this_mcp=false; can_cancel_order_from_this_mcp=false", ["scan", "manual_cash_review"]),
+        _proof_item("safety", "No market orders", "PROVEN" if not safety.get("market_orders_allowed") else "BLOCKED", f"market_orders_allowed={safety.get('market_orders_allowed')}", ["manual_cash_review", "autonomous_execution"]),
+        _proof_item("safety", "Manual approval phrase required", "PROVEN" if safety.get("manual_approval_required") else "BLOCKED", str(safety.get("approval_phrase")), ["manual_cash_review"]),
+        _proof_item("data", "Fresh/usable market data", "PROVEN" if market_data_ready else "MISSING", str(market_health), ["scan", "manual_cash_review", "autonomous_execution"]),
+        _proof_item("options", "Real-money options truth", "PROVEN" if options_truth_ready else "MISSING", options_status.get("real_money_options_truth_status") or "unknown", ["manual_cash_review", "autonomous_execution"]),
+        _proof_item("broker", "Broker account selected and confirmed", "PROVEN" if broker_account_confirmed else "MISSING", "operator/broker confirmation required", ["manual_cash_review", "autonomous_execution"]),
+        _proof_item("broker", "Buying power confirmed", "PROVEN" if buying_power_confirmed else "MISSING", "operator/broker confirmation required", ["manual_cash_review", "autonomous_execution"]),
+        _proof_item("broker", "Open orders checked", "PROVEN" if open_orders_checked else "MISSING", "must prevent stale or duplicate pending orders", ["manual_cash_review", "autonomous_execution"]),
+        _proof_item("broker", "Open positions checked", "PROVEN" if open_positions_checked else "MISSING", "must prevent accidental overexposure", ["manual_cash_review", "autonomous_execution"]),
+        _proof_item("broker", "Duplicate order prevented", "PROVEN" if no_duplicate_order_confirmed else "MISSING", "must prove no duplicate ticket is active", ["manual_cash_review", "autonomous_execution"]),
+        _proof_item("broker", "Limit-order preview confirmed", "PROVEN" if order_preview_confirmed else "MISSING", "exact symbol, contract, quantity, limit, max loss", ["manual_cash_review", "autonomous_execution"]),
+        _proof_item("risk", "Session risk is not blocked", "PROVEN" if session_risk_clear else "BLOCKED", str(session_risk.get("status")), ["manual_cash_review", "autonomous_execution"]),
+        _proof_item("learning", "Minimum paper/live learning sample", "PROVEN" if paper_sample_size >= 20 else "WARNING", f"sample_size={paper_sample_size}; target>=20 before trust", ["autonomous_execution"]),
+        _proof_item("broker_execution", "Separate broker executor proven", "PROVEN" if separate_broker_executor_proven else "BLOCKED", "this MCP has no broker execution path", ["autonomous_execution"]),
+    ]
+    manual_blockers = [
+        item for item in proof_items
+        if "manual_cash_review" in item["required_for"] and item["status"] in {"MISSING", "BLOCKED"}
+    ]
+    autonomous_blockers = [
+        item for item in proof_items
+        if "autonomous_execution" in item["required_for"] and item["status"] in {"MISSING", "BLOCKED"}
+    ]
+    warnings = [item for item in proof_items if item["status"] == "WARNING"]
+    payload = {
+        "status": "REAL_CASH_PROOF_GATE_READY",
+        "build_version": BUILD_VERSION,
+        "schema_version": "real_cash_proof_gate_v1",
+        "generated_at": utc_now(),
+        "account_value_reference": account_value,
+        "intended_cash_reference": intended_cash,
+        "universe": universe,
+        "proof_summary": {
+            "proof_item_count": len(proof_items),
+            "proven_count": sum(1 for item in proof_items if item["status"] == "PROVEN"),
+            "missing_count": sum(1 for item in proof_items if item["status"] == "MISSING"),
+            "blocked_count": sum(1 for item in proof_items if item["status"] == "BLOCKED"),
+            "warning_count": len(warnings),
+        },
+        "decisions": {
+            "autonomous_scanning": "PROVEN_READY" if market_data_ready else "BLOCKED_BY_DATA",
+            "aggressive_paper_learning": "PROVEN_READY",
+            "manual_real_cash_review": "REAL_CASH_PROOF_READY" if not manual_blockers else "REAL_CASH_BLOCKED",
+            "fully_autonomous_real_cash_execution": "AUTONOMOUS_EXECUTION_PROOF_READY" if not autonomous_blockers and not warnings else "AUTONOMOUS_EXECUTION_BLOCKED",
+        },
+        "proof_items": proof_items,
+        "manual_cash_blockers": manual_blockers,
+        "autonomous_execution_blockers": autonomous_blockers,
+        "warnings": warnings,
+        "source_snapshots": {
+            "safety": safety,
+            "market_data_health": truth.get("market_data_health"),
+            "options_data_status": options_status,
+            "session_risk_guard": session_risk,
+            "paper_exploration_summary": {
+                "run_count": paper.get("run_count"),
+                "opened_entry_count": paper.get("opened_entry_count"),
+                "trial_count": paper.get("trial_count"),
+            },
+            "manual_paper_summary": {
+                "closed_count": manual_paper.get("closed_count"),
+                "win_rate": manual_paper.get("win_rate"),
+            },
+            "shared_intelligence": {
+                "status": intelligence.get("status"),
+                "signal_count": intelligence.get("signal_count"),
+                "actionable_count": intelligence.get("actionable_count"),
+                "conflict_count": intelligence.get("conflict_count"),
+            },
+        },
+        "next_step": "Keep autonomous scanning and paper learning on. For real cash, satisfy every manual_cash_blocker with broker-visible proof before manual action. Fully autonomous cash remains blocked until a separate broker executor and order-preview loop are proven.",
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        "order_allowed": False,
+        "broker_action": False,
+    }
+    return service_container.events.log("real_cash_proof_gate", payload)
 
 
 def _intelligence_signals_from_event(event: dict[str, Any], payload: dict[str, Any], universe_filter: set[str]) -> list[dict[str, Any]]:
