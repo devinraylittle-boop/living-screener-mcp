@@ -45,6 +45,37 @@ class TradingDayAlertsTests(unittest.TestCase):
         self.assertEqual(result["alerts"][0]["type"], "CHECKPOINT_NOT_EXPORTED")
         self.assertEqual(result["action_links"]["journal_checkpoint"], "/journal/checkpoint?limit=500&format=json")
 
+    def test_manual_review_alert_shows_candidate_identity(self) -> None:
+        with TempContainer() as container:
+            container.events.log(
+                "trading_day_heartbeat",
+                {
+                    "status": "HEARTBEAT_MANUAL_REVIEW_READY",
+                    "next_action": "Inspect manually.",
+                    "operation_result": {
+                        "ranked_candidates": [
+                            {
+                                "ticker": "ORCL",
+                                "direction": "short",
+                                "selected_contract": "ORCL260612P00155000",
+                                "status": "REVIEW_ONLY_OPTIONS_READY",
+                            }
+                        ]
+                    },
+                    "action_links": {"manual_trade_desk": "/trade/manual-desk"},
+                    "review_only": True,
+                    "can_place_order_from_this_mcp": False,
+                },
+            )
+            result = _summarize_trading_day_alerts(container, 50)
+
+        review_alert = next(alert for alert in result["alerts"] if alert["type"] == "MANUAL_REVIEW_READY")
+        self.assertEqual(review_alert["ticker"], "ORCL")
+        self.assertEqual(review_alert["direction"], "short")
+        self.assertEqual(review_alert["contract_symbol"], "ORCL260612P00155000")
+        self.assertTrue(review_alert["is_current"])
+        self.assertIn("ORCL", review_alert["title"])
+
 
 if __name__ == "__main__":
     unittest.main()
