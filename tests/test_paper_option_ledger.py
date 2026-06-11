@@ -1,15 +1,22 @@
 from __future__ import annotations
 
 import unittest
+from datetime import UTC, datetime, timedelta
 
 from app.mcp_server import (
     _build_manual_trade_preflight_ticket,
     _close_manual_option_paper_trade,
     _log_manual_option_paper_entry,
+    _run_paper_exploration,
+    _run_paper_exploration_followup,
+    _summarize_paper_exploration,
     _summarize_manual_option_paper_trades,
     _watch_manual_option_position,
 )
 from tests.helpers import TempContainer
+
+from app.data_adapters.mock_adapter import MockAdapter
+from app.models.schemas import Candle, Quote
 
 
 class PaperOptionLedgerTests(unittest.TestCase):
@@ -138,6 +145,36 @@ class PaperOptionLedgerTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "POSITION_WATCH_NEEDS_LIVE_QUOTE")
         self.assertFalse(result["can_place_order_from_this_mcp"])
+
+    def test_paper_exploration_opens_tagged_trials_without_cash_permission(self) -> None:
+        now = datetime.now(UTC)
+        quote_obj = Quote("NVDA", 110, previous_close=100, timestamp=now, provider="mock")
+        candle_list = [
+            Candle("NVDA", now - timedelta(minutes=16 - i), 100 + i * 0.7, 101 + i * 0.7, 99 + i * 0.7, 100 + i * 0.7, 500000, "5m", "mock")
+            for i in range(16)
+        ]
+        with TempContainer() as container:
+            container.scanner.market_data = MockAdapter({"NVDA": quote_obj}, {"NVDA": candle_list})
+            result = _run_paper_exploration(
+                container,
+                ["NVDA"],
+                max_candidates=5,
+                max_trials=3,
+                max_contract_price=2.0,
+                include_passes=True,
+                exploration_level="aggressive",
+            )
+            summary = _summarize_paper_exploration(container)
+            followup = _run_paper_exploration_followup(container, limit_runs=1, max_items=5, classify=True)
+
+        self.assertIn(result["status"], {"PAPER_EXPLORATION_TRIALS_OPENED", "PAPER_EXPLORATION_NO_ENTRIES"})
+        self.assertFalse(result["cash_gate_status"]["cash_gates_changed"])
+        self.assertFalse(result["can_place_order_from_this_mcp"])
+        self.assertTrue(result["paper_only"])
+        self.assertEqual(summary["status"], "PAPER_EXPLORATION_SUMMARY_READY")
+        self.assertFalse(summary["cash_gate_status"]["real_money_allowed_from_this_output"])
+        self.assertIn(followup["status"], {"PAPER_EXPLORATION_FOLLOWUP_READY", "PAPER_EXPLORATION_FOLLOWUP_WAITING"})
+        self.assertFalse(followup["broker_action"])
 
 
 if __name__ == "__main__":

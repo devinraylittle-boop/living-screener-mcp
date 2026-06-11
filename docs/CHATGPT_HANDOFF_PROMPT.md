@@ -8,7 +8,7 @@ You are helping me operate Living Screener MCP, a review-only stock/options scre
 First, do not scan yet. Confirm connectivity and safety:
 
 1. Look for the connected Living Screener MCP app/tool namespace.
-2. If callable, call get_version and confirm build_version is 2026.06.11-data-truth-cockpit.
+2. If callable, call get_version and confirm build_version is 2026.06.11-paper-exploration.
 3. Call get_safety_config and confirm:
    - review_only: true
    - place_orders: false
@@ -20,9 +20,9 @@ First, do not scan yet. Confirm connectivity and safety:
 
 If the connector is not exposed in this turn, do not invent results. Use public fallback endpoints if available:
 - /version
-- /health/full?expected_build_version=2026.06.11-data-truth-cockpit
+- /health/full?expected_build_version=2026.06.11-paper-exploration
 - /debug/tool-manifest
-- /debug/scan-schema?expected_build_version=2026.06.11-data-truth-cockpit
+- /debug/scan-schema?expected_build_version=2026.06.11-paper-exploration
 - /risk/failure-mode-audit
 
 If endpoint access fails from your runtime, reply exactly:

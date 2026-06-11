@@ -1,6 +1,6 @@
 # Scheduler Pinger
 
-Build: `2026.06.11-data-truth-cockpit`
+Build: `2026.06.11-paper-exploration`
 
 This package adds two ways to keep Living Screener awake and logging review-only scan evidence.
 
@@ -63,13 +63,13 @@ After deployment:
 ```text
 /version
 /tools
-/health/full?expected_build_version=2026.06.11-data-truth-cockpit
+/health/full?expected_build_version=2026.06.11-paper-exploration
 /ops/autonomous-morning-scan?format=html
 ```
 
 Expected:
 
-- Build version: `2026.06.11-data-truth-cockpit`
-- Tool count: `78`
+- Build version: `2026.06.11-paper-exploration`
+- Tool count: `81`
 - Full health: `OK`
 - Autonomous scan returns a review-only status and a next refresh interval.

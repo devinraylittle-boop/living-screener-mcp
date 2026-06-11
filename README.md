@@ -7,7 +7,7 @@ This app does **not** store Robinhood credentials, does **not** call Robinhood A
 ## Current Build
 
 ```text
-2026.06.11-data-truth-cockpit
+2026.06.11-paper-exploration
 ```
 
 ## Render Environment
@@ -82,6 +82,8 @@ Manual preflight tickets combine broker-visible option snapshots with the existi
 
 Paper option ledger tools let you study manual or hypothetical option decisions without touching a broker. Use `log_manual_option_paper_entry` after a paper/manual fill reference, then `close_manual_option_paper_trade` when you want to record the exit. The ledger calculates P/L, records the close, and sends the outcome into the mistake engine for learning labels. Use `summarize_manual_option_paper_trades` or `/paper/options/summary` to view open entries, recent closes, win rate, and paper P/L. These records do not prove a broker order existed and cannot place, submit, modify, simulate, or cancel orders.
 
+Paper exploration deliberately increases paper-trade volume for data mining. Use `run_paper_exploration` or `/paper/exploration/run` to open many paper-only research trials from candidates, watch-only reviews, and controlled rejects. Bad trades are allowed in this lane on purpose, but every entry is tagged with its exploration quality, why it was cash-blocked, and `cash_gates_changed: false`. Use `run_paper_exploration_followup` or `/paper/exploration/followup` after more candles have passed to grade whether the underlying move helped or hurt. Use `summarize_paper_exploration` or `/paper/exploration/summary` to review trial counts, quality buckets, top tickers, and latest follow-up. Never mix this noisy paper-exploration data with real-cash approval.
+
 Manual option position watch helps manage an open manual/paper option after entry. Use `watch_manual_option_position` or `/paper/options/watch` with the open entry ID or contract symbol plus current broker-visible bid/ask/mark. It returns `POSITION_HOLD_REVIEW`, `POSITION_PROFIT_WATCH`, `POSITION_PROFIT_REVIEW`, `POSITION_STOP_REVIEW`, or `POSITION_WATCH_NEEDS_LIVE_QUOTE`, prepares a `/paper/options/close` payload, and keeps all broker action outside the MCP.
 
 Session risk guard checks the journal before adding another manual idea. Use `get_session_risk_guard` or `/risk/session` with account value, proposed risk, and max open positions. It summarizes paper/research activity separately from user-reported real-cash activity. Paper scans, paper entries, paper closes, and learning are uncapped because there is no broker downside. New real-cash/autonomous escalation is blocked after 3 user-reported real-cash closed losses in the current trading day. This is journal evidence only; it does not verify broker balances or broker positions and cannot execute broker actions.
@@ -140,7 +142,7 @@ These routes call the same review-only services as the MCP tools. They exist so 
 GET /safety
 GET /
 GET /release-manifest
-GET /health/full?expected_build_version=2026.06.11-data-truth-cockpit
+GET /health/full?expected_build_version=2026.06.11-paper-exploration
 GET /ops/event-radar?format=html
 GET /ops/broad-opportunity-scan?format=html
 GET /ops/data-truth-cockpit?format=html
@@ -218,7 +220,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.11-data-truth-cockpit
+GET /debug/scan-schema?expected_build_version=2026.06.11-paper-exploration
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -237,7 +239,7 @@ If Render is still building, run the watcher instead:
 .\tools\watch_deploy.ps1
 ```
 
-It polls `/version` every 30 seconds. When `2026.06.11-data-truth-cockpit` appears, it automatically runs `validate_live.ps1`.
+It polls `/version` every 30 seconds. When `2026.06.11-paper-exploration` appears, it automatically runs `validate_live.ps1`.
 
 On market morning, after validation passes, run:
 
@@ -346,7 +348,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.11-data-truth-cockpit",
+  "build_version": "2026.06.11-paper-exploration",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false

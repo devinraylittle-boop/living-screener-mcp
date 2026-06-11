@@ -1,72 +1,73 @@
 {
-  "service": "Living Screener MCP",
-  "release_folder": "living-screener-mcp-data-truth-cockpit-20260611-101500",
-  "target_build_version": "2026.06.11-data-truth-cockpit",
-  "expected_live_tool_count": 78,
-  "safety_invariants": {
-    "review_only": true,
-    "place_orders": false,
-    "market_orders_allowed": false,
-    "manual_approval_required": true,
-    "can_place_order_from_this_mcp": false,
-    "can_cancel_order_from_this_mcp": false
-  },
-  "must_upload_to_repository_root": [
-    "app/",
-    "data/",
-    "docs/",
-    "tests/",
-    "tools/",
-    "Dockerfile",
-    "README.md",
-    "render.yaml",
-    "requirements.txt",
-    "pyproject.toml"
-  ],
-  "do_not_upload": [
-    ".venv/",
-    "__pycache__/",
-    ".pytest_cache/",
-    ".git/",
-    "old release folders",
-    "old zip files",
-    "robinhood-mcp-login.log",
-    "data/living_screener.sqlite3"
-  ],
-  "live_validation_endpoints": [
-    "/version",
-    "/tools",
-    "/health/full?expected_build_version=2026.06.11-data-truth-cockpit",
-    "/ops/autonomous-morning-scan?format=html",
-    "/ops/event-radar?format=html",
-    "/ops/broad-opportunity-scan?format=html",
-    "/ops/data-truth-cockpit?format=html",
-    "/ops/system-communication-audit?format=html",
-    "/ops/event-volatility-playbook?format=html",
-    "/ops/event-volatility-scan?format=html",
-    "/truth/source-status",
-    "/market/data-health",
-    "/research/catalyst-context?ticker=SOFI",
-    "/",
-    "/ops/go-live-rehearsal?account_value=50&format=html",
-    "/trade/manual-form?format=html",
-    "/risk/failure-mode-audit?format=html"
-  ],
-  "operator_helpers": [
-    "tools/validate_live.ps1",
-    "tools/watch_deploy.ps1",
-    "tools/start_tomorrow.ps1",
-    "tools/morning_pinger.ps1",
-    ".github/workflows/morning-autonomous-pinger.yml",
-    "docs/SCHEDULER_PINGER.md",
-    "docs/TOMORROW_MARKET_RUNBOOK.md"
-  ],
-  "post_deploy_pass_signal": "LIVE_VALIDATION_PASS",
-  "tomorrow_start_signal": "START_TOMORROW_READY",
-  "notes": [
-    "This MCP remains review-only and cannot place or cancel brokerage orders.",
-    "A live build mismatch means Render has not received the correct root-level files yet.",
-    "Run tools/watch_deploy.ps1 after redeploy, then tools/start_tomorrow.ps1 after validation passes."
-  ]
+    "service":  "Living Screener MCP",
+    "release_folder":  "living-screener-mcp-paper-exploration-20260611-103500",
+    "target_build_version":  "2026.06.11-paper-exploration",
+    "expected_live_tool_count":  81,
+    "safety_invariants":  {
+                              "review_only":  true,
+                              "place_orders":  false,
+                              "market_orders_allowed":  false,
+                              "manual_approval_required":  true,
+                              "can_place_order_from_this_mcp":  false,
+                              "can_cancel_order_from_this_mcp":  false
+                          },
+    "must_upload_to_repository_root":  [
+                                           "app/",
+                                           "data/",
+                                           "docs/",
+                                           "tests/",
+                                           "tools/",
+                                           "Dockerfile",
+                                           "README.md",
+                                           "render.yaml",
+                                           "requirements.txt",
+                                           "pyproject.toml"
+                                       ],
+    "do_not_upload":  [
+                          ".venv/",
+                          "__pycache__/",
+                          ".pytest_cache/",
+                          ".git/",
+                          "old release folders",
+                          "old zip files",
+                          "robinhood-mcp-login.log",
+                          "data/living_screener.sqlite3"
+                      ],
+    "live_validation_endpoints":  [
+                                      "/version",
+                                      "/tools",
+                                      "/health/full?expected_build_version=2026.06.11-paper-exploration",
+                                      "/ops/autonomous-morning-scan?format=html",
+                                      "/ops/event-radar?format=html",
+                                      "/ops/broad-opportunity-scan?format=html",
+                                      "/ops/data-truth-cockpit?format=html",
+                                      "/ops/system-communication-audit?format=html",
+                                      "/ops/event-volatility-playbook?format=html",
+                                      "/ops/event-volatility-scan?format=html",
+                                      "/truth/source-status",
+                                      "/market/data-health",
+                                      "/research/catalyst-context?ticker=SOFI",
+                                      "/",
+                                      "/ops/go-live-rehearsal?account_value=50\u0026format=html",
+                                      "/trade/manual-form?format=html",
+                                      "/risk/failure-mode-audit?format=html",
+                                      "/paper/exploration/summary?format=html",
+                                      "/paper/exploration/run?max_trials=10\u0026exploration_level=aggressive\u0026format=html"
+                                  ],
+    "operator_helpers":  [
+                             "tools/validate_live.ps1",
+                             "tools/watch_deploy.ps1",
+                             "tools/start_tomorrow.ps1",
+                             "tools/morning_pinger.ps1",
+                             ".github/workflows/morning-autonomous-pinger.yml",
+                             "docs/SCHEDULER_PINGER.md",
+                             "docs/TOMORROW_MARKET_RUNBOOK.md"
+                         ],
+    "post_deploy_pass_signal":  "LIVE_VALIDATION_PASS",
+    "tomorrow_start_signal":  "START_TOMORROW_READY",
+    "notes":  [
+                  "This MCP remains review-only and cannot place or cancel brokerage orders.",
+                  "A live build mismatch means Render has not received the correct root-level files yet.",
+                  "Run tools/watch_deploy.ps1 after redeploy, then tools/start_tomorrow.ps1 after validation passes."
+              ]
 }
-
