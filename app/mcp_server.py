@@ -3778,7 +3778,7 @@ def _run_paper_exploration(
             ticket,
             fill_price,
             1,
-            _float_or_none_value(row.get("price") or row.get("entry_reference")),
+            _paper_exploration_underlying_reference(row),
             f"auto paper exploration: {paper_quality}; {price_source}",
         )
         opened_entries += 1
@@ -3856,12 +3856,13 @@ def _run_paper_exploration_followup(service_container, limit_runs: int, max_item
     classifications: list[dict[str, Any]] = []
     unavailable = 0
     for item in followup_items:
+        entry_reference = _paper_exploration_entry_reference_from_item(service_container, item)
         outcome = service_container.review_outcomes.check_review_outcome(
             {
                 "review_id": f"paper-exploration-{item.get('entry_event_id') or item.get('ticker')}",
                 "ticker": item.get("ticker"),
                 "direction": item.get("stock_direction") or "long",
-                "entry_reference": item.get("underlying_entry_reference"),
+                "entry_reference": entry_reference,
                 "review_timestamp": item.get("source_run_timestamp"),
             },
             {"15m": 3, "30m": 6, "60m": 12},
@@ -4035,6 +4036,48 @@ def _paper_exploration_reason(row: dict[str, Any], review: dict[str, Any] | None
     return reasons[:8]
 
 
+def _paper_exploration_underlying_reference(row: dict[str, Any]) -> float | None:
+    signals = row.get("key_signals") or {}
+    quote_summary = row.get("quote_summary") or row.get("quote") or {}
+    candidates = [
+        row.get("price"),
+        row.get("entry_reference"),
+        row.get("current_price"),
+        row.get("last_price"),
+        signals.get("price"),
+        signals.get("last_price"),
+        signals.get("close"),
+        signals.get("current_price"),
+        quote_summary.get("price") if isinstance(quote_summary, dict) else None,
+        quote_summary.get("last_price") if isinstance(quote_summary, dict) else None,
+    ]
+    for value in candidates:
+        parsed = _float_or_none_value(value)
+        if parsed is not None and parsed > 0:
+            return parsed
+    return None
+
+
+def _paper_exploration_entry_reference_from_item(service_container, item: dict[str, Any]) -> float | None:
+    direct = _float_or_none_value(item.get("underlying_entry_reference"))
+    if direct is not None and direct > 0:
+        return direct
+    entry_id = item.get("entry_event_id")
+    if entry_id is None:
+        return None
+    for event in service_container.events.recent("manual_option_paper_entry", 500):
+        if event.get("id") != entry_id:
+            continue
+        payload = event.get("payload") or {}
+        entry_ref = _float_or_none_value(payload.get("underlying_entry_price"))
+        if entry_ref is not None and entry_ref > 0:
+            return entry_ref
+        source = payload.get("source_preflight") or {}
+        stock = source.get("stock_setup") or {}
+        return _paper_exploration_underlying_reference(stock)
+    return None
+
+
 def _paper_exploration_trial_record(
     row: dict[str, Any],
     review: dict[str, Any] | None,
@@ -4054,7 +4097,7 @@ def _paper_exploration_trial_record(
         "stock_score": row.get("score"),
         "stock_status": row.get("status"),
         "stock_setup_quality": (row.get("quality_gates") or {}).get("stock_setup_quality"),
-        "underlying_entry_reference": _float_or_none_value(row.get("price") or row.get("entry_reference")),
+        "underlying_entry_reference": _paper_exploration_underlying_reference(row),
         "relative_volume": (row.get("key_signals") or {}).get("relative_volume"),
         "vwap_state": "above" if (row.get("key_signals") or {}).get("above_vwap") else "below" if (row.get("key_signals") or {}).get("below_vwap") else "unknown",
         "review_status": (review or {}).get("status"),
