@@ -82,7 +82,7 @@ class ScannerTests(unittest.TestCase):
         self.assertIn("evidence_scorecard", candidate["key_signals"])
         self.assertIn("missing_or_planned_modules", candidate["key_signals"]["evidence_scorecard"])
         self.assertIn("evidence_packet", candidate)
-        self.assertEqual(candidate["evidence_packet"]["build_version"], "2026.06.10-autonomous-morning")
+        self.assertEqual(candidate["evidence_packet"]["build_version"], "2026.06.11-scheduler-pinger")
         self.assertIn("provider_lineage", candidate["evidence_packet"])
         self.assertIn("relative_strength", candidate["key_signals"])
 
@@ -129,4 +129,5 @@ class ScannerTests(unittest.TestCase):
         self.assertIn(rs["label"], {"leading_spy", "mixed_vs_spy", "lagging_spy"})
         module_names = [module["name"] for module in candidate["key_signals"]["evidence_scorecard"]["modules"]]
         self.assertIn("relative_strength_vs_spy", module_names)
+
 

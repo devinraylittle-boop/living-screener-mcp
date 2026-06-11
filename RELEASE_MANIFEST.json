@@ -1,7 +1,7 @@
 {
   "service": "Living Screener MCP",
-  "release_folder": "living-screener-mcp-autonomous-morning-20260610-235500",
-  "target_build_version": "2026.06.10-autonomous-morning",
+  "release_folder": "living-screener-mcp-scheduler-pinger-20260611-001500",
+  "target_build_version": "2026.06.11-scheduler-pinger",
   "expected_live_tool_count": 72,
   "safety_invariants": {
     "review_only": true,
@@ -36,7 +36,7 @@
   "live_validation_endpoints": [
     "/version",
     "/tools",
-    "/health/full?expected_build_version=2026.06.10-autonomous-morning",
+    "/health/full?expected_build_version=2026.06.11-scheduler-pinger",
     "/ops/autonomous-morning-scan?format=html",
     "/truth/source-status",
     "/market/data-health",
@@ -50,6 +50,9 @@
     "tools/validate_live.ps1",
     "tools/watch_deploy.ps1",
     "tools/start_tomorrow.ps1",
+    "tools/morning_pinger.ps1",
+    ".github/workflows/morning-autonomous-pinger.yml",
+    "docs/SCHEDULER_PINGER.md",
     "docs/TOMORROW_MARKET_RUNBOOK.md"
   ],
   "post_deploy_pass_signal": "LIVE_VALIDATION_PASS",
@@ -60,3 +63,4 @@
     "Run tools/watch_deploy.ps1 after redeploy, then tools/start_tomorrow.ps1 after validation passes."
   ]
 }
+

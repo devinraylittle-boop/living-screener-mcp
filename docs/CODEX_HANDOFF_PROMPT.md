@@ -13,7 +13,7 @@ The live Render app is:
 https://living-screener-mcp.onrender.com
 
 Expected build:
-2026.06.10-autonomous-morning
+2026.06.11-scheduler-pinger
 
 First, run:
 powershell -ExecutionPolicy Bypass -File .\tools\agent_status_snapshot.ps1
@@ -46,6 +46,7 @@ Next useful improvements, in order:
 
 Before coding, verify the live app and read docs/AI_CONTINUITY_PROTOCOL.md.
 ```
+
 
 
 

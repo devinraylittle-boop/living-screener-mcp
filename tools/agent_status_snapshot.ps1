@@ -1,6 +1,6 @@
 ﻿param(
     [string]$BaseUrl = "https://living-screener-mcp.onrender.com",
-    [string]$ExpectedBuild = "2026.06.10-autonomous-morning",
+    [string]$ExpectedBuild = "2026.06.11-scheduler-pinger",
     [int]$TimeoutSeconds = 20
 )
 
@@ -42,5 +42,6 @@ $snapshot = [pscustomobject]@{
 }
 
 $snapshot | ConvertTo-Json -Depth 8
+
 
 
