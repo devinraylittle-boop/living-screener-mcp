@@ -730,6 +730,7 @@ def _monster_dashboard_html(payload: dict[str, Any]) -> HTMLResponse:
 </div>
 <p>
   <a class="btn" href="{escape(str(one_click.get('enable_all_paper') or '#'))}">Enable All Paper</a>
+  <a class="btn" href="{escape(str(one_click.get('enable_full_autonomy') or '#'))}">Enable Full Autonomy</a>
   <a class="btn" href="{escape(str(one_click.get('enable_crypto_paper') or '#'))}">Enable Crypto Paper</a>
   <a class="btn" href="{escape(str(one_click.get('disable_all') or '#'))}">Disable All</a>
 </p>
@@ -3987,16 +3988,18 @@ async def fallback_broker_proof_bridge(request: Request) -> JSONResponse | HTMLR
 
 async def fallback_autonomy_control(request: Request) -> JSONResponse | HTMLResponse:
     params = request.query_params
+    max_daily_loss = _float_or_none(params.get("max_daily_loss"))
+    max_crypto_cash = _float_or_none(params.get("max_crypto_cash"))
     result = _set_autonomous_trading_controls(
         container,
         _truthy(params.get("autonomous_enabled")),
         _truthy(params.get("stocks_enabled")),
         _truthy(params.get("options_enabled")),
         _truthy(params.get("crypto_enabled")),
-        not (params.get("paper_trading_enabled") is not None and not _truthy(params.get("paper_trading_enabled"))),
+        _truthy(params.get("paper_trading_enabled")),
         _truthy(params.get("live_handoff_enabled")),
-        _float_or_none(params.get("max_daily_loss")) or 20.0,
-        _float_or_none(params.get("max_crypto_cash")) or 5.0,
+        max_daily_loss if max_daily_loss is not None else 20.0,
+        max_crypto_cash if max_crypto_cash is not None else 0.0,
         params.get("notes") or "",
     )
     payload = _review_only_envelope({"result": result})
@@ -4008,11 +4011,12 @@ async def fallback_autonomy_control(request: Request) -> JSONResponse | HTMLResp
 
 async def fallback_trading_monster_dashboard(request: Request) -> JSONResponse | HTMLResponse:
     params = request.query_params
+    max_daily_loss = _float_or_none(params.get("max_daily_loss"))
     result = _get_trading_monster_dashboard(
         container,
         _float_or_none(params.get("account_value")) or 50.0,
         _float_or_none(params.get("buying_power")) or 5.0,
-        _float_or_none(params.get("max_daily_loss")) or 20.0,
+        max_daily_loss if max_daily_loss is not None else 20.0,
     )
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
@@ -4022,11 +4026,12 @@ async def fallback_trading_monster_dashboard(request: Request) -> JSONResponse |
 
 async def fallback_cross_asset_capital_plan(request: Request) -> JSONResponse:
     params = request.query_params
+    max_daily_loss = _float_or_none(params.get("max_daily_loss"))
     result = _get_cross_asset_capital_plan(
         container,
         _float_or_none(params.get("account_value")) or 50.0,
         _float_or_none(params.get("buying_power")) or 5.0,
-        _float_or_none(params.get("max_daily_loss")) or 20.0,
+        max_daily_loss if max_daily_loss is not None else 20.0,
     )
     return JSONResponse(_review_only_envelope({"result": result}))
 
@@ -4048,6 +4053,7 @@ async def fallback_listed_equity_universe(request: Request) -> JSONResponse:
 
 async def fallback_broker_executor_bridge(request: Request) -> JSONResponse:
     params = request.query_params
+    max_daily_loss = _float_or_none(params.get("max_daily_loss"))
     result = _get_broker_executor_bridge(
         container,
         params.get("executor_base_url") or "",
@@ -4060,18 +4066,19 @@ async def fallback_broker_executor_bridge(request: Request) -> JSONResponse:
         _truthy(params.get("cancel_order_enabled")),
         _truthy(params.get("kill_switch_enabled")),
         not (params.get("paper_mode_default") is not None and not _truthy(params.get("paper_mode_default"))),
-        _float_or_none(params.get("max_daily_loss")) or 20.0,
+        max_daily_loss if max_daily_loss is not None else 20.0,
     )
     return JSONResponse(_review_only_envelope({"result": result}))
 
 
 async def fallback_event_war_room(request: Request) -> JSONResponse | HTMLResponse:
     params = request.query_params
+    max_daily_loss = _float_or_none(params.get("max_daily_loss"))
     result = _get_event_volatility_war_room(
         container,
         params.get("event_name") or "spacex_ipo",
         _float_or_none(params.get("account_value")) or 50.0,
-        _float_or_none(params.get("max_daily_loss")) or 20.0,
+        max_daily_loss if max_daily_loss is not None else 20.0,
     )
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
@@ -4095,9 +4102,10 @@ async def fallback_event_war_room(request: Request) -> JSONResponse | HTMLRespon
 
 async def fallback_loss_reassessment(request: Request) -> JSONResponse:
     params = request.query_params
+    max_daily_loss = _float_or_none(params.get("max_daily_loss"))
     result = _get_loss_review_reassessment(
         container,
-        _float_or_none(params.get("max_daily_loss")) or 20.0,
+        max_daily_loss if max_daily_loss is not None else 20.0,
         _float_or_none(params.get("realized_pnl")) or 0.0,
         _float_or_none(params.get("unrealized_pnl")) or 0.0,
     )
@@ -4172,6 +4180,7 @@ async def fallback_session_risk_guard(request: Request) -> JSONResponse | HTMLRe
         _float_or_none(params.get("account_value")) or 50.0,
         _float_or_none(params.get("proposed_risk_dollars")),
         _int_or_default(params.get("max_open_positions"), 2),
+        _float_or_none(params.get("max_daily_loss")),
     )
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):

@@ -244,7 +244,7 @@ def set_autonomous_trading_controls(
     stocks_enabled: bool = False,
     options_enabled: bool = False,
     crypto_enabled: bool = False,
-    paper_trading_enabled: bool = True,
+    paper_trading_enabled: bool = False,
     live_handoff_enabled: bool = False,
     max_daily_loss: float = 20.0,
     max_crypto_cash: float = 5.0,
@@ -476,7 +476,7 @@ def build_manual_trade_desk(
     account_value: float = 50.0,
     max_contract_price: float | None = None,
     notes: str = "",
-    max_open_positions: int = 2,
+    max_open_positions: int = 5,
 ) -> dict:
     return _build_manual_trade_desk(container, snapshot, account_value, max_contract_price, notes, max_open_positions)
 
@@ -528,8 +528,13 @@ def watch_manual_option_position(
 
 
 @mcp.tool
-def get_session_risk_guard(account_value: float = 50.0, proposed_risk_dollars: float | None = None, max_open_positions: int = 2) -> dict:
-    return _get_session_risk_guard(container, account_value, proposed_risk_dollars, max_open_positions)
+def get_session_risk_guard(
+    account_value: float = 50.0,
+    proposed_risk_dollars: float | None = None,
+    max_open_positions: int = 5,
+    max_daily_loss: float | None = None,
+) -> dict:
+    return _get_session_risk_guard(container, account_value, proposed_risk_dollars, max_open_positions, max_daily_loss)
 
 
 @mcp.tool
@@ -1936,6 +1941,8 @@ def _set_autonomous_trading_controls(
     max_crypto_cash: float,
     notes: str,
 ) -> dict:
+    daily_loss = round(float(max_daily_loss), 2)
+    daily_loss_param = f"{daily_loss:g}"
     payload = {
         "status": "AUTONOMOUS_CONTROLS_UPDATED",
         "schema_version": "autonomous_control_state_v1",
@@ -1948,12 +1955,13 @@ def _set_autonomous_trading_controls(
             "crypto_enabled": bool(crypto_enabled),
             "paper_trading_enabled": bool(paper_trading_enabled),
             "live_handoff_enabled": bool(live_handoff_enabled),
-            "max_daily_loss": round(float(max_daily_loss), 2),
+            "max_daily_loss": daily_loss,
             "max_crypto_cash": round(float(max_crypto_cash), 2),
         },
         "one_click_buttons": {
-            "arm_all_paper": "/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss=20",
-            "arm_crypto_paper": "/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=false&options_enabled=false&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss=20",
+            "enable_full_autonomy": f"/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=false&paper_trading_enabled=false&live_handoff_enabled=false&max_daily_loss={daily_loss_param}",
+            "arm_all_paper": f"/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss={daily_loss_param}",
+            "arm_crypto_paper": f"/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=false&options_enabled=false&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss={daily_loss_param}",
             "disable_all": "/ops/autonomy-control?autonomous_enabled=false&stocks_enabled=false&options_enabled=false&crypto_enabled=false&paper_trading_enabled=false&live_handoff_enabled=false",
         },
         "notes": notes,
@@ -1961,7 +1969,7 @@ def _set_autonomous_trading_controls(
             "live_order_execution_from_this_mcp": False,
             "proof_gates_still_required": True,
             "market_orders_blocked": True,
-            "halt_and_reassess_loss": round(float(max_daily_loss), 2),
+            "halt_and_reassess_loss": daily_loss,
         },
         "review_only": True,
         "can_place_order_from_this_mcp": False,
@@ -1979,15 +1987,17 @@ def _latest_autonomous_controls(service_container) -> dict[str, Any]:
         "stocks_enabled": False,
         "options_enabled": False,
         "crypto_enabled": False,
-        "paper_trading_enabled": True,
+        "paper_trading_enabled": False,
         "live_handoff_enabled": False,
         "max_daily_loss": 20.0,
-        "max_crypto_cash": 5.0,
+        "max_crypto_cash": 0.0,
     }
 
 
 def _get_cross_asset_capital_plan(service_container, account_value: float, buying_power: float, max_daily_loss: float) -> dict:
     controls = _latest_autonomous_controls(service_container)
+    max_loss = max(0.0, float(max_daily_loss))
+    controls = {**controls, "max_daily_loss": round(max_loss, 2)}
     active_lanes = [name for name, enabled in {
         "stocks": controls.get("stocks_enabled"),
         "options": controls.get("options_enabled"),
@@ -1995,8 +2005,7 @@ def _get_cross_asset_capital_plan(service_container, account_value: float, buyin
     }.items() if enabled]
     lane_count = max(1, len(active_lanes))
     cash = max(0.0, float(buying_power))
-    max_loss = max(0.0, float(max_daily_loss))
-    crypto_cap = min(float(controls.get("max_crypto_cash", 5.0) or 5.0), cash)
+    crypto_cap = min(float(controls.get("max_crypto_cash", 0.0) or 0.0), cash)
     remaining_after_crypto = max(0.0, cash - (crypto_cap if "crypto" in active_lanes else 0.0))
     stock_cap = round(remaining_after_crypto * 0.60, 2) if "stocks" in active_lanes else 0.0
     options_cap = round(remaining_after_crypto * 0.40, 2) if "options" in active_lanes else 0.0
@@ -2021,6 +2030,8 @@ def _get_cross_asset_capital_plan(service_container, account_value: float, buyin
         "loss_budgets": {
             "per_trade_soft_loss": round(min(max_loss / max(4, lane_count * 3), cash * 0.02), 2),
             "halt_and_reassess": round(max_loss, 2),
+            "new_entry_lockout_only": True,
+            "position_management_allowed_after_halt": True,
             "loss_review_required_after_every_loss": True,
         },
         "buying_power_reallocation": [
@@ -2179,6 +2190,7 @@ def _get_broker_executor_bridge(
     paper_mode_default: bool,
     max_daily_loss: float,
 ) -> dict:
+    daily_loss = abs(float(max_daily_loss))
     base = executor_base_url.rstrip("/")
     checks = {
         "executor_base_url_configured": bool(base),
@@ -2202,7 +2214,13 @@ def _get_broker_executor_bridge(
         "official_crypto_api_context": {
             "provider": "Robinhood Crypto Trading API",
             "source": "https://robinhood.com/us/en/support/articles/crypto-api/",
-            "supported_here": "Bridge contract only; credentials and signing remain in separate executor.",
+            "supported_here": "Crypto-only bridge contract; credentials and signing remain in a separate executor.",
+        },
+        "official_agentic_trading_context": {
+            "provider": "Robinhood Trading MCP / Agentic account",
+            "source": "https://robinhood.com/us/en/support/articles/agentic-trading-overview/",
+            "supported_here": "Use Robinhood's MCP connection for agentic account access. This package can govern scans, risk, and proof gates around it.",
+            "session_tooling_note": "Current exposed Robinhood tools in this Codex session are equity tradability, equity positions, equity order review, equity place, and equity cancel. Options order placement is not exposed here.",
         },
         "executor_base_url": base,
         "checks": checks,
@@ -2222,14 +2240,16 @@ def _get_broker_executor_bridge(
             "Executor must default to paper mode.",
             "Live place requires preview id, exact ticket hash, limit order, max loss, and active kill switch.",
             "Market orders remain blocked.",
-            "At -$20 daily loss, executor must halt new entries and require re-arm.",
+            f"At -${daily_loss:.2f} daily loss, executor must halt new entries, continue allowing risk-reducing position management, and require re-arm before any new entry.",
         ],
         "what_i_need_from_user": [
-            "Robinhood Crypto API key configured in a separate executor, not pasted into chat.",
-            "Whether the key has read-only only, preview, place-order, and cancel-order permissions.",
-            "Executor base URL or local service address.",
-            "A dry-run /health and /account response with sensitive fields redacted.",
-            "Confirmation that executor defaults to paper mode and has a kill-switch endpoint.",
+            "Robinhood Agentic account number for the dedicated agentic account; do not use the individual account by accident.",
+            "Confirmation that the Robinhood Trading MCP is authenticated on desktop and connected to this agentic account.",
+            "For equity execution: prove tradability, positions, order review, place, cancel, and kill-switch workflow.",
+            "For options execution: provide an options-capable Robinhood MCP tool or a separate broker/executor with option preview/place/cancel endpoints.",
+            "Executor base URL or local service address if using a separate executor.",
+            "A dry-run /health and /account response with sensitive fields redacted if using a separate executor.",
+            "Confirmation that the executor or MCP workflow blocks new entries at the daily loss limit but still allows risk-reducing position management.",
         ],
         "review_only": True,
         "can_place_order_from_this_mcp": False,
@@ -2294,11 +2314,14 @@ def _get_loss_review_reassessment(service_container, max_daily_loss: float, real
         "total_pnl": round(total, 2),
         "max_daily_loss": round(limit, 2),
         "halt_triggered": halted,
+        "new_entries_allowed": not halted,
+        "new_entry_lockout_only": True,
+        "position_management_allowed": True,
         "loss_review_loop": [
             "After every loss: capture entry proof, exit proof, spread, fee, slippage, setup state, and invalidation.",
             "Classify loss as bad entry, late entry, bad exit, data issue, fee/slippage issue, regime flip, or acceptable planned loss.",
             "Disable or down-rank the responsible strategy if repeated loss causes recur.",
-            "At -$20 total daily P/L: halt new entries, analyze errors, apply stricter rules only, then require explicit re-arm.",
+            f"At -${limit:.2f} total daily P/L: disable opening new positions, continue managing current open positions, analyze errors, then require explicit re-arm for new entries.",
         ],
         "review_only": True,
         "can_place_order_from_this_mcp": False,
@@ -2308,9 +2331,12 @@ def _get_loss_review_reassessment(service_container, max_daily_loss: float, real
 
 def _get_trading_monster_dashboard(service_container, account_value: float, buying_power: float, max_daily_loss: float) -> dict:
     controls = _latest_autonomous_controls(service_container)
-    capital = _get_cross_asset_capital_plan(service_container, account_value, buying_power, max_daily_loss)
+    active_daily_loss = round(float(max_daily_loss), 2)
+    controls = {**controls, "max_daily_loss": active_daily_loss}
+    active_daily_loss_param = f"{active_daily_loss:g}"
+    capital = _get_cross_asset_capital_plan(service_container, account_value, buying_power, active_daily_loss)
     visibility = _get_full_market_visibility_map(service_container)
-    loss = _get_loss_review_reassessment(service_container, max_daily_loss, 0.0, 0.0)
+    loss = _get_loss_review_reassessment(service_container, active_daily_loss, 0.0, 0.0)
     recent_crypto = service_container.events.recent("crypto_autonomous_cycle", 5)
     payload = {
         "status": "TRADING_MONSTER_DASHBOARD_READY",
@@ -2319,8 +2345,9 @@ def _get_trading_monster_dashboard(service_container, account_value: float, buyi
         "generated_at": utc_now(),
         "controls": controls,
         "one_click_controls": {
-            "enable_all_paper": "/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss=20&format=html",
-            "enable_crypto_paper": "/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=false&options_enabled=false&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss=20&format=html",
+            "enable_full_autonomy": f"/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=false&paper_trading_enabled=false&live_handoff_enabled=false&max_daily_loss={active_daily_loss_param}&format=html",
+            "enable_all_paper": f"/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss={active_daily_loss_param}&format=html",
+            "enable_crypto_paper": f"/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=false&options_enabled=false&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss={active_daily_loss_param}&format=html",
             "disable_all": "/ops/autonomy-control?autonomous_enabled=false&stocks_enabled=false&options_enabled=false&crypto_enabled=false&paper_trading_enabled=false&live_handoff_enabled=false&format=html",
         },
         "capital_plan": capital,
@@ -2773,7 +2800,7 @@ def _get_ops_command_center(service_container, tickers: list[str] | None, accoun
             "market_readiness": f"/ops/market-readiness?tickers={ticker_query}&max_candidates=25",
             "review_harvest": f"/ops/review-harvest?tickers={ticker_query}&max_candidates=25&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}",
             "harvest_followup": "/ops/harvest-followup?limit=5&classify=true",
-            "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html",
+            "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=5&max_daily_loss=20&format=html",
             "learning_dashboard": "/learning/dashboard",
             "paper_option_summary": "/paper/options/summary",
             "debug_health": f"/health/full?expected_build_version={BUILD_VERSION}",
@@ -2873,7 +2900,7 @@ def _get_trading_day_launch_checklist(service_container, tickers: list[str] | No
             {
                 "phase": "Session risk",
                 "go_condition": "Open journaled option risk is below cap and max open positions has not been reached.",
-                "primary_link": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html",
+                "primary_link": f"/risk/session?account_value={account_ref}&max_open_positions=5&max_daily_loss=20&format=html",
                 "stop_if": "Session risk is SESSION_RISK_BLOCKED, hard lockout is reached, or open exposure is already full.",
             },
             {
@@ -2920,7 +2947,7 @@ def _get_trading_day_launch_checklist(service_container, tickers: list[str] | No
             "health_full": f"/health/full?expected_build_version={BUILD_VERSION}",
             "tool_manifest": "/debug/tool-manifest",
             "scan_schema": f"/debug/scan-schema?expected_build_version={BUILD_VERSION}",
-            "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html",
+            "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=5&max_daily_loss=20&format=html",
             "market_readiness": f"/ops/market-readiness?tickers={ticker_query}&max_candidates={max_candidates}",
             "market_open_observer": f"/ops/market-open-observer?tickers={ticker_query}&max_candidates={max_candidates}&cadence_minutes=5&format=html",
             "live_review_cycle": f"/ops/live-review-cycle?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}&format=html",
@@ -2987,7 +3014,7 @@ def _get_tomorrow_operator_brief(service_container, tickers: list[str] | None, a
         "morning_autopilot": f"/ops/morning-autopilot?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&format=html",
         "day_monitor": f"/ops/day-monitor?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={contract_cap}&format=html",
         "day_alerts": "/ops/day-alerts?limit=50&format=html",
-        "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html",
+        "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=5&max_daily_loss=20&format=html",
         "live_review_cycle": f"/ops/live-review-cycle?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={contract_cap}&format=html",
         "manual_snapshot_form": "/trade/manual-form?format=html",
         "manual_trade_desk": "/trade/manual-desk",
@@ -3217,7 +3244,7 @@ def _run_go_live_rehearsal(
             {"label": "Operator brief", "url": f"/ops/tomorrow-brief?tickers={ticker_query}&account_value={account_ref}&format=html"},
             {"label": "Day monitor", "url": f"/ops/day-monitor?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&format=html"},
             {"label": "Day alerts", "url": "/ops/day-alerts?limit=50&format=html"},
-            {"label": "Session risk", "url": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html"},
+            {"label": "Session risk", "url": f"/risk/session?account_value={account_ref}&max_open_positions=5&max_daily_loss=20&format=html"},
             {"label": "Manual snapshot form", "url": "/trade/manual-form?format=html"},
             {"label": "Paper ledger", "url": "/paper/options/summary?format=html"},
         ],
@@ -3696,7 +3723,7 @@ def _run_morning_readiness_autopilot(service_container, tickers: list[str] | Non
             "market_readiness": f"/ops/market-readiness?tickers={','.join(universe)}&max_candidates={max_candidates}",
             "review_harvest": f"/ops/review-harvest?tickers={','.join(universe)}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}",
             "harvest_followup": "/ops/harvest-followup?limit=5&classify=true",
-            "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html",
+            "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=5&max_daily_loss=20&format=html",
             "paper_ledger": "/paper/options/summary",
             "debug_health": f"/health/full?expected_build_version={BUILD_VERSION}",
             "debug_schema": f"/debug/scan-schema?expected_build_version={BUILD_VERSION}",
@@ -3947,7 +3974,7 @@ def _run_live_review_cycle(
             "morning_autopilot": f"/ops/morning-autopilot?tickers={','.join(universe)}&account_value={_float_or_zero(account_value) or 50.0}&max_candidates={max_candidates}",
             "live_review_cycle": f"/ops/live-review-cycle?tickers={','.join(universe)}&account_value={_float_or_zero(account_value) or 50.0}&max_candidates={max_candidates}&review_top_n={review_top_n}&max_contract_price={effective_contract_cap}",
             "review_harvest": f"/ops/review-harvest?tickers={','.join(universe)}&max_candidates={max_candidates}&review_top_n={review_top_n}&max_contract_price={effective_contract_cap}",
-            "session_risk": f"/risk/session?account_value={_float_or_zero(account_value) or 50.0}&proposed_risk_dollars={proposed_risk}&max_open_positions=2&format=html",
+            "session_risk": f"/risk/session?account_value={_float_or_zero(account_value) or 50.0}&proposed_risk_dollars={proposed_risk}&max_open_positions=5&max_daily_loss=20&format=html",
             "manual_preflight": "/review/manual-preflight",
             "paper_ledger": "/paper/options/summary",
             "harvest_followup": "/ops/harvest-followup?limit=5&classify=true",
@@ -4255,7 +4282,7 @@ def _build_manual_trade_desk(
     account_value: float,
     max_contract_price: float | None,
     notes: str = "",
-    max_open_positions: int = 2,
+    max_open_positions: int = 5,
 ) -> dict:
     preflight = _build_manual_trade_preflight_ticket(service_container, snapshot, account_value, max_contract_price, notes)
     selected = preflight.get("selected_contract") or {}
@@ -4719,7 +4746,13 @@ def _watch_manual_option_position(
     return service_container.events.log("manual_option_position_watch", payload)
 
 
-def _get_session_risk_guard(service_container, account_value: float = 50.0, proposed_risk_dollars: float | None = None, max_open_positions: int = 2) -> dict:
+def _get_session_risk_guard(
+    service_container,
+    account_value: float = 50.0,
+    proposed_risk_dollars: float | None = None,
+    max_open_positions: int = 5,
+    max_daily_loss: float | None = None,
+) -> dict:
     account_value = _float_or_zero(account_value) or 50.0
     max_open_positions = max(1, min(int(max_open_positions or 2), 5))
     proposed_risk = _float_or_zero(proposed_risk_dollars)
@@ -4756,11 +4789,18 @@ def _get_session_risk_guard(service_container, account_value: float = 50.0, prop
     real_cash_open_position_count = max(0, len(real_cash_entries) - len(real_cash_closes))
     open_risk = round(sum(_float_or_zero((event.get("payload") or {}).get("entry_debit_dollars")) for event in open_entries), 2)
     closed_pnl = round(sum(_float_or_zero((event.get("payload") or {}).get("pnl_dollars")) for event in closes), 2)
+    configured_daily_loss = abs(float(max_daily_loss)) if max_daily_loss is not None else 0.0
     per_trade_cap = round(account_value * service_container.settings.max_trade_risk_pct, 2)
     warn_drawdown = round(account_value * service_container.settings.warn_daily_drawdown_pct, 2)
     soft_stop = round(account_value * service_container.settings.soft_stop_daily_drawdown_pct, 2)
     hard_lockout = round(account_value * service_container.settings.hard_lockout_daily_drawdown_pct, 2)
     total_open_cap = round(account_value * service_container.settings.hard_lockout_daily_drawdown_pct, 2)
+    if configured_daily_loss > 0:
+        warn_drawdown = round(min(warn_drawdown, configured_daily_loss * 0.50), 2)
+        soft_stop = round(min(soft_stop, configured_daily_loss * 0.75), 2)
+        hard_lockout = round(min(hard_lockout, configured_daily_loss), 2)
+        total_open_cap = round(min(total_open_cap, configured_daily_loss), 2)
+        per_trade_cap = round(min(per_trade_cap, configured_daily_loss), 2)
     projected_open_risk = round(open_risk + proposed_risk, 2)
     warnings: list[str] = []
     blocking_reasons: list[str] = []
@@ -4808,6 +4848,7 @@ def _get_session_risk_guard(service_container, account_value: float = 50.0, prop
         "generated_at": utc_now(),
         "account_value_reference": account_value,
         "proposed_risk_dollars": proposed_risk if proposed_risk > 0 else None,
+        "daily_loss_limit_dollars": round(configured_daily_loss, 2) if configured_daily_loss > 0 else None,
         "per_trade_cap_dollars": per_trade_cap,
         "total_open_risk_cap_dollars": total_open_cap,
         "warning_drawdown_dollars": warn_drawdown,
