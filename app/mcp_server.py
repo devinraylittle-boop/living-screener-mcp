@@ -25,8 +25,10 @@ mcp = FastMCP(
     name="Living Screener MCP",
     instructions=(
         "Use this server for market scans, signal scoring, trade planning, risk checks, journaling, "
-        "postmortems, backtests, and prompt/rule evolution. This server cannot place brokerage orders, "
-        "does not store broker credentials, and does not call broker APIs. For options review, use "
+        "postmortems, backtests, and prompt/rule evolution. This server can build master-risk-governed "
+        "live execution tickets only after broker, data, liquidity, slippage, catalyst, and kill-switch "
+        "proof gates pass. It does not store broker credentials; order placement must route through a "
+        "proven host Robinhood MCP or external broker executor adapter. For options review, use "
         "review_candidate_for_options so stock setup quality and options-chain quality are checked together. "
         "For pending buys, use review_pending_buy_order after 60 seconds before treating the order as still valid. "
         "For crypto paper testing, call run_backtest with engine crypto-paper-overnight; this routes to paper-only "
@@ -66,6 +68,8 @@ def _version_payload() -> dict:
         "has_finnhub_api_key": bool(settings.finnhub_api_key),
         "has_marketdata_api_key": bool(settings.marketdata_api_key),
         "has_tradier_access_token": bool(settings.tradier_access_token),
+        "execution_mode": "GATED_LIVE_EXECUTION_CAPABLE",
+        "live_execution_requires_broker_adapter": True,
         "review_only": True,
         "can_place_order_from_this_mcp": False,
         "can_cancel_order_from_this_mcp": False,
@@ -379,6 +383,156 @@ def create_stock_execution_intent(
         market_hours,
         account_value,
         max_daily_loss,
+    )
+
+
+@mcp.tool
+def get_live_execution_control_plane(
+    account_number: str = "",
+    account_value: float = 100.0,
+    buying_power: float = 100.0,
+    realized_pnl: float = 0.0,
+    unrealized_pnl: float = 0.0,
+    max_daily_loss: float = 20.0,
+    max_risk_per_trade: float = 2.0,
+    max_risk_pct_per_trade: float = 0.02,
+    max_trades_per_day: int = 6,
+    max_open_positions: int = 2,
+    todays_trade_count: int = 0,
+    open_position_count: int = 0,
+    open_order_count: int = 0,
+    broker_account_confirmed: bool = False,
+    buying_power_confirmed: bool = False,
+    open_positions_checked: bool = False,
+    open_orders_checked: bool = False,
+    no_duplicate_order_confirmed: bool = False,
+    broker_review_enabled: bool = False,
+    broker_place_enabled: bool = False,
+    broker_cancel_enabled: bool = False,
+    kill_switch_enabled: bool = False,
+    market_data_healthy: bool = False,
+    market_condition_clear: bool = False,
+    spread_liquidity_clear: bool = False,
+    slippage_clear: bool = False,
+    catalyst_clear: bool = False,
+) -> dict:
+    return _get_live_execution_control_plane(
+        container,
+        account_number,
+        account_value,
+        buying_power,
+        realized_pnl,
+        unrealized_pnl,
+        max_daily_loss,
+        max_risk_per_trade,
+        max_risk_pct_per_trade,
+        max_trades_per_day,
+        max_open_positions,
+        todays_trade_count,
+        open_position_count,
+        open_order_count,
+        broker_account_confirmed,
+        buying_power_confirmed,
+        open_positions_checked,
+        open_orders_checked,
+        no_duplicate_order_confirmed,
+        broker_review_enabled,
+        broker_place_enabled,
+        broker_cancel_enabled,
+        kill_switch_enabled,
+        market_data_healthy,
+        market_condition_clear,
+        spread_liquidity_clear,
+        slippage_clear,
+        catalyst_clear,
+    )
+
+
+@mcp.tool
+def build_autonomous_execution_ticket(
+    account_number: str,
+    symbol: str,
+    side: str,
+    order_type: str = "limit",
+    quantity: str = "",
+    dollar_amount: str = "",
+    limit_price: str = "",
+    stop_price: str = "",
+    take_profit_price: str = "",
+    confidence_score: float = 0.0,
+    setup_quality: str = "",
+    risk_reward: float = 0.0,
+    account_value: float = 100.0,
+    buying_power: float = 100.0,
+    proposed_risk_dollars: float = 0.0,
+    max_daily_loss: float = 20.0,
+    max_risk_per_trade: float = 2.0,
+    max_risk_pct_per_trade: float = 0.02,
+    max_trades_per_day: int = 6,
+    max_open_positions: int = 2,
+    todays_trade_count: int = 0,
+    open_position_count: int = 0,
+    open_order_count: int = 0,
+    broker_account_confirmed: bool = False,
+    buying_power_confirmed: bool = False,
+    open_positions_checked: bool = False,
+    open_orders_checked: bool = False,
+    no_duplicate_order_confirmed: bool = False,
+    broker_review_enabled: bool = False,
+    broker_place_enabled: bool = False,
+    broker_cancel_enabled: bool = False,
+    kill_switch_enabled: bool = False,
+    market_data_healthy: bool = False,
+    market_condition_clear: bool = False,
+    setup_quality_clear: bool = False,
+    liquidity_clear: bool = False,
+    spread_clear: bool = False,
+    slippage_clear: bool = False,
+    catalyst_clear: bool = False,
+    execution_confidence_clear: bool = False,
+) -> dict:
+    return _build_autonomous_execution_ticket(
+        container,
+        account_number,
+        symbol,
+        side,
+        order_type,
+        quantity,
+        dollar_amount,
+        limit_price,
+        stop_price,
+        take_profit_price,
+        confidence_score,
+        setup_quality,
+        risk_reward,
+        account_value,
+        buying_power,
+        proposed_risk_dollars,
+        max_daily_loss,
+        max_risk_per_trade,
+        max_risk_pct_per_trade,
+        max_trades_per_day,
+        max_open_positions,
+        todays_trade_count,
+        open_position_count,
+        open_order_count,
+        broker_account_confirmed,
+        buying_power_confirmed,
+        open_positions_checked,
+        open_orders_checked,
+        no_duplicate_order_confirmed,
+        broker_review_enabled,
+        broker_place_enabled,
+        broker_cancel_enabled,
+        kill_switch_enabled,
+        market_data_healthy,
+        market_condition_clear,
+        setup_quality_clear,
+        liquidity_clear,
+        spread_clear,
+        slippage_clear,
+        catalyst_clear,
+        execution_confidence_clear,
     )
 
 
@@ -2557,6 +2711,332 @@ def _create_stock_execution_intent(
         "can_cancel_order_from_this_mcp": False,
     }
     return service_container.events.log("stock_execution_intent", payload)
+
+
+def _get_live_execution_control_plane(
+    service_container,
+    account_number: str,
+    account_value: float,
+    buying_power: float,
+    realized_pnl: float,
+    unrealized_pnl: float,
+    max_daily_loss: float,
+    max_risk_per_trade: float,
+    max_risk_pct_per_trade: float,
+    max_trades_per_day: int,
+    max_open_positions: int,
+    todays_trade_count: int,
+    open_position_count: int,
+    open_order_count: int,
+    broker_account_confirmed: bool,
+    buying_power_confirmed: bool,
+    open_positions_checked: bool,
+    open_orders_checked: bool,
+    no_duplicate_order_confirmed: bool,
+    broker_review_enabled: bool,
+    broker_place_enabled: bool,
+    broker_cancel_enabled: bool,
+    kill_switch_enabled: bool,
+    market_data_healthy: bool,
+    market_condition_clear: bool,
+    spread_liquidity_clear: bool,
+    slippage_clear: bool,
+    catalyst_clear: bool,
+) -> dict:
+    controls = _latest_autonomous_controls(service_container)
+    account = str(account_number or "").strip()
+    account_value = _float_or_zero(account_value) or 100.0
+    buying_power = _float_or_zero(buying_power)
+    realized = _float_or_zero(realized_pnl)
+    unrealized = _float_or_zero(unrealized_pnl)
+    total_pnl = round(realized + unrealized, 2)
+    daily_loss = abs(_float_or_zero(max_daily_loss) or 20.0)
+    max_risk_dollars = abs(_float_or_zero(max_risk_per_trade) or 2.0)
+    max_risk_pct = abs(_float_or_zero(max_risk_pct_per_trade) or 0.02)
+    pct_cap_dollars = round(account_value * max_risk_pct, 2)
+    effective_trade_risk_cap = round(min(max_risk_dollars, pct_cap_dollars), 2)
+    max_trades = max(1, int(max_trades_per_day or 1))
+    max_positions = max(1, int(max_open_positions or 1))
+    trade_count = max(0, int(todays_trade_count or 0))
+    position_count = max(0, int(open_position_count or 0))
+    order_count = max(0, int(open_order_count or 0))
+    checks = {
+        "autonomous_enabled": bool(controls.get("autonomous_enabled")),
+        "live_execution_requested": not bool(controls.get("paper_trading_enabled")),
+        "at_least_one_live_lane_enabled": bool(controls.get("stocks_enabled") or controls.get("options_enabled") or controls.get("crypto_enabled")),
+        "account_number_present": bool(account),
+        "broker_account_confirmed": bool(broker_account_confirmed),
+        "buying_power_confirmed": bool(buying_power_confirmed),
+        "buying_power_positive": buying_power > 0,
+        "open_positions_checked": bool(open_positions_checked),
+        "open_orders_checked": bool(open_orders_checked),
+        "no_duplicate_order_confirmed": bool(no_duplicate_order_confirmed),
+        "broker_review_enabled": bool(broker_review_enabled),
+        "broker_place_enabled": bool(broker_place_enabled),
+        "broker_cancel_enabled": bool(broker_cancel_enabled),
+        "kill_switch_enabled": bool(kill_switch_enabled),
+        "market_data_healthy": bool(market_data_healthy),
+        "market_condition_clear": bool(market_condition_clear),
+        "spread_liquidity_clear": bool(spread_liquidity_clear),
+        "slippage_clear": bool(slippage_clear),
+        "catalyst_clear": bool(catalyst_clear),
+        "daily_loss_clear": total_pnl > -daily_loss,
+        "trade_count_below_cap": trade_count < max_trades,
+        "open_positions_below_cap": position_count < max_positions,
+        "open_order_capacity_clear": order_count <= max_positions,
+    }
+    blockers = [name for name, passed in checks.items() if not passed]
+    live_enabled = not blockers
+    payload = {
+        "status": "LIVE_EXECUTION_ENABLED" if live_enabled else "LIVE_EXECUTION_BLOCKED",
+        "schema_version": "live_execution_control_plane_v1",
+        "generated_at": utc_now(),
+        "execution_mode": "LIVE_EXECUTION_ENABLED" if live_enabled else "GATED_LIVE_EXECUTION_BLOCKED",
+        "read_only_replaced_by": "master_risk_governed_live_execution",
+        "manual_approval_required_per_order": False if live_enabled else None,
+        "broker_connection_model": "host_robinhood_mcp_or_external_executor_adapter",
+        "account_number_present": bool(account),
+        "controls": controls,
+        "checks": checks,
+        "blockers": blockers,
+        "risk_limits": {
+            "max_dollar_risk_per_trade": round(max_risk_dollars, 2),
+            "max_percentage_risk_per_trade": round(max_risk_pct, 4),
+            "effective_trade_risk_cap": effective_trade_risk_cap,
+            "max_daily_loss": round(daily_loss, 2),
+            "max_trades_per_day": max_trades,
+            "max_open_positions": max_positions,
+            "max_position_size": round(min(buying_power, account_value * 0.60), 2),
+            "no_averaging_down_unless_strategy_explicitly_allows": True,
+        },
+        "current_risk_state": {
+            "account_value": round(account_value, 2),
+            "buying_power": round(buying_power, 2),
+            "realized_pnl": round(realized, 2),
+            "unrealized_pnl": round(unrealized, 2),
+            "total_pnl": total_pnl,
+            "todays_trade_count": trade_count,
+            "open_position_count": position_count,
+            "open_order_count": order_count,
+        },
+        "master_risk_governor": {
+            "authority": "absolute",
+            "strategy_override_allowed": False,
+            "new_entries_allowed": live_enabled,
+            "risk_reducing_position_management_allowed": bool(broker_cancel_enabled and kill_switch_enabled),
+            "kill_switch_authority": "cancel_open_orders_reject_new_entries_and_require_reassessment",
+        },
+        "must_reject_trade_if": [
+            "market condition check fails",
+            "setup quality check fails",
+            "liquidity check fails",
+            "spread or slippage check fails",
+            "risk/reward check fails",
+            "account-size suitability check fails",
+            "catalyst/news risk check fails",
+            "execution confidence check fails",
+            "data is stale, conflicting, confusing, or unavailable",
+            "daily loss, trade count, position count, duplicate order, or kill-switch gate fails",
+        ],
+        "scaling_policy": {
+            "starting_mode": "limited_live_execution_small_capital",
+            "scale_only_after": [
+                "minimum sample size of closed live trades",
+                "positive expectancy after fees and slippage",
+                "max drawdown stayed inside governor limits",
+                "no unresolved execution errors",
+                "postmortems completed for losses, missed trades, bad entries, and bad exits",
+            ],
+            "arbitrary_confidence_scaling_allowed": False,
+        },
+        "decision_logging_required": [
+            "timestamp",
+            "ticker_or_contract",
+            "direction",
+            "entry_reason",
+            "exit_plan",
+            "risk_amount",
+            "confidence_score",
+            "data_used",
+            "safety_gates_passed",
+            "rejection_reason_when_skipped",
+            "final_outcome_after_close",
+        ],
+        "can_route_live_orders": live_enabled,
+        "can_place_order_via_broker_adapter": live_enabled,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+    return service_container.events.log("live_execution_control_plane", payload)
+
+
+def _build_autonomous_execution_ticket(
+    service_container,
+    account_number: str,
+    symbol: str,
+    side: str,
+    order_type: str,
+    quantity: str,
+    dollar_amount: str,
+    limit_price: str,
+    stop_price: str,
+    take_profit_price: str,
+    confidence_score: float,
+    setup_quality: str,
+    risk_reward: float,
+    account_value: float,
+    buying_power: float,
+    proposed_risk_dollars: float,
+    max_daily_loss: float,
+    max_risk_per_trade: float,
+    max_risk_pct_per_trade: float,
+    max_trades_per_day: int,
+    max_open_positions: int,
+    todays_trade_count: int,
+    open_position_count: int,
+    open_order_count: int,
+    broker_account_confirmed: bool,
+    buying_power_confirmed: bool,
+    open_positions_checked: bool,
+    open_orders_checked: bool,
+    no_duplicate_order_confirmed: bool,
+    broker_review_enabled: bool,
+    broker_place_enabled: bool,
+    broker_cancel_enabled: bool,
+    kill_switch_enabled: bool,
+    market_data_healthy: bool,
+    market_condition_clear: bool,
+    setup_quality_clear: bool,
+    liquidity_clear: bool,
+    spread_clear: bool,
+    slippage_clear: bool,
+    catalyst_clear: bool,
+    execution_confidence_clear: bool,
+) -> dict:
+    proposed_risk = _float_or_zero(proposed_risk_dollars)
+    if proposed_risk <= 0:
+        if str(dollar_amount or "").strip():
+            proposed_risk = _float_or_zero(dollar_amount)
+        elif str(quantity or "").strip() and str(limit_price or "").strip():
+            proposed_risk = round(_float_or_zero(quantity) * _float_or_zero(limit_price), 2)
+    governor = _get_live_execution_control_plane(
+        service_container,
+        account_number,
+        account_value,
+        buying_power,
+        0.0,
+        0.0,
+        max_daily_loss,
+        max_risk_per_trade,
+        max_risk_pct_per_trade,
+        max_trades_per_day,
+        max_open_positions,
+        todays_trade_count,
+        open_position_count,
+        open_order_count,
+        broker_account_confirmed,
+        buying_power_confirmed,
+        open_positions_checked,
+        open_orders_checked,
+        no_duplicate_order_confirmed,
+        broker_review_enabled,
+        broker_place_enabled,
+        broker_cancel_enabled,
+        kill_switch_enabled,
+        market_data_healthy,
+        market_condition_clear,
+        liquidity_clear and spread_clear,
+        slippage_clear,
+        catalyst_clear,
+    )
+    stock_intent = _create_stock_execution_intent(
+        service_container,
+        account_number,
+        symbol,
+        side,
+        order_type,
+        quantity,
+        dollar_amount,
+        limit_price,
+        "gfd",
+        "regular_hours",
+        account_value,
+        max_daily_loss,
+    )
+    confidence = _float_or_zero(confidence_score)
+    rr = _float_or_zero(risk_reward)
+    risk_cap = _float_or_zero((governor.get("risk_limits") or {}).get("effective_trade_risk_cap"))
+    quality = str(setup_quality or "").strip().upper()
+    trade_checks = {
+        "governor_live_execution_enabled": governor.get("status") == "LIVE_EXECUTION_ENABLED",
+        "stock_intent_ready": stock_intent.get("status") == "STOCK_EXECUTION_INTENT_READY",
+        "market_condition_clear": bool(market_condition_clear),
+        "setup_quality_clear": bool(setup_quality_clear) and quality in {"VALID_CANDIDATE", "HIGH_CONFIDENCE", "ACTIONABLE"},
+        "liquidity_clear": bool(liquidity_clear),
+        "spread_clear": bool(spread_clear),
+        "slippage_clear": bool(slippage_clear),
+        "risk_reward_clear": rr >= 1.5,
+        "account_size_suitable": 0 < proposed_risk <= risk_cap,
+        "catalyst_clear": bool(catalyst_clear),
+        "execution_confidence_clear": bool(execution_confidence_clear) and confidence >= 80,
+        "stop_loss_present": bool(str(stop_price or "").strip()),
+        "take_profit_present": bool(str(take_profit_price or "").strip()),
+    }
+    rejection_reasons = [name for name, passed in trade_checks.items() if not passed]
+    status = "AUTONOMOUS_ORDER_TICKET_READY" if not rejection_reasons else "NO_TRADE"
+    ticket = stock_intent.get("ticket") or {}
+    lifecycle = {
+        "entry": ticket,
+        "stop_loss": {
+            "type": "stop_market",
+            "side": "sell" if str(side).lower() == "buy" else "buy",
+            "symbol": str(symbol or "").upper(),
+            "stop_price": str(stop_price or "").strip(),
+            "time_in_force": "gfd",
+        },
+        "take_profit": {
+            "type": "limit",
+            "side": "sell" if str(side).lower() == "buy" else "buy",
+            "symbol": str(symbol or "").upper(),
+            "limit_price": str(take_profit_price or "").strip(),
+            "time_in_force": "gfd",
+        },
+    }
+    canonical = json.dumps(lifecycle, sort_keys=True, separators=(",", ":"))
+    payload = {
+        "status": status,
+        "schema_version": "autonomous_execution_ticket_v1",
+        "generated_at": utc_now(),
+        "execution_mode": "LIVE_EXECUTION_ENABLED" if status == "AUTONOMOUS_ORDER_TICKET_READY" else "NO_TRADE",
+        "ticket_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+        "stock_intent_hash": stock_intent.get("intent_hash"),
+        "lifecycle_ticket": lifecycle,
+        "canonical_lifecycle_json": canonical,
+        "confidence_score": round(confidence, 2),
+        "setup_quality": quality,
+        "risk_reward": round(rr, 2),
+        "proposed_risk_dollars": round(proposed_risk, 2),
+        "trade_checks": trade_checks,
+        "rejection_reasons": rejection_reasons,
+        "governor_status": governor.get("status"),
+        "governor_blockers": governor.get("blockers") or [],
+        "broker_execution_sequence": [
+            "review entry ticket with broker adapter",
+            "place entry only if review exactly matches ticket_hash and risk governor remains enabled",
+            "immediately stage or place stop-loss protection",
+            "stage or place take-profit order",
+            "monitor fill, spread, slippage, data freshness, and governor state",
+            "exit automatically on stop, target, setup invalidation, data outage, abnormal behavior, or drawdown breach",
+            "log every broker review, placement, fill, cancel, rejection, and final outcome",
+        ],
+        "manual_approval_required_per_order": False if status == "AUTONOMOUS_ORDER_TICKET_READY" else None,
+        "force_trade_allowed": False,
+        "can_route_live_orders": status == "AUTONOMOUS_ORDER_TICKET_READY",
+        "can_place_order_via_broker_adapter": status == "AUTONOMOUS_ORDER_TICKET_READY",
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+    return service_container.events.log("autonomous_execution_ticket", payload)
 
 
 def _get_event_volatility_war_room(service_container, event_name: str, account_value: float, max_daily_loss: float) -> dict:

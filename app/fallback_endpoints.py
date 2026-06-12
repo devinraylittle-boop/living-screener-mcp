@@ -35,6 +35,8 @@ from app.mcp_server import (
     _get_broker_executor_bridge,
     _get_broker_execution_router,
     _create_stock_execution_intent,
+    _get_live_execution_control_plane,
+    _build_autonomous_execution_ticket,
     _get_tomorrow_operator_brief,
     _get_trading_day_launch_checklist,
     _get_trading_monster_dashboard,
@@ -4110,6 +4112,102 @@ async def fallback_stock_execution_intent(request: Request) -> JSONResponse:
         max_daily_loss if max_daily_loss is not None else 20.0,
     )
     return JSONResponse(_review_only_envelope({"result": result}))
+
+
+def _execution_envelope(payload: dict[str, Any]) -> dict[str, Any]:
+    result = payload.get("result") or {}
+    return {
+        "build_version": BUILD_VERSION,
+        "execution_mode": result.get("execution_mode"),
+        "live_execution_enabled": result.get("status") in {"LIVE_EXECUTION_ENABLED", "AUTONOMOUS_ORDER_TICKET_READY"},
+        "can_place_order_via_broker_adapter": bool(result.get("can_place_order_via_broker_adapter")),
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+        **payload,
+    }
+
+
+async def fallback_live_execution_control(request: Request) -> JSONResponse:
+    params = request.query_params
+    result = _get_live_execution_control_plane(
+        container,
+        params.get("account_number") or "",
+        _float_or_none(params.get("account_value")) or 100.0,
+        _float_or_none(params.get("buying_power")) or 100.0,
+        _float_or_none(params.get("realized_pnl")) or 0.0,
+        _float_or_none(params.get("unrealized_pnl")) or 0.0,
+        _float_or_none(params.get("max_daily_loss")) or 20.0,
+        _float_or_none(params.get("max_risk_per_trade")) or 2.0,
+        _float_or_none(params.get("max_risk_pct_per_trade")) or 0.02,
+        _int_or_default(params.get("max_trades_per_day"), 6),
+        _int_or_default(params.get("max_open_positions"), 2),
+        _int_or_default(params.get("todays_trade_count"), 0),
+        _int_or_default(params.get("open_position_count"), 0),
+        _int_or_default(params.get("open_order_count"), 0),
+        _truthy(params.get("broker_account_confirmed")),
+        _truthy(params.get("buying_power_confirmed")),
+        _truthy(params.get("open_positions_checked")),
+        _truthy(params.get("open_orders_checked")),
+        _truthy(params.get("no_duplicate_order_confirmed")),
+        _truthy(params.get("broker_review_enabled")),
+        _truthy(params.get("broker_place_enabled")),
+        _truthy(params.get("broker_cancel_enabled")),
+        _truthy(params.get("kill_switch_enabled")),
+        _truthy(params.get("market_data_healthy")),
+        _truthy(params.get("market_condition_clear")),
+        _truthy(params.get("spread_liquidity_clear")),
+        _truthy(params.get("slippage_clear")),
+        _truthy(params.get("catalyst_clear")),
+    )
+    return JSONResponse(_execution_envelope({"result": result}))
+
+
+async def fallback_autonomous_execution_ticket(request: Request) -> JSONResponse:
+    params = request.query_params
+    result = _build_autonomous_execution_ticket(
+        container,
+        params.get("account_number") or "",
+        params.get("symbol") or "",
+        params.get("side") or "",
+        params.get("order_type") or params.get("type") or "limit",
+        params.get("quantity") or "",
+        params.get("dollar_amount") or "",
+        params.get("limit_price") or "",
+        params.get("stop_price") or "",
+        params.get("take_profit_price") or "",
+        _float_or_none(params.get("confidence_score")) or 0.0,
+        params.get("setup_quality") or "",
+        _float_or_none(params.get("risk_reward")) or 0.0,
+        _float_or_none(params.get("account_value")) or 100.0,
+        _float_or_none(params.get("buying_power")) or 100.0,
+        _float_or_none(params.get("proposed_risk_dollars")) or 0.0,
+        _float_or_none(params.get("max_daily_loss")) or 20.0,
+        _float_or_none(params.get("max_risk_per_trade")) or 2.0,
+        _float_or_none(params.get("max_risk_pct_per_trade")) or 0.02,
+        _int_or_default(params.get("max_trades_per_day"), 6),
+        _int_or_default(params.get("max_open_positions"), 2),
+        _int_or_default(params.get("todays_trade_count"), 0),
+        _int_or_default(params.get("open_position_count"), 0),
+        _int_or_default(params.get("open_order_count"), 0),
+        _truthy(params.get("broker_account_confirmed")),
+        _truthy(params.get("buying_power_confirmed")),
+        _truthy(params.get("open_positions_checked")),
+        _truthy(params.get("open_orders_checked")),
+        _truthy(params.get("no_duplicate_order_confirmed")),
+        _truthy(params.get("broker_review_enabled")),
+        _truthy(params.get("broker_place_enabled")),
+        _truthy(params.get("broker_cancel_enabled")),
+        _truthy(params.get("kill_switch_enabled")),
+        _truthy(params.get("market_data_healthy")),
+        _truthy(params.get("market_condition_clear")),
+        _truthy(params.get("setup_quality_clear")),
+        _truthy(params.get("liquidity_clear")),
+        _truthy(params.get("spread_clear")),
+        _truthy(params.get("slippage_clear")),
+        _truthy(params.get("catalyst_clear")),
+        _truthy(params.get("execution_confidence_clear")),
+    )
+    return JSONResponse(_execution_envelope({"result": result}))
 
 
 async def fallback_event_war_room(request: Request) -> JSONResponse | HTMLResponse:

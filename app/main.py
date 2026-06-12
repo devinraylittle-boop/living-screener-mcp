@@ -26,6 +26,8 @@ from app.fallback_endpoints import (
     fallback_broker_executor_bridge,
     fallback_broker_execution_router,
     fallback_stock_execution_intent,
+    fallback_live_execution_control,
+    fallback_autonomous_execution_ticket,
     fallback_cross_asset_capital_plan,
     fallback_evidence_summary,
     fallback_event_radar,
@@ -140,6 +142,8 @@ def create_app():
     app.add_route("/ops/broker-executor-bridge", fallback_broker_executor_bridge, methods=["GET"])
     app.add_route("/ops/broker-execution-router", fallback_broker_execution_router, methods=["GET"])
     app.add_route("/trade/stock-intent", fallback_stock_execution_intent, methods=["GET"])
+    app.add_route("/trade/live-execution-control", fallback_live_execution_control, methods=["GET"])
+    app.add_route("/trade/autonomous-execution-ticket", fallback_autonomous_execution_ticket, methods=["GET"])
     app.add_route("/risk/capital-plan", fallback_cross_asset_capital_plan, methods=["GET"])
     app.add_route("/risk/loss-reassessment", fallback_loss_reassessment, methods=["GET"])
     app.add_route("/ops/full-market-visibility", fallback_full_market_visibility, methods=["GET"])
