@@ -69,6 +69,8 @@ async def version(request):
             "has_finnhub_api_key": bool(settings.finnhub_api_key),
             "has_marketdata_api_key": bool(settings.marketdata_api_key),
             "has_tradier_access_token": bool(settings.tradier_access_token),
+            "execution_mode": "GATED_LIVE_EXECUTION_CAPABLE",
+            "live_execution_requires_broker_adapter": True,
             "review_only": settings.review_only,
             "can_place_order_from_this_mcp": False,
         }

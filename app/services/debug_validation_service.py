@@ -64,6 +64,22 @@ class DebugValidationService:
                 "autonomous_launch_decision": "autonomous_launch_decision_v1",
                 "real_cash_proof_gate": "real_cash_proof_gate_v1",
                 "broker_proof_bridge": "broker_proof_bridge_v1",
+                "autonomous_control_state": "autonomous_control_state_v1",
+                "trading_monster_dashboard": "trading_monster_dashboard_v1",
+                "cross_asset_capital_plan": "cross_asset_capital_plan_v1",
+                "full_market_visibility": "full_market_visibility_v1",
+                "listed_equity_master_universe": "listed_equity_master_universe_v1",
+                "event_volatility_war_room": "event_volatility_war_room_v1",
+                "loss_review_reassessment": "loss_review_reassessment_v1",
+                "broker_executor_bridge": "broker_executor_bridge_v1",
+                "broker_execution_router": "broker_execution_router_v1",
+                "stock_execution_intent": "stock_execution_intent_v1",
+                "live_execution_control_plane": "live_execution_control_plane_v1",
+                "autonomous_execution_ticket": "autonomous_execution_ticket_v1",
+                "robinhood_crypto_universe": "robinhood_crypto_universe_v1",
+                "crypto_live_test_gate": "crypto_live_test_gate_v1",
+                "crypto_live_test_report": "crypto_live_test_report_v1",
+                "crypto_autonomous_cycle": "crypto_autonomous_cycle_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -89,8 +105,20 @@ class DebugValidationService:
                 "/ops/strategy-modules",
                 "/ops/shared-intelligence",
                 "/ops/autonomous-launch-decision",
+                "/ops/autonomy-control",
+                "/ops/trading-monster-dashboard",
                 "/ops/real-cash-proof-gate",
                 "/ops/broker-proof-bridge",
+                "/risk/capital-plan",
+                "/risk/loss-reassessment",
+                "/ops/full-market-visibility",
+                "/ops/listed-equity-universe",
+                "/ops/event-war-room",
+                "/ops/broker-executor-bridge",
+                "/ops/broker-execution-router",
+                "/trade/stock-intent",
+                "/trade/live-execution-control",
+                "/trade/autonomous-execution-ticket",
                 "/paper/options/summary",
                 "/paper/options/watch",
                 "/journal/checkpoint",
@@ -104,6 +132,10 @@ class DebugValidationService:
                 "/research/catalyst-context",
                 "/risk/session",
                 "/risk/failure-mode-audit",
+                "/crypto/universe",
+                "/crypto/autonomous-cycle",
+                "/crypto/live-test",
+                "/crypto/test-report",
             ],
             "readiness": {
                 "version_endpoint": True,
@@ -141,6 +173,18 @@ class DebugValidationService:
                 "autonomous_launch_decision_route": True,
                 "real_cash_proof_gate_route": True,
                 "broker_proof_bridge_route": True,
+                "autonomy_control_route": True,
+                "trading_monster_dashboard_route": True,
+                "cross_asset_capital_plan_route": True,
+                "full_market_visibility_route": True,
+                "listed_equity_master_universe_route": True,
+                "event_war_room_route": True,
+                "loss_reassessment_route": True,
+                "broker_executor_bridge_route": True,
+                "broker_execution_router_route": True,
+                "stock_execution_intent_route": True,
+                "live_execution_control_route": True,
+                "autonomous_execution_ticket_route": True,
                 "manual_preflight_route": True,
                 "paper_option_ledger_routes": True,
                 "paper_option_position_watch_route": True,
@@ -156,6 +200,10 @@ class DebugValidationService:
                 "catalyst_context_route": True,
                 "session_risk_guard_route": True,
                 "failure_mode_audit_route": True,
+                "crypto_universe_route": True,
+                "crypto_autonomous_cycle_route": True,
+                "crypto_live_test_gate_route": True,
+                "crypto_live_test_report_route": True,
             },
             "safety": self._safety(),
             "options_data_status": self.container.options.options_data_status(),
@@ -1145,11 +1193,29 @@ class DebugValidationService:
             "summarize_evidence_packets",
             "build_setup_fingerprint",
             "compare_setup_memory",
+            "set_autonomous_trading_controls",
+            "get_trading_monster_dashboard",
+            "get_cross_asset_capital_plan",
+            "get_full_market_visibility_map",
+            "get_listed_equity_master_universe",
+            "get_event_volatility_war_room",
+            "get_loss_review_reassessment",
+            "get_broker_executor_bridge",
+            "get_broker_execution_router",
+            "create_stock_execution_intent",
+            "get_live_execution_control_plane",
+            "build_autonomous_execution_ticket",
+            "get_robinhood_crypto_universe",
+            "get_crypto_live_test_gate",
+            "run_autonomous_crypto_cycle",
+            "summarize_crypto_live_test_report",
         ]
         available = set(tools)
         return {name: name in available for name in required}
 
     def _category(self, name: str) -> str:
+        if "crypto" in name:
+            return "crypto_validation"
         if "truth" in name or "health" in name or "catalyst" in name:
             return "truth_validation"
         if "harvest" in name or "readiness" in name or "observer" in name or "playbook" in name or "command_center" in name or "launch" in name or "brief" in name or "rehearsal" in name or "heartbeat" in name or "autopilot" in name or "autonomous" in name or "cycle" in name or "preflight" in name or "desk" in name or "manual_broker" in name or "paper" in name or "journal" in name or "checkpoint" in name:
@@ -1189,6 +1255,8 @@ class DebugValidationService:
             return "Review-only morning readiness summary; checks data readiness, ledger state, and next safe action."
         if "autonomous" in name:
             return "Review-only phase-aware scan loop; observes, logs, and returns the next refresh interval without broker action."
+        if "crypto" in name:
+            return "Crypto validation/scanning/reporting tool; cannot place exchange orders."
         if "cycle" in name:
             return "Review-only live market cycle; runs readiness and harvest gates without broker action."
         if "followup" in name and "observer" in name:

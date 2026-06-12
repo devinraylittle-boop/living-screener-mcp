@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import csv
+import urllib.request
 from collections import Counter
 from datetime import UTC, datetime, timedelta
+from io import StringIO
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -22,8 +25,10 @@ mcp = FastMCP(
     name="Living Screener MCP",
     instructions=(
         "Use this server for market scans, signal scoring, trade planning, risk checks, journaling, "
-        "postmortems, backtests, and prompt/rule evolution. This server cannot place brokerage orders, "
-        "does not store broker credentials, and does not call broker APIs. For options review, use "
+        "postmortems, backtests, and prompt/rule evolution. This server can build master-risk-governed "
+        "live execution tickets only after broker, data, liquidity, slippage, catalyst, and kill-switch "
+        "proof gates pass. It does not store broker credentials; order placement must route through a "
+        "proven host Robinhood MCP or external broker executor adapter. For options review, use "
         "review_candidate_for_options so stock setup quality and options-chain quality are checked together. "
         "For pending buys, use review_pending_buy_order after 60 seconds before treating the order as still valid. "
         "For crypto paper testing, call run_backtest with engine crypto-paper-overnight; this routes to paper-only "
@@ -63,6 +68,8 @@ def _version_payload() -> dict:
         "has_finnhub_api_key": bool(settings.finnhub_api_key),
         "has_marketdata_api_key": bool(settings.marketdata_api_key),
         "has_tradier_access_token": bool(settings.tradier_access_token),
+        "execution_mode": "GATED_LIVE_EXECUTION_CAPABLE",
+        "live_execution_requires_broker_adapter": True,
         "review_only": True,
         "can_place_order_from_this_mcp": False,
         "can_cancel_order_from_this_mcp": False,
@@ -236,6 +243,300 @@ def get_broker_proof_bridge(
 
 
 @mcp.tool
+def set_autonomous_trading_controls(
+    autonomous_enabled: bool = False,
+    stocks_enabled: bool = False,
+    options_enabled: bool = False,
+    crypto_enabled: bool = False,
+    paper_trading_enabled: bool = False,
+    live_handoff_enabled: bool = False,
+    max_daily_loss: float = 20.0,
+    max_crypto_cash: float = 5.0,
+    notes: str = "",
+) -> dict:
+    return _set_autonomous_trading_controls(
+        container,
+        autonomous_enabled,
+        stocks_enabled,
+        options_enabled,
+        crypto_enabled,
+        paper_trading_enabled,
+        live_handoff_enabled,
+        max_daily_loss,
+        max_crypto_cash,
+        notes,
+    )
+
+
+@mcp.tool
+def get_trading_monster_dashboard(account_value: float = 50.0, buying_power: float = 5.0, max_daily_loss: float = 20.0) -> dict:
+    return _get_trading_monster_dashboard(container, account_value, buying_power, max_daily_loss)
+
+
+@mcp.tool
+def get_cross_asset_capital_plan(account_value: float = 50.0, buying_power: float = 5.0, max_daily_loss: float = 20.0) -> dict:
+    return _get_cross_asset_capital_plan(container, account_value, buying_power, max_daily_loss)
+
+
+@mcp.tool
+def get_full_market_visibility_map() -> dict:
+    return _get_full_market_visibility_map(container)
+
+
+@mcp.tool
+def get_listed_equity_master_universe(include_etfs: bool = True, include_test_issues: bool = False, max_symbols: int = 0) -> dict:
+    return _get_listed_equity_master_universe(container, include_etfs, include_test_issues, max_symbols)
+
+
+@mcp.tool
+def get_event_volatility_war_room(event_name: str = "spacex_ipo", account_value: float = 50.0, max_daily_loss: float = 20.0) -> dict:
+    return _get_event_volatility_war_room(container, event_name, account_value, max_daily_loss)
+
+
+@mcp.tool
+def get_loss_review_reassessment(max_daily_loss: float = 20.0, realized_pnl: float = 0.0, unrealized_pnl: float = 0.0) -> dict:
+    return _get_loss_review_reassessment(container, max_daily_loss, realized_pnl, unrealized_pnl)
+
+
+@mcp.tool
+def get_broker_executor_bridge(
+    executor_base_url: str = "",
+    has_crypto_api_key: bool = False,
+    read_account_enabled: bool = False,
+    read_positions_enabled: bool = False,
+    read_orders_enabled: bool = False,
+    order_preview_enabled: bool = False,
+    place_order_enabled: bool = False,
+    cancel_order_enabled: bool = False,
+    kill_switch_enabled: bool = False,
+    paper_mode_default: bool = True,
+    max_daily_loss: float = 20.0,
+) -> dict:
+    return _get_broker_executor_bridge(
+        container,
+        executor_base_url,
+        has_crypto_api_key,
+        read_account_enabled,
+        read_positions_enabled,
+        read_orders_enabled,
+        order_preview_enabled,
+        place_order_enabled,
+        cancel_order_enabled,
+        kill_switch_enabled,
+        paper_mode_default,
+        max_daily_loss,
+    )
+
+
+@mcp.tool
+def get_broker_execution_router(
+    asset_class: str = "equity",
+    account_number: str = "",
+    symbol: str = "",
+    side: str = "",
+    order_type: str = "limit",
+    quantity: str = "",
+    dollar_amount: str = "",
+    limit_price: str = "",
+    time_in_force: str = "gfd",
+    max_daily_loss: float = 20.0,
+) -> dict:
+    return _get_broker_execution_router(
+        container,
+        asset_class,
+        account_number,
+        symbol,
+        side,
+        order_type,
+        quantity,
+        dollar_amount,
+        limit_price,
+        time_in_force,
+        max_daily_loss,
+    )
+
+
+@mcp.tool
+def create_stock_execution_intent(
+    account_number: str,
+    symbol: str,
+    side: str,
+    order_type: str = "limit",
+    quantity: str = "",
+    dollar_amount: str = "",
+    limit_price: str = "",
+    time_in_force: str = "gfd",
+    market_hours: str = "regular_hours",
+    account_value: float = 100.0,
+    max_daily_loss: float = 20.0,
+) -> dict:
+    return _create_stock_execution_intent(
+        container,
+        account_number,
+        symbol,
+        side,
+        order_type,
+        quantity,
+        dollar_amount,
+        limit_price,
+        time_in_force,
+        market_hours,
+        account_value,
+        max_daily_loss,
+    )
+
+
+@mcp.tool
+def get_live_execution_control_plane(
+    account_number: str = "",
+    account_value: float = 100.0,
+    buying_power: float = 100.0,
+    realized_pnl: float = 0.0,
+    unrealized_pnl: float = 0.0,
+    max_daily_loss: float = 20.0,
+    max_risk_per_trade: float = 2.0,
+    max_risk_pct_per_trade: float = 0.02,
+    max_trades_per_day: int = 6,
+    max_open_positions: int = 2,
+    todays_trade_count: int = 0,
+    open_position_count: int = 0,
+    open_order_count: int = 0,
+    broker_account_confirmed: bool = False,
+    buying_power_confirmed: bool = False,
+    open_positions_checked: bool = False,
+    open_orders_checked: bool = False,
+    no_duplicate_order_confirmed: bool = False,
+    broker_review_enabled: bool = False,
+    broker_place_enabled: bool = False,
+    broker_cancel_enabled: bool = False,
+    kill_switch_enabled: bool = False,
+    market_data_healthy: bool = False,
+    market_condition_clear: bool = False,
+    spread_liquidity_clear: bool = False,
+    slippage_clear: bool = False,
+    catalyst_clear: bool = False,
+) -> dict:
+    return _get_live_execution_control_plane(
+        container,
+        account_number,
+        account_value,
+        buying_power,
+        realized_pnl,
+        unrealized_pnl,
+        max_daily_loss,
+        max_risk_per_trade,
+        max_risk_pct_per_trade,
+        max_trades_per_day,
+        max_open_positions,
+        todays_trade_count,
+        open_position_count,
+        open_order_count,
+        broker_account_confirmed,
+        buying_power_confirmed,
+        open_positions_checked,
+        open_orders_checked,
+        no_duplicate_order_confirmed,
+        broker_review_enabled,
+        broker_place_enabled,
+        broker_cancel_enabled,
+        kill_switch_enabled,
+        market_data_healthy,
+        market_condition_clear,
+        spread_liquidity_clear,
+        slippage_clear,
+        catalyst_clear,
+    )
+
+
+@mcp.tool
+def build_autonomous_execution_ticket(
+    account_number: str,
+    symbol: str,
+    side: str,
+    order_type: str = "limit",
+    quantity: str = "",
+    dollar_amount: str = "",
+    limit_price: str = "",
+    stop_price: str = "",
+    take_profit_price: str = "",
+    confidence_score: float = 0.0,
+    setup_quality: str = "",
+    risk_reward: float = 0.0,
+    account_value: float = 100.0,
+    buying_power: float = 100.0,
+    proposed_risk_dollars: float = 0.0,
+    max_daily_loss: float = 20.0,
+    max_risk_per_trade: float = 2.0,
+    max_risk_pct_per_trade: float = 0.02,
+    max_trades_per_day: int = 6,
+    max_open_positions: int = 2,
+    todays_trade_count: int = 0,
+    open_position_count: int = 0,
+    open_order_count: int = 0,
+    broker_account_confirmed: bool = False,
+    buying_power_confirmed: bool = False,
+    open_positions_checked: bool = False,
+    open_orders_checked: bool = False,
+    no_duplicate_order_confirmed: bool = False,
+    broker_review_enabled: bool = False,
+    broker_place_enabled: bool = False,
+    broker_cancel_enabled: bool = False,
+    kill_switch_enabled: bool = False,
+    market_data_healthy: bool = False,
+    market_condition_clear: bool = False,
+    setup_quality_clear: bool = False,
+    liquidity_clear: bool = False,
+    spread_clear: bool = False,
+    slippage_clear: bool = False,
+    catalyst_clear: bool = False,
+    execution_confidence_clear: bool = False,
+) -> dict:
+    return _build_autonomous_execution_ticket(
+        container,
+        account_number,
+        symbol,
+        side,
+        order_type,
+        quantity,
+        dollar_amount,
+        limit_price,
+        stop_price,
+        take_profit_price,
+        confidence_score,
+        setup_quality,
+        risk_reward,
+        account_value,
+        buying_power,
+        proposed_risk_dollars,
+        max_daily_loss,
+        max_risk_per_trade,
+        max_risk_pct_per_trade,
+        max_trades_per_day,
+        max_open_positions,
+        todays_trade_count,
+        open_position_count,
+        open_order_count,
+        broker_account_confirmed,
+        buying_power_confirmed,
+        open_positions_checked,
+        open_orders_checked,
+        no_duplicate_order_confirmed,
+        broker_review_enabled,
+        broker_place_enabled,
+        broker_cancel_enabled,
+        kill_switch_enabled,
+        market_data_healthy,
+        market_condition_clear,
+        setup_quality_clear,
+        liquidity_clear,
+        spread_clear,
+        slippage_clear,
+        catalyst_clear,
+        execution_confidence_clear,
+    )
+
+
+@mcp.tool
 def market_readiness_check(tickers: list[str] | None = None, max_candidates: int = 25) -> dict:
     return _market_readiness_check(container, tickers, max_candidates)
 
@@ -387,7 +688,7 @@ def build_manual_trade_desk(
     account_value: float = 50.0,
     max_contract_price: float | None = None,
     notes: str = "",
-    max_open_positions: int = 2,
+    max_open_positions: int = 5,
 ) -> dict:
     return _build_manual_trade_desk(container, snapshot, account_value, max_contract_price, notes, max_open_positions)
 
@@ -439,8 +740,13 @@ def watch_manual_option_position(
 
 
 @mcp.tool
-def get_session_risk_guard(account_value: float = 50.0, proposed_risk_dollars: float | None = None, max_open_positions: int = 2) -> dict:
-    return _get_session_risk_guard(container, account_value, proposed_risk_dollars, max_open_positions)
+def get_session_risk_guard(
+    account_value: float = 50.0,
+    proposed_risk_dollars: float | None = None,
+    max_open_positions: int = 5,
+    max_daily_loss: float | None = None,
+) -> dict:
+    return _get_session_risk_guard(container, account_value, proposed_risk_dollars, max_open_positions, max_daily_loss)
 
 
 @mcp.tool
@@ -1835,6 +2141,1037 @@ def _get_broker_proof_bridge(
     return service_container.events.log("broker_proof_bridge", payload)
 
 
+def _set_autonomous_trading_controls(
+    service_container,
+    autonomous_enabled: bool,
+    stocks_enabled: bool,
+    options_enabled: bool,
+    crypto_enabled: bool,
+    paper_trading_enabled: bool,
+    live_handoff_enabled: bool,
+    max_daily_loss: float,
+    max_crypto_cash: float,
+    notes: str,
+) -> dict:
+    daily_loss = round(float(max_daily_loss), 2)
+    daily_loss_param = f"{daily_loss:g}"
+    payload = {
+        "status": "AUTONOMOUS_CONTROLS_UPDATED",
+        "schema_version": "autonomous_control_state_v1",
+        "build_version": BUILD_VERSION,
+        "generated_at": utc_now(),
+        "controls": {
+            "autonomous_enabled": bool(autonomous_enabled),
+            "stocks_enabled": bool(stocks_enabled),
+            "options_enabled": bool(options_enabled),
+            "crypto_enabled": bool(crypto_enabled),
+            "paper_trading_enabled": bool(paper_trading_enabled),
+            "live_handoff_enabled": bool(live_handoff_enabled),
+            "max_daily_loss": daily_loss,
+            "max_crypto_cash": round(float(max_crypto_cash), 2),
+        },
+        "one_click_buttons": {
+            "enable_full_autonomy": f"/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=false&paper_trading_enabled=false&live_handoff_enabled=false&max_daily_loss={daily_loss_param}",
+            "arm_all_paper": f"/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss={daily_loss_param}",
+            "arm_crypto_paper": f"/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=false&options_enabled=false&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss={daily_loss_param}",
+            "disable_all": "/ops/autonomy-control?autonomous_enabled=false&stocks_enabled=false&options_enabled=false&crypto_enabled=false&paper_trading_enabled=false&live_handoff_enabled=false",
+        },
+        "notes": notes,
+        "safety": {
+            "live_order_execution_from_this_mcp": False,
+            "proof_gates_still_required": True,
+            "market_orders_blocked": True,
+            "halt_and_reassess_loss": daily_loss,
+        },
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+    return service_container.events.log("autonomous_control_state", payload)
+
+
+def _latest_autonomous_controls(service_container) -> dict[str, Any]:
+    recent = service_container.events.recent("autonomous_control_state", 1)
+    if recent:
+        return recent[0]["payload"].get("controls") or {}
+    return {
+        "autonomous_enabled": False,
+        "stocks_enabled": False,
+        "options_enabled": False,
+        "crypto_enabled": False,
+        "paper_trading_enabled": False,
+        "live_handoff_enabled": False,
+        "max_daily_loss": 20.0,
+        "max_crypto_cash": 0.0,
+    }
+
+
+def _get_cross_asset_capital_plan(service_container, account_value: float, buying_power: float, max_daily_loss: float) -> dict:
+    controls = _latest_autonomous_controls(service_container)
+    max_loss = max(0.0, float(max_daily_loss))
+    controls = {**controls, "max_daily_loss": round(max_loss, 2)}
+    active_lanes = [name for name, enabled in {
+        "stocks": controls.get("stocks_enabled"),
+        "options": controls.get("options_enabled"),
+        "crypto": controls.get("crypto_enabled"),
+    }.items() if enabled]
+    lane_count = max(1, len(active_lanes))
+    cash = max(0.0, float(buying_power))
+    crypto_cap = min(float(controls.get("max_crypto_cash", 0.0) or 0.0), cash)
+    remaining_after_crypto = max(0.0, cash - (crypto_cap if "crypto" in active_lanes else 0.0))
+    stock_cap = round(remaining_after_crypto * 0.60, 2) if "stocks" in active_lanes else 0.0
+    options_cap = round(remaining_after_crypto * 0.40, 2) if "options" in active_lanes else 0.0
+    if "stocks" in active_lanes and "options" not in active_lanes:
+        stock_cap = round(remaining_after_crypto, 2)
+    if "options" in active_lanes and "stocks" not in active_lanes:
+        options_cap = round(remaining_after_crypto, 2)
+    payload = {
+        "status": "CAPITAL_PLAN_READY",
+        "schema_version": "cross_asset_capital_plan_v1",
+        "generated_at": utc_now(),
+        "account_value": round(float(account_value), 2),
+        "buying_power": round(cash, 2),
+        "max_daily_loss": round(max_loss, 2),
+        "controls": controls,
+        "active_lanes": active_lanes,
+        "lane_budgets": {
+            "stocks": stock_cap,
+            "options": options_cap,
+            "crypto": round(crypto_cap, 2) if "crypto" in active_lanes else 0.0,
+        },
+        "loss_budgets": {
+            "per_trade_soft_loss": round(min(max_loss / max(4, lane_count * 3), cash * 0.02), 2),
+            "halt_and_reassess": round(max_loss, 2),
+            "new_entry_lockout_only": True,
+            "position_management_allowed_after_halt": True,
+            "loss_review_required_after_every_loss": True,
+        },
+        "buying_power_reallocation": [
+            "Closed or disabled lanes release unused buying power back to the allocator on the next cycle.",
+            "Market-closed equity/options lanes should not consume new-entry budget; crypto may continue only if crypto controls are enabled.",
+            "Open positions reserve their max-loss estimate until closed or explicitly released.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+    }
+    return service_container.events.log("cross_asset_capital_plan", payload)
+
+
+def _get_full_market_visibility_map(service_container) -> dict:
+    settings = service_container.settings
+    crypto_universe = service_container.crypto_paper.universe()
+    equity_master = _get_listed_equity_master_universe(service_container, include_etfs=True, include_test_issues=False, max_symbols=0, log_event=False)
+    payload = {
+        "status": "FULL_MARKET_VISIBILITY_READY",
+        "schema_version": "full_market_visibility_v1",
+        "generated_at": utc_now(),
+        "coverage": {
+            "crypto_robinhood_assets": crypto_universe["general_consideration_count"],
+            "listed_equity_master_universe": equity_master.get("symbol_count", 0),
+            "scalp_equity_watchlist": len(settings.scalp_watchlist),
+            "broad_equity_watchlist": len(settings.broad_opportunity_watchlist),
+            "event_volatility_watchlist": len(settings.event_volatility_watchlist),
+            "microcap_research_watchlist": len(settings.microcap_research_watchlist),
+        },
+        "universes": {
+            "crypto": crypto_universe["symbols"],
+            "listed_equity_master_universe_sample": equity_master.get("sample_symbols") or [],
+            "scalp_equities": list(settings.scalp_watchlist),
+            "broad_equities": list(settings.broad_opportunity_watchlist),
+            "event_volatility": list(settings.event_volatility_watchlist),
+            "microcap_research": list(settings.microcap_research_watchlist),
+        },
+        "visibility_gaps": [
+            "Options chains are still manual/broker-snapshot or provider-limited.",
+            "News/catalyst feed is not a true low-latency paid event feed.",
+            "Robinhood order/position truth is not machine-verified in this MCP.",
+        ],
+        "next_upgrades": [
+            "Add broker read-only account/order/position reconciliation.",
+            "Add master equity symbol universe with tradability/shortability/options flags.",
+            "Add OPRA-grade options chain provider or broker snapshot automation.",
+            "Add real-time news/catalyst feed and halt/IPO status feed.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+    }
+    return service_container.events.log("full_market_visibility", payload)
+
+
+def _get_listed_equity_master_universe(
+    service_container,
+    include_etfs: bool = True,
+    include_test_issues: bool = False,
+    max_symbols: int = 0,
+    log_event: bool = True,
+) -> dict:
+    urls = {
+        "nasdaq": "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
+        "otherlisted": "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt",
+    }
+    symbols: dict[str, dict[str, Any]] = {}
+    source_status: dict[str, str] = {}
+    errors: list[str] = []
+    for source, url in urls.items():
+        try:
+            with urllib.request.urlopen(url, timeout=10) as response:
+                text = response.read().decode("utf-8", errors="replace")
+            source_status[source] = "LOADED"
+            for row in _parse_symbol_directory(source, text):
+                symbol = row["symbol"]
+                if not include_test_issues and row.get("test_issue"):
+                    continue
+                if not include_etfs and row.get("etf"):
+                    continue
+                symbols[symbol] = row
+        except Exception as exc:
+            source_status[source] = "FAILED"
+            errors.append(f"{source}: {exc}")
+    fallback_used = False
+    if not symbols:
+        fallback_used = True
+        for symbol in sorted(set(service_container.settings.broad_opportunity_watchlist) | set(service_container.settings.scalp_watchlist) | set(service_container.settings.event_volatility_watchlist)):
+            symbols[symbol] = {
+                "symbol": symbol,
+                "name": symbol,
+                "exchange": "fallback_watchlist",
+                "etf": symbol in {"SPY", "QQQ", "IWM", "DIA", "ARKX", "ITA", "UFO"},
+                "test_issue": False,
+                "source": "configured_watchlists",
+            }
+    rows = list(symbols.values())
+    rows.sort(key=lambda item: item["symbol"])
+    if max_symbols and max_symbols > 0:
+        rows = rows[: int(max_symbols)]
+    exchange_counts = Counter(str(row.get("exchange") or "unknown") for row in symbols.values())
+    payload = {
+        "status": "LISTED_EQUITY_MASTER_UNIVERSE_READY" if not fallback_used else "LISTED_EQUITY_MASTER_UNIVERSE_FALLBACK",
+        "schema_version": "listed_equity_master_universe_v1",
+        "generated_at": utc_now(),
+        "source_urls": urls,
+        "source_status": source_status,
+        "fallback_used": fallback_used,
+        "errors": errors,
+        "include_etfs": bool(include_etfs),
+        "include_test_issues": bool(include_test_issues),
+        "symbol_count": len(symbols),
+        "returned_count": len(rows),
+        "exchange_counts": dict(exchange_counts),
+        "sample_symbols": [row["symbol"] for row in rows[:100]],
+        "symbols": rows if max_symbols and max_symbols > 0 else [],
+        "usage": "Use this as the full listed-equity visibility layer. Scan pipelines should rank from filtered subsets rather than pretending watchlists are the full market.",
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+    }
+    return service_container.events.log("listed_equity_master_universe", payload) if log_event else payload
+
+
+def _parse_symbol_directory(source: str, text: str) -> list[dict[str, Any]]:
+    clean_lines = [line for line in text.splitlines() if line and not line.startswith("File Creation Time")]
+    reader = csv.DictReader(StringIO("\n".join(clean_lines)), delimiter="|")
+    rows: list[dict[str, Any]] = []
+    for raw in reader:
+        symbol = str(raw.get("Symbol") or raw.get("ACT Symbol") or raw.get("NASDAQ Symbol") or "").strip().upper()
+        if not symbol:
+            continue
+        rows.append(
+            {
+                "symbol": symbol,
+                "name": str(raw.get("Security Name") or "").strip(),
+                "exchange": str(raw.get("Exchange") or ("NASDAQ" if source == "nasdaq" else "")).strip() or source,
+                "etf": str(raw.get("ETF") or "").strip().upper() == "Y",
+                "test_issue": str(raw.get("Test Issue") or "").strip().upper() == "Y",
+                "round_lot_size": raw.get("Round Lot Size"),
+                "source": source,
+            }
+        )
+    return rows
+
+
+def _get_broker_executor_bridge(
+    service_container,
+    executor_base_url: str,
+    has_crypto_api_key: bool,
+    read_account_enabled: bool,
+    read_positions_enabled: bool,
+    read_orders_enabled: bool,
+    order_preview_enabled: bool,
+    place_order_enabled: bool,
+    cancel_order_enabled: bool,
+    kill_switch_enabled: bool,
+    paper_mode_default: bool,
+    max_daily_loss: float,
+) -> dict:
+    daily_loss = abs(float(max_daily_loss))
+    base = executor_base_url.rstrip("/")
+    checks = {
+        "executor_base_url_configured": bool(base),
+        "crypto_api_credentials_available": bool(has_crypto_api_key),
+        "read_account_enabled": bool(read_account_enabled),
+        "read_positions_enabled": bool(read_positions_enabled),
+        "read_orders_enabled": bool(read_orders_enabled),
+        "order_preview_enabled": bool(order_preview_enabled),
+        "place_order_enabled": bool(place_order_enabled),
+        "cancel_order_enabled": bool(cancel_order_enabled),
+        "kill_switch_enabled": bool(kill_switch_enabled),
+        "paper_mode_default": bool(paper_mode_default),
+        "max_daily_loss_configured": float(max_daily_loss) > 0,
+    }
+    readiness_blockers = [name for name, passed in checks.items() if not passed]
+    live_ready = not readiness_blockers
+    payload = {
+        "status": "BROKER_EXECUTOR_BRIDGE_PROVEN" if live_ready else "BROKER_EXECUTOR_BRIDGE_INCOMPLETE",
+        "schema_version": "broker_executor_bridge_v1",
+        "generated_at": utc_now(),
+        "official_crypto_api_context": {
+            "provider": "Robinhood Crypto Trading API",
+            "source": "https://robinhood.com/us/en/support/articles/crypto-api/",
+            "supported_here": "Crypto-only bridge contract; credentials and signing remain in a separate executor.",
+        },
+        "official_agentic_trading_context": {
+            "provider": "Robinhood Trading MCP / Agentic account",
+            "source": "https://robinhood.com/us/en/support/articles/agentic-trading-overview/",
+            "mcp_url": "https://agent.robinhood.com/mcp/trading",
+            "codex_cli_setup": "codex mcp add robinhood-trading --url https://agent.robinhood.com/mcp/trading",
+            "codex_desktop_setup": "Settings -> MCP servers -> Streamable HTTP -> https://agent.robinhood.com/mcp/trading",
+            "supported_here": "Use Robinhood's MCP connection for agentic account access. This package can govern scans, risk, and proof gates around it.",
+            "session_tooling_note": "Robinhood docs list long equities and options tools, but options trading is still rolling out and the tool set must be exposed in the active Codex session before this package can route an options order.",
+            "official_options_tools": [
+                "get_option_chains",
+                "get_option_instruments",
+                "get_option_quotes",
+                "get_option_positions",
+                "get_option_orders",
+                "review_option_order",
+                "cancel_option_order",
+                "place_option_order",
+            ],
+        },
+        "executor_base_url": base,
+        "checks": checks,
+        "blockers": readiness_blockers,
+        "required_executor_contract": {
+            "GET /health": "Executor version, mode, kill-switch state, and supported asset types.",
+            "GET /account": "Cash, buying power, account id hash, fee tier, and restrictions.",
+            "GET /positions": "Open stock/options/crypto positions and reserved risk.",
+            "GET /orders/open": "Open orders with side, symbol, quantity, limit, status, and age.",
+            "POST /orders/preview": "Validate ticket, estimate fees/slippage/max loss, return preview id.",
+            "POST /orders/place": "Place only a preview-matched limit order when live mode is explicitly armed.",
+            "POST /orders/cancel": "Cancel one order by id.",
+            "POST /kill-switch": "Cancel open orders and reject new entries.",
+        },
+        "live_execution_rules": [
+            "This MCP never stores API secrets.",
+            "Executor must default to paper mode.",
+            "Live place requires preview id, exact ticket hash, limit order, max loss, and active kill switch.",
+            "Market orders remain blocked.",
+            f"At -${daily_loss:.2f} daily loss, executor must halt new entries and continue allowing risk-reducing position management. If total P/L recovers above the threshold, new entries may resume unless the operator manually disables autonomy.",
+        ],
+        "what_i_need_from_user": [
+            "Robinhood Agentic account number for the dedicated agentic account; do not use the individual account by accident.",
+            "Confirmation that the Robinhood Trading MCP is authenticated on desktop and connected to this agentic account.",
+            "For equity execution: prove tradability, positions, order review, place, cancel, and kill-switch workflow.",
+            "For options execution: provide an options-capable Robinhood MCP tool or a separate broker/executor with option preview/place/cancel endpoints.",
+            "Executor base URL or local service address if using a separate executor.",
+            "A dry-run /health and /account response with sensitive fields redacted if using a separate executor.",
+            "Confirmation that the executor or MCP workflow blocks new entries at the daily loss limit but still allows risk-reducing position management.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+    return service_container.events.log("broker_executor_bridge", payload)
+
+
+def _get_broker_execution_router(
+    service_container,
+    asset_class: str,
+    account_number: str,
+    symbol: str,
+    side: str,
+    order_type: str,
+    quantity: str,
+    dollar_amount: str,
+    limit_price: str,
+    time_in_force: str,
+    max_daily_loss: float,
+) -> dict:
+    asset = (asset_class or "equity").strip().lower()
+    ticker = (symbol or "").strip().upper()
+    side_norm = (side or "").strip().lower()
+    type_norm = (order_type or "limit").strip().lower()
+    account = (account_number or "").strip()
+    daily_loss = abs(float(max_daily_loss))
+    requested_ticket = {
+        "asset_class": asset,
+        "account_number_present": bool(account),
+        "symbol": ticker,
+        "side": side_norm,
+        "type": type_norm,
+        "quantity": str(quantity or "").strip(),
+        "dollar_amount": str(dollar_amount or "").strip(),
+        "limit_price": str(limit_price or "").strip(),
+        "time_in_force": (time_in_force or "gfd").strip().lower(),
+    }
+    equity_ready = all([account, ticker, side_norm in {"buy", "sell"}, type_norm in {"market", "limit", "stop_market", "stop_limit"}])
+    if type_norm in {"limit", "stop_limit"} and not requested_ticket["limit_price"]:
+        equity_ready = False
+    if not requested_ticket["quantity"] and not requested_ticket["dollar_amount"]:
+        equity_ready = False
+
+    options_tool_names = [
+        "get_option_chains",
+        "get_option_instruments",
+        "get_option_quotes",
+        "get_option_positions",
+        "get_option_orders",
+        "review_option_order",
+        "cancel_option_order",
+        "place_option_order",
+    ]
+    equity_tool_names = [
+        "get_equity_tradability",
+        "get_equity_positions",
+        "review_equity_order",
+        "place_equity_order",
+        "cancel_equity_order",
+    ]
+    if asset in {"equity", "stock", "stocks"}:
+        status = "ROBINHOOD_EQUITY_MCP_ROUTE_READY" if equity_ready else "ROBINHOOD_EQUITY_MCP_ROUTE_NEEDS_TICKET"
+        route = "host_orchestrated_robinhood_trading_mcp_equity"
+        blockers = [] if equity_ready else [
+            "account_number, symbol, side, order type, size, and required limit/stop fields must be present before order review.",
+        ]
+        host_steps = [
+            "Living Screener emits an eligible exact equity ticket after scan/risk gates pass.",
+            "Host calls Robinhood Trading MCP get_equity_tradability for the symbol/account.",
+            "Host calls Robinhood Trading MCP review_equity_order with the exact ticket.",
+            "If review alerts are acceptable and the operator/session policy allows it, host calls place_equity_order with the same ticket and a fresh idempotency ref_id.",
+            "Host logs the broker review, placement, fill, cancellation, or rejection back to Living Screener via /trade/manual-action or journal endpoints.",
+        ]
+    elif asset in {"option", "options"}:
+        status = "ROBINHOOD_OPTIONS_MCP_ROUTE_BLOCKED"
+        route = "awaiting_active_robinhood_options_mcp_tools_or_external_executor"
+        blockers = [
+            "Connect/authenticate Robinhood Trading MCP at https://agent.robinhood.com/mcp/trading in this Codex environment.",
+            "Options order tools must be visible in active tool discovery for this session/account; Robinhood says options trading is still rolling out.",
+            "An options-capable route needs option chains, instruments, quotes, positions, orders, review, place, and cancel tools.",
+        ]
+        host_steps = [
+            "Use Living Screener for options scans, contract quality, small-account gates, and broker-visible snapshot validation.",
+            "Add Robinhood Trading MCP with: codex mcp add robinhood-trading --url https://agent.robinhood.com/mcp/trading, or Codex Desktop Settings -> MCP servers -> Streamable HTTP.",
+            "After authentication, prove get_option_chains/get_option_instruments/get_option_quotes/get_option_positions/get_option_orders/review_option_order/place_option_order/cancel_option_order before live use.",
+            "If no Robinhood options tools are exposed, connect a separate executor that supports option preview/place/cancel and kill-switch endpoints.",
+            "Until then, options execution remains review/paper/manual logging only.",
+        ]
+    else:
+        status = "BROKER_EXECUTION_ROUTE_UNSUPPORTED_ASSET_CLASS"
+        route = "blocked"
+        blockers = [f"Unsupported asset_class={asset!r}; use equity or options."]
+        host_steps = ["Choose a supported asset class and rerun the router."]
+
+    payload = {
+        "status": status,
+        "schema_version": "broker_execution_router_v1",
+        "generated_at": utc_now(),
+        "asset_class": asset,
+        "route": route,
+        "requested_ticket": requested_ticket,
+        "blockers": blockers,
+        "scanner_mcp_can_place_orders": False,
+        "scanner_mcp_role": "scan_score_gate_journal",
+        "robinhood_mcp_role": "broker_account_order_review_place_cancel_when_tools_are_exposed",
+        "separate_executor_role": "required_for_options_or_assets_not_exposed_by_robinhood_mcp",
+        "available_in_current_codex_session": {
+            "equity_tools": equity_tool_names,
+            "options_order_tools": [],
+            "robinhood_trading_mcp_url": "https://agent.robinhood.com/mcp/trading",
+            "official_options_tools_expected_after_connection": options_tool_names,
+            "options_watchlist_tool_seen_but_not_callable": True,
+        },
+        "required_options_tools": options_tool_names,
+        "host_orchestration_steps": host_steps,
+        "execution_policy": {
+            "daily_loss_new_entry_lockout": round(daily_loss, 2),
+            "resume_new_entries_when_threshold_cleared": True,
+            "risk_reducing_position_management_allowed_after_lockout": True,
+            "prefer_limit_or_marketable_limit": True,
+            "market_orders_discouraged": True,
+            "exact_ticket_hash_required": True,
+            "idempotency_ref_id_required_for_place": True,
+            "log_every_review_and_broker_result": True,
+        },
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+    return service_container.events.log("broker_execution_router", payload)
+
+
+def _create_stock_execution_intent(
+    service_container,
+    account_number: str,
+    symbol: str,
+    side: str,
+    order_type: str,
+    quantity: str,
+    dollar_amount: str,
+    limit_price: str,
+    time_in_force: str,
+    market_hours: str,
+    account_value: float,
+    max_daily_loss: float,
+) -> dict:
+    account = str(account_number or "").strip()
+    ticker = str(symbol or "").strip().upper()
+    side_norm = str(side or "").strip().lower()
+    type_norm = str(order_type or "limit").strip().lower()
+    qty = str(quantity or "").strip()
+    notional = str(dollar_amount or "").strip()
+    limit = str(limit_price or "").strip()
+    tif = str(time_in_force or "gfd").strip().lower()
+    hours = str(market_hours or "regular_hours").strip().lower()
+    router = _get_broker_execution_router(
+        service_container,
+        "equity",
+        account,
+        ticker,
+        side_norm,
+        type_norm,
+        qty,
+        notional,
+        limit,
+        tif,
+        max_daily_loss,
+    )
+    proposed_risk = 0.0
+    if notional:
+        proposed_risk = _float_or_zero(notional)
+    elif qty and limit:
+        proposed_risk = round(_float_or_zero(qty) * _float_or_zero(limit), 2)
+    session_risk = _get_session_risk_guard(service_container, account_value, proposed_risk if proposed_risk > 0 else None, 5, max_daily_loss)
+    blocking_reasons: list[str] = []
+    warnings: list[str] = []
+    if router.get("status") != "ROBINHOOD_EQUITY_MCP_ROUTE_READY":
+        blocking_reasons.extend(router.get("blockers") or ["Broker execution router is not ready for this equity ticket."])
+    if session_risk.get("status") == "SESSION_RISK_BLOCKED":
+        blocking_reasons.extend(session_risk.get("blocking_reasons") or ["Session risk blocks new equity exposure."])
+    if type_norm == "market":
+        warnings.append("Market orders are allowed by the broker tool but discouraged here; prefer a limit or marketable limit.")
+    if not account:
+        blocking_reasons.append("Missing Robinhood agentic account number.")
+    if side_norm not in {"buy", "sell"}:
+        blocking_reasons.append("Side must be buy or sell.")
+    if type_norm not in {"market", "limit", "stop_market", "stop_limit"}:
+        blocking_reasons.append("Order type must be market, limit, stop_market, or stop_limit.")
+    if type_norm in {"limit", "stop_limit"} and not limit:
+        blocking_reasons.append("Limit price is required for limit or stop_limit orders.")
+    if bool(qty) == bool(notional):
+        blocking_reasons.append("Provide exactly one of quantity or dollar_amount.")
+
+    ticket = {
+        "account_number": account,
+        "symbol": ticker,
+        "side": side_norm,
+        "type": type_norm,
+        "quantity": qty,
+        "dollar_amount": notional,
+        "limit_price": limit,
+        "time_in_force": tif,
+        "market_hours": hours,
+        "asset_class": "equity",
+    }
+    canonical = json.dumps(ticket, sort_keys=True, separators=(",", ":"))
+    intent_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    status = "STOCK_EXECUTION_INTENT_READY" if not blocking_reasons else "STOCK_EXECUTION_INTENT_BLOCKED"
+    payload = {
+        "status": status,
+        "schema_version": "stock_execution_intent_v1",
+        "generated_at": utc_now(),
+        "intent_hash": intent_hash,
+        "ticket": ticket,
+        "canonical_ticket_json": canonical,
+        "router_status": router.get("status"),
+        "session_risk_status": session_risk.get("status"),
+        "estimated_max_risk_dollars": round(proposed_risk, 2),
+        "blocking_reasons": blocking_reasons,
+        "warnings": warnings,
+        "host_execution_plan": [
+            "Call Robinhood Trading MCP get_equity_tradability with account_number and symbol.",
+            "Call Robinhood Trading MCP review_equity_order with this exact ticket.",
+            "Compare review response against this intent_hash/canonical ticket.",
+            "If review and policy pass, call Robinhood Trading MCP place_equity_order with a fresh UUID ref_id.",
+            "Log the broker review/place/fill/cancel/rejection back to Living Screener with intent_hash.",
+        ],
+        "robinhood_review_equity_order_args": {
+            key: value
+            for key, value in {
+                "account_number": account,
+                "symbol": ticker,
+                "side": side_norm,
+                "type": type_norm,
+                "quantity": qty or None,
+                "dollar_amount": notional or None,
+                "limit_price": limit or None,
+                "time_in_force": tif,
+                "market_hours": hours,
+            }.items()
+            if value is not None
+        },
+        "execution_policy": {
+            "daily_loss_new_entry_lockout": round(abs(float(max_daily_loss)), 2),
+            "resume_new_entries_when_threshold_cleared": True,
+            "risk_reducing_position_management_allowed_after_lockout": True,
+            "exact_ticket_hash_required": True,
+            "idempotency_ref_id_required_for_place": True,
+            "log_every_review_and_broker_result": True,
+        },
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+    return service_container.events.log("stock_execution_intent", payload)
+
+
+def _get_live_execution_control_plane(
+    service_container,
+    account_number: str,
+    account_value: float,
+    buying_power: float,
+    realized_pnl: float,
+    unrealized_pnl: float,
+    max_daily_loss: float,
+    max_risk_per_trade: float,
+    max_risk_pct_per_trade: float,
+    max_trades_per_day: int,
+    max_open_positions: int,
+    todays_trade_count: int,
+    open_position_count: int,
+    open_order_count: int,
+    broker_account_confirmed: bool,
+    buying_power_confirmed: bool,
+    open_positions_checked: bool,
+    open_orders_checked: bool,
+    no_duplicate_order_confirmed: bool,
+    broker_review_enabled: bool,
+    broker_place_enabled: bool,
+    broker_cancel_enabled: bool,
+    kill_switch_enabled: bool,
+    market_data_healthy: bool,
+    market_condition_clear: bool,
+    spread_liquidity_clear: bool,
+    slippage_clear: bool,
+    catalyst_clear: bool,
+) -> dict:
+    controls = _latest_autonomous_controls(service_container)
+    account = str(account_number or "").strip()
+    account_value = _float_or_zero(account_value) or 100.0
+    buying_power = _float_or_zero(buying_power)
+    realized = _float_or_zero(realized_pnl)
+    unrealized = _float_or_zero(unrealized_pnl)
+    total_pnl = round(realized + unrealized, 2)
+    daily_loss = abs(_float_or_zero(max_daily_loss) or 20.0)
+    max_risk_dollars = abs(_float_or_zero(max_risk_per_trade) or 2.0)
+    max_risk_pct = abs(_float_or_zero(max_risk_pct_per_trade) or 0.02)
+    pct_cap_dollars = round(account_value * max_risk_pct, 2)
+    effective_trade_risk_cap = round(min(max_risk_dollars, pct_cap_dollars), 2)
+    max_trades = max(1, int(max_trades_per_day or 1))
+    max_positions = max(1, int(max_open_positions or 1))
+    trade_count = max(0, int(todays_trade_count or 0))
+    position_count = max(0, int(open_position_count or 0))
+    order_count = max(0, int(open_order_count or 0))
+    checks = {
+        "autonomous_enabled": bool(controls.get("autonomous_enabled")),
+        "live_execution_requested": not bool(controls.get("paper_trading_enabled")),
+        "at_least_one_live_lane_enabled": bool(controls.get("stocks_enabled") or controls.get("options_enabled") or controls.get("crypto_enabled")),
+        "account_number_present": bool(account),
+        "broker_account_confirmed": bool(broker_account_confirmed),
+        "buying_power_confirmed": bool(buying_power_confirmed),
+        "buying_power_positive": buying_power > 0,
+        "open_positions_checked": bool(open_positions_checked),
+        "open_orders_checked": bool(open_orders_checked),
+        "no_duplicate_order_confirmed": bool(no_duplicate_order_confirmed),
+        "broker_review_enabled": bool(broker_review_enabled),
+        "broker_place_enabled": bool(broker_place_enabled),
+        "broker_cancel_enabled": bool(broker_cancel_enabled),
+        "kill_switch_enabled": bool(kill_switch_enabled),
+        "market_data_healthy": bool(market_data_healthy),
+        "market_condition_clear": bool(market_condition_clear),
+        "spread_liquidity_clear": bool(spread_liquidity_clear),
+        "slippage_clear": bool(slippage_clear),
+        "catalyst_clear": bool(catalyst_clear),
+        "daily_loss_clear": total_pnl > -daily_loss,
+        "trade_count_below_cap": trade_count < max_trades,
+        "open_positions_below_cap": position_count < max_positions,
+        "open_order_capacity_clear": order_count <= max_positions,
+    }
+    blockers = [name for name, passed in checks.items() if not passed]
+    live_enabled = not blockers
+    payload = {
+        "status": "LIVE_EXECUTION_ENABLED" if live_enabled else "LIVE_EXECUTION_BLOCKED",
+        "schema_version": "live_execution_control_plane_v1",
+        "generated_at": utc_now(),
+        "execution_mode": "LIVE_EXECUTION_ENABLED" if live_enabled else "GATED_LIVE_EXECUTION_BLOCKED",
+        "read_only_replaced_by": "master_risk_governed_live_execution",
+        "manual_approval_required_per_order": False if live_enabled else None,
+        "broker_connection_model": "host_robinhood_mcp_or_external_executor_adapter",
+        "account_number_present": bool(account),
+        "controls": controls,
+        "checks": checks,
+        "blockers": blockers,
+        "risk_limits": {
+            "max_dollar_risk_per_trade": round(max_risk_dollars, 2),
+            "max_percentage_risk_per_trade": round(max_risk_pct, 4),
+            "effective_trade_risk_cap": effective_trade_risk_cap,
+            "max_daily_loss": round(daily_loss, 2),
+            "max_trades_per_day": max_trades,
+            "max_open_positions": max_positions,
+            "max_position_size": round(min(buying_power, account_value * 0.60), 2),
+            "no_averaging_down_unless_strategy_explicitly_allows": True,
+        },
+        "current_risk_state": {
+            "account_value": round(account_value, 2),
+            "buying_power": round(buying_power, 2),
+            "realized_pnl": round(realized, 2),
+            "unrealized_pnl": round(unrealized, 2),
+            "total_pnl": total_pnl,
+            "todays_trade_count": trade_count,
+            "open_position_count": position_count,
+            "open_order_count": order_count,
+        },
+        "master_risk_governor": {
+            "authority": "absolute",
+            "strategy_override_allowed": False,
+            "new_entries_allowed": live_enabled,
+            "risk_reducing_position_management_allowed": bool(broker_cancel_enabled and kill_switch_enabled),
+            "kill_switch_authority": "cancel_open_orders_reject_new_entries_and_require_reassessment",
+        },
+        "must_reject_trade_if": [
+            "market condition check fails",
+            "setup quality check fails",
+            "liquidity check fails",
+            "spread or slippage check fails",
+            "risk/reward check fails",
+            "account-size suitability check fails",
+            "catalyst/news risk check fails",
+            "execution confidence check fails",
+            "data is stale, conflicting, confusing, or unavailable",
+            "daily loss, trade count, position count, duplicate order, or kill-switch gate fails",
+        ],
+        "scaling_policy": {
+            "starting_mode": "limited_live_execution_small_capital",
+            "scale_only_after": [
+                "minimum sample size of closed live trades",
+                "positive expectancy after fees and slippage",
+                "max drawdown stayed inside governor limits",
+                "no unresolved execution errors",
+                "postmortems completed for losses, missed trades, bad entries, and bad exits",
+            ],
+            "arbitrary_confidence_scaling_allowed": False,
+        },
+        "decision_logging_required": [
+            "timestamp",
+            "ticker_or_contract",
+            "direction",
+            "entry_reason",
+            "exit_plan",
+            "risk_amount",
+            "confidence_score",
+            "data_used",
+            "safety_gates_passed",
+            "rejection_reason_when_skipped",
+            "final_outcome_after_close",
+        ],
+        "can_route_live_orders": live_enabled,
+        "can_place_order_via_broker_adapter": live_enabled,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+    return service_container.events.log("live_execution_control_plane", payload)
+
+
+def _build_autonomous_execution_ticket(
+    service_container,
+    account_number: str,
+    symbol: str,
+    side: str,
+    order_type: str,
+    quantity: str,
+    dollar_amount: str,
+    limit_price: str,
+    stop_price: str,
+    take_profit_price: str,
+    confidence_score: float,
+    setup_quality: str,
+    risk_reward: float,
+    account_value: float,
+    buying_power: float,
+    proposed_risk_dollars: float,
+    max_daily_loss: float,
+    max_risk_per_trade: float,
+    max_risk_pct_per_trade: float,
+    max_trades_per_day: int,
+    max_open_positions: int,
+    todays_trade_count: int,
+    open_position_count: int,
+    open_order_count: int,
+    broker_account_confirmed: bool,
+    buying_power_confirmed: bool,
+    open_positions_checked: bool,
+    open_orders_checked: bool,
+    no_duplicate_order_confirmed: bool,
+    broker_review_enabled: bool,
+    broker_place_enabled: bool,
+    broker_cancel_enabled: bool,
+    kill_switch_enabled: bool,
+    market_data_healthy: bool,
+    market_condition_clear: bool,
+    setup_quality_clear: bool,
+    liquidity_clear: bool,
+    spread_clear: bool,
+    slippage_clear: bool,
+    catalyst_clear: bool,
+    execution_confidence_clear: bool,
+) -> dict:
+    proposed_risk = _float_or_zero(proposed_risk_dollars)
+    if proposed_risk <= 0:
+        if str(dollar_amount or "").strip():
+            proposed_risk = _float_or_zero(dollar_amount)
+        elif str(quantity or "").strip() and str(limit_price or "").strip():
+            proposed_risk = round(_float_or_zero(quantity) * _float_or_zero(limit_price), 2)
+    governor = _get_live_execution_control_plane(
+        service_container,
+        account_number,
+        account_value,
+        buying_power,
+        0.0,
+        0.0,
+        max_daily_loss,
+        max_risk_per_trade,
+        max_risk_pct_per_trade,
+        max_trades_per_day,
+        max_open_positions,
+        todays_trade_count,
+        open_position_count,
+        open_order_count,
+        broker_account_confirmed,
+        buying_power_confirmed,
+        open_positions_checked,
+        open_orders_checked,
+        no_duplicate_order_confirmed,
+        broker_review_enabled,
+        broker_place_enabled,
+        broker_cancel_enabled,
+        kill_switch_enabled,
+        market_data_healthy,
+        market_condition_clear,
+        liquidity_clear and spread_clear,
+        slippage_clear,
+        catalyst_clear,
+    )
+    stock_intent = _create_stock_execution_intent(
+        service_container,
+        account_number,
+        symbol,
+        side,
+        order_type,
+        quantity,
+        dollar_amount,
+        limit_price,
+        "gfd",
+        "regular_hours",
+        account_value,
+        max_daily_loss,
+    )
+    confidence = _float_or_zero(confidence_score)
+    rr = _float_or_zero(risk_reward)
+    risk_cap = _float_or_zero((governor.get("risk_limits") or {}).get("effective_trade_risk_cap"))
+    quality = str(setup_quality or "").strip().upper()
+    trade_checks = {
+        "governor_live_execution_enabled": governor.get("status") == "LIVE_EXECUTION_ENABLED",
+        "stock_intent_ready": stock_intent.get("status") == "STOCK_EXECUTION_INTENT_READY",
+        "market_condition_clear": bool(market_condition_clear),
+        "setup_quality_clear": bool(setup_quality_clear) and quality in {"VALID_CANDIDATE", "HIGH_CONFIDENCE", "ACTIONABLE"},
+        "liquidity_clear": bool(liquidity_clear),
+        "spread_clear": bool(spread_clear),
+        "slippage_clear": bool(slippage_clear),
+        "risk_reward_clear": rr >= 1.5,
+        "account_size_suitable": 0 < proposed_risk <= risk_cap,
+        "catalyst_clear": bool(catalyst_clear),
+        "execution_confidence_clear": bool(execution_confidence_clear) and confidence >= 80,
+        "stop_loss_present": bool(str(stop_price or "").strip()),
+        "take_profit_present": bool(str(take_profit_price or "").strip()),
+    }
+    rejection_reasons = [name for name, passed in trade_checks.items() if not passed]
+    status = "AUTONOMOUS_ORDER_TICKET_READY" if not rejection_reasons else "NO_TRADE"
+    ticket = stock_intent.get("ticket") or {}
+    lifecycle = {
+        "entry": ticket,
+        "stop_loss": {
+            "type": "stop_market",
+            "side": "sell" if str(side).lower() == "buy" else "buy",
+            "symbol": str(symbol or "").upper(),
+            "stop_price": str(stop_price or "").strip(),
+            "time_in_force": "gfd",
+        },
+        "take_profit": {
+            "type": "limit",
+            "side": "sell" if str(side).lower() == "buy" else "buy",
+            "symbol": str(symbol or "").upper(),
+            "limit_price": str(take_profit_price or "").strip(),
+            "time_in_force": "gfd",
+        },
+    }
+    canonical = json.dumps(lifecycle, sort_keys=True, separators=(",", ":"))
+    payload = {
+        "status": status,
+        "schema_version": "autonomous_execution_ticket_v1",
+        "generated_at": utc_now(),
+        "execution_mode": "LIVE_EXECUTION_ENABLED" if status == "AUTONOMOUS_ORDER_TICKET_READY" else "NO_TRADE",
+        "ticket_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+        "stock_intent_hash": stock_intent.get("intent_hash"),
+        "lifecycle_ticket": lifecycle,
+        "canonical_lifecycle_json": canonical,
+        "confidence_score": round(confidence, 2),
+        "setup_quality": quality,
+        "risk_reward": round(rr, 2),
+        "proposed_risk_dollars": round(proposed_risk, 2),
+        "trade_checks": trade_checks,
+        "rejection_reasons": rejection_reasons,
+        "governor_status": governor.get("status"),
+        "governor_blockers": governor.get("blockers") or [],
+        "broker_execution_sequence": [
+            "review entry ticket with broker adapter",
+            "place entry only if review exactly matches ticket_hash and risk governor remains enabled",
+            "immediately stage or place stop-loss protection",
+            "stage or place take-profit order",
+            "monitor fill, spread, slippage, data freshness, and governor state",
+            "exit automatically on stop, target, setup invalidation, data outage, abnormal behavior, or drawdown breach",
+            "log every broker review, placement, fill, cancel, rejection, and final outcome",
+        ],
+        "manual_approval_required_per_order": False if status == "AUTONOMOUS_ORDER_TICKET_READY" else None,
+        "force_trade_allowed": False,
+        "can_route_live_orders": status == "AUTONOMOUS_ORDER_TICKET_READY",
+        "can_place_order_via_broker_adapter": status == "AUTONOMOUS_ORDER_TICKET_READY",
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+    return service_container.events.log("autonomous_execution_ticket", payload)
+
+
+def _get_event_volatility_war_room(service_container, event_name: str, account_value: float, max_daily_loss: float) -> dict:
+    controls = _latest_autonomous_controls(service_container)
+    payload = {
+        "status": "EVENT_VOLATILITY_WAR_ROOM_READY",
+        "schema_version": "event_volatility_war_room_v1",
+        "generated_at": utc_now(),
+        "event_name": event_name,
+        "primary_symbol": "SPCX" if event_name.lower() in {"spacex_ipo", "spacex"} else service_container.settings.event_direct_symbol,
+        "event_date_context": "SpaceX priced June 11, 2026; first trading expected Friday, June 12, 2026 under SPCX based on current reporting.",
+        "controls": controls,
+        "account_value": round(float(account_value), 2),
+        "halt_and_reassess_loss": round(float(max_daily_loss), 2),
+        "lanes": {
+            "direct_ipo_stock": ["SPCX"],
+            "sympathy_space": ["RKLB", "LUNR", "ASTS", "PL", "SPCE", "BA", "LMT", "NOC", "AVAV", "GSAT", "IRDM", "VSAT"],
+            "etf_context": ["ARKX", "ITA", "UFO", "QQQ", "SPY", "IWM"],
+            "crypto_risk_proxy": ["BTC-USD", "ETH-USD", "SOL-USD", "DOGE-USD"],
+        },
+        "opening_rules": [
+            "Observe first print/spread stabilization before ranking.",
+            "Separate direct IPO stock review from sympathy options review.",
+            "Do not options-rank a sympathy name unless stock setup, options truth, friction, and session risk all pass.",
+            "Treat opening halts, crossed spreads, stale quotes, and no borrow/unknown options as PASS.",
+        ],
+        "scans_to_run": [
+            "/ops/event-volatility-playbook?event_name=spacex_ipo&format=html",
+            "/ops/event-volatility-scan?event_name=spacex_ipo&format=html",
+            "/ops/broad-opportunity-scan?format=html",
+            "/ops/market-open-observer?format=html",
+        ],
+        "missing_keys_addressed": [
+            "One-click autonomy controls.",
+            "Cross-asset capital allocator.",
+            "Full-market visibility map.",
+            "Event volatility war room.",
+            "Loss review halt-and-reassess loop.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+    }
+    return service_container.events.log("event_volatility_war_room", payload)
+
+
+def _get_loss_review_reassessment(service_container, max_daily_loss: float, realized_pnl: float, unrealized_pnl: float) -> dict:
+    total = float(realized_pnl) + float(unrealized_pnl)
+    limit = abs(float(max_daily_loss))
+    halted = total <= -limit
+    payload = {
+        "status": "LOSS_REASSESSMENT_HALTED" if halted else "LOSS_REASSESSMENT_READY",
+        "schema_version": "loss_review_reassessment_v1",
+        "generated_at": utc_now(),
+        "realized_pnl": round(float(realized_pnl), 2),
+        "unrealized_pnl": round(float(unrealized_pnl), 2),
+        "total_pnl": round(total, 2),
+        "max_daily_loss": round(limit, 2),
+        "halt_triggered": halted,
+        "new_entries_allowed": not halted,
+        "new_entry_lockout_only": True,
+        "position_management_allowed": True,
+        "resume_new_entries_when_threshold_cleared": True,
+        "loss_review_loop": [
+            "After every loss: capture entry proof, exit proof, spread, fee, slippage, setup state, and invalidation.",
+            "Classify loss as bad entry, late entry, bad exit, data issue, fee/slippage issue, regime flip, or acceptable planned loss.",
+            "Disable or down-rank the responsible strategy if repeated loss causes recur.",
+            f"At -${limit:.2f} total daily P/L: disable opening new positions and continue managing current open positions. If open positions pull total P/L back above -${limit:.2f}, new entries resume unless autonomy was manually disabled.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+    }
+    return service_container.events.log("loss_review_reassessment", payload)
+
+
+def _get_trading_monster_dashboard(service_container, account_value: float, buying_power: float, max_daily_loss: float) -> dict:
+    controls = _latest_autonomous_controls(service_container)
+    active_daily_loss = round(float(max_daily_loss), 2)
+    controls = {**controls, "max_daily_loss": active_daily_loss}
+    active_daily_loss_param = f"{active_daily_loss:g}"
+    capital = _get_cross_asset_capital_plan(service_container, account_value, buying_power, active_daily_loss)
+    visibility = _get_full_market_visibility_map(service_container)
+    loss = _get_loss_review_reassessment(service_container, active_daily_loss, 0.0, 0.0)
+    recent_crypto = service_container.events.recent("crypto_autonomous_cycle", 5)
+    payload = {
+        "status": "TRADING_MONSTER_DASHBOARD_READY",
+        "schema_version": "trading_monster_dashboard_v1",
+        "build_version": BUILD_VERSION,
+        "generated_at": utc_now(),
+        "controls": controls,
+        "one_click_controls": {
+            "enable_full_autonomy": f"/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=false&paper_trading_enabled=false&live_handoff_enabled=false&max_daily_loss={active_daily_loss_param}&format=html",
+            "enable_all_paper": f"/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss={active_daily_loss_param}&format=html",
+            "enable_crypto_paper": f"/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=false&options_enabled=false&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss={active_daily_loss_param}&format=html",
+            "disable_all": "/ops/autonomy-control?autonomous_enabled=false&stocks_enabled=false&options_enabled=false&crypto_enabled=false&paper_trading_enabled=false&live_handoff_enabled=false&format=html",
+        },
+        "capital_plan": capital,
+        "visibility_map": visibility,
+        "loss_reassessment": loss,
+        "recent_crypto_cycles": recent_crypto,
+        "dashboard_sections": [
+            "Master Controls",
+            "Risk And Capital",
+            "Full Market Visibility",
+            "SpaceX IPO War Room",
+            "Crypto Autonomous Cycle",
+            "Paper/Live Handoff Tickets",
+            "Loss Review And Learning",
+            "Journal Vault",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+    }
+    return service_container.events.log("trading_monster_dashboard", payload)
+
+
 def _intelligence_signals_from_event(event: dict[str, Any], payload: dict[str, Any], universe_filter: set[str]) -> list[dict[str, Any]]:
     event_type = str(event.get("event_type") or "")
     timestamp = str(event.get("timestamp") or payload.get("generated_at") or "")
@@ -2265,7 +3602,7 @@ def _get_ops_command_center(service_container, tickers: list[str] | None, accoun
             "market_readiness": f"/ops/market-readiness?tickers={ticker_query}&max_candidates=25",
             "review_harvest": f"/ops/review-harvest?tickers={ticker_query}&max_candidates=25&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}",
             "harvest_followup": "/ops/harvest-followup?limit=5&classify=true",
-            "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html",
+            "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=5&max_daily_loss=20&format=html",
             "learning_dashboard": "/learning/dashboard",
             "paper_option_summary": "/paper/options/summary",
             "debug_health": f"/health/full?expected_build_version={BUILD_VERSION}",
@@ -2365,7 +3702,7 @@ def _get_trading_day_launch_checklist(service_container, tickers: list[str] | No
             {
                 "phase": "Session risk",
                 "go_condition": "Open journaled option risk is below cap and max open positions has not been reached.",
-                "primary_link": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html",
+                "primary_link": f"/risk/session?account_value={account_ref}&max_open_positions=5&max_daily_loss=20&format=html",
                 "stop_if": "Session risk is SESSION_RISK_BLOCKED, hard lockout is reached, or open exposure is already full.",
             },
             {
@@ -2412,7 +3749,7 @@ def _get_trading_day_launch_checklist(service_container, tickers: list[str] | No
             "health_full": f"/health/full?expected_build_version={BUILD_VERSION}",
             "tool_manifest": "/debug/tool-manifest",
             "scan_schema": f"/debug/scan-schema?expected_build_version={BUILD_VERSION}",
-            "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html",
+            "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=5&max_daily_loss=20&format=html",
             "market_readiness": f"/ops/market-readiness?tickers={ticker_query}&max_candidates={max_candidates}",
             "market_open_observer": f"/ops/market-open-observer?tickers={ticker_query}&max_candidates={max_candidates}&cadence_minutes=5&format=html",
             "live_review_cycle": f"/ops/live-review-cycle?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}&format=html",
@@ -2479,7 +3816,7 @@ def _get_tomorrow_operator_brief(service_container, tickers: list[str] | None, a
         "morning_autopilot": f"/ops/morning-autopilot?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&format=html",
         "day_monitor": f"/ops/day-monitor?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={contract_cap}&format=html",
         "day_alerts": "/ops/day-alerts?limit=50&format=html",
-        "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html",
+        "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=5&max_daily_loss=20&format=html",
         "live_review_cycle": f"/ops/live-review-cycle?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={contract_cap}&format=html",
         "manual_snapshot_form": "/trade/manual-form?format=html",
         "manual_trade_desk": "/trade/manual-desk",
@@ -2709,7 +4046,7 @@ def _run_go_live_rehearsal(
             {"label": "Operator brief", "url": f"/ops/tomorrow-brief?tickers={ticker_query}&account_value={account_ref}&format=html"},
             {"label": "Day monitor", "url": f"/ops/day-monitor?tickers={ticker_query}&account_value={account_ref}&max_candidates={max_candidates}&format=html"},
             {"label": "Day alerts", "url": "/ops/day-alerts?limit=50&format=html"},
-            {"label": "Session risk", "url": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html"},
+            {"label": "Session risk", "url": f"/risk/session?account_value={account_ref}&max_open_positions=5&max_daily_loss=20&format=html"},
             {"label": "Manual snapshot form", "url": "/trade/manual-form?format=html"},
             {"label": "Paper ledger", "url": "/paper/options/summary?format=html"},
         ],
@@ -3188,7 +4525,7 @@ def _run_morning_readiness_autopilot(service_container, tickers: list[str] | Non
             "market_readiness": f"/ops/market-readiness?tickers={','.join(universe)}&max_candidates={max_candidates}",
             "review_harvest": f"/ops/review-harvest?tickers={','.join(universe)}&max_candidates={max_candidates}&review_top_n=8&max_contract_price={service_container.settings.scalp_max_contract_price}",
             "harvest_followup": "/ops/harvest-followup?limit=5&classify=true",
-            "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=2&format=html",
+            "session_risk": f"/risk/session?account_value={account_ref}&max_open_positions=5&max_daily_loss=20&format=html",
             "paper_ledger": "/paper/options/summary",
             "debug_health": f"/health/full?expected_build_version={BUILD_VERSION}",
             "debug_schema": f"/debug/scan-schema?expected_build_version={BUILD_VERSION}",
@@ -3439,7 +4776,7 @@ def _run_live_review_cycle(
             "morning_autopilot": f"/ops/morning-autopilot?tickers={','.join(universe)}&account_value={_float_or_zero(account_value) or 50.0}&max_candidates={max_candidates}",
             "live_review_cycle": f"/ops/live-review-cycle?tickers={','.join(universe)}&account_value={_float_or_zero(account_value) or 50.0}&max_candidates={max_candidates}&review_top_n={review_top_n}&max_contract_price={effective_contract_cap}",
             "review_harvest": f"/ops/review-harvest?tickers={','.join(universe)}&max_candidates={max_candidates}&review_top_n={review_top_n}&max_contract_price={effective_contract_cap}",
-            "session_risk": f"/risk/session?account_value={_float_or_zero(account_value) or 50.0}&proposed_risk_dollars={proposed_risk}&max_open_positions=2&format=html",
+            "session_risk": f"/risk/session?account_value={_float_or_zero(account_value) or 50.0}&proposed_risk_dollars={proposed_risk}&max_open_positions=5&max_daily_loss=20&format=html",
             "manual_preflight": "/review/manual-preflight",
             "paper_ledger": "/paper/options/summary",
             "harvest_followup": "/ops/harvest-followup?limit=5&classify=true",
@@ -3747,7 +5084,7 @@ def _build_manual_trade_desk(
     account_value: float,
     max_contract_price: float | None,
     notes: str = "",
-    max_open_positions: int = 2,
+    max_open_positions: int = 5,
 ) -> dict:
     preflight = _build_manual_trade_preflight_ticket(service_container, snapshot, account_value, max_contract_price, notes)
     selected = preflight.get("selected_contract") or {}
@@ -4211,7 +5548,13 @@ def _watch_manual_option_position(
     return service_container.events.log("manual_option_position_watch", payload)
 
 
-def _get_session_risk_guard(service_container, account_value: float = 50.0, proposed_risk_dollars: float | None = None, max_open_positions: int = 2) -> dict:
+def _get_session_risk_guard(
+    service_container,
+    account_value: float = 50.0,
+    proposed_risk_dollars: float | None = None,
+    max_open_positions: int = 5,
+    max_daily_loss: float | None = None,
+) -> dict:
     account_value = _float_or_zero(account_value) or 50.0
     max_open_positions = max(1, min(int(max_open_positions or 2), 5))
     proposed_risk = _float_or_zero(proposed_risk_dollars)
@@ -4248,11 +5591,18 @@ def _get_session_risk_guard(service_container, account_value: float = 50.0, prop
     real_cash_open_position_count = max(0, len(real_cash_entries) - len(real_cash_closes))
     open_risk = round(sum(_float_or_zero((event.get("payload") or {}).get("entry_debit_dollars")) for event in open_entries), 2)
     closed_pnl = round(sum(_float_or_zero((event.get("payload") or {}).get("pnl_dollars")) for event in closes), 2)
+    configured_daily_loss = abs(float(max_daily_loss)) if max_daily_loss is not None else 0.0
     per_trade_cap = round(account_value * service_container.settings.max_trade_risk_pct, 2)
     warn_drawdown = round(account_value * service_container.settings.warn_daily_drawdown_pct, 2)
     soft_stop = round(account_value * service_container.settings.soft_stop_daily_drawdown_pct, 2)
     hard_lockout = round(account_value * service_container.settings.hard_lockout_daily_drawdown_pct, 2)
     total_open_cap = round(account_value * service_container.settings.hard_lockout_daily_drawdown_pct, 2)
+    if configured_daily_loss > 0:
+        warn_drawdown = round(min(warn_drawdown, configured_daily_loss * 0.50), 2)
+        soft_stop = round(min(soft_stop, configured_daily_loss * 0.75), 2)
+        hard_lockout = round(min(hard_lockout, configured_daily_loss), 2)
+        total_open_cap = round(min(total_open_cap, configured_daily_loss), 2)
+        per_trade_cap = round(min(per_trade_cap, configured_daily_loss), 2)
     projected_open_risk = round(open_risk + proposed_risk, 2)
     warnings: list[str] = []
     blocking_reasons: list[str] = []
@@ -4300,6 +5650,7 @@ def _get_session_risk_guard(service_container, account_value: float = 50.0, prop
         "generated_at": utc_now(),
         "account_value_reference": account_value,
         "proposed_risk_dollars": proposed_risk if proposed_risk > 0 else None,
+        "daily_loss_limit_dollars": round(configured_daily_loss, 2) if configured_daily_loss > 0 else None,
         "per_trade_cap_dollars": per_trade_cap,
         "total_open_risk_cap_dollars": total_open_cap,
         "warning_drawdown_dollars": warn_drawdown,
@@ -6124,6 +7475,11 @@ def get_crypto_paper_rules() -> dict:
 
 
 @mcp.tool
+def get_robinhood_crypto_universe() -> dict:
+    return container.crypto_paper.universe()
+
+
+@mcp.tool
 def start_crypto_paper_session(starting_cash: float = 5.0, symbols: list[str] | None = None, duration_hours: int = 8, interval_minutes: int = 15) -> dict:
     return container.crypto_paper.start_session(starting_cash, symbols, duration_hours, interval_minutes)
 
@@ -6131,6 +7487,165 @@ def start_crypto_paper_session(starting_cash: float = 5.0, symbols: list[str] | 
 @mcp.tool
 def run_crypto_paper_backtest(symbols: list[str] | None = None, period: str = "1d", interval: str = "5m", starting_cash: float = 5.0, max_trades_per_symbol: int = 50) -> dict:
     return container.crypto_paper.run_backtest(symbols, period, interval, starting_cash, max_trades_per_symbol)
+
+
+@mcp.tool
+def get_crypto_live_test_gate(
+    symbols: list[str] | None = None,
+    starting_cash: float = 5.0,
+    intended_cash: float = 5.0,
+    account_balance: float | None = None,
+    buying_power: float | None = None,
+    exchange_connected: bool = False,
+    open_positions_checked: bool = False,
+    open_position_count: int | None = None,
+    open_orders_checked: bool = False,
+    open_order_count: int | None = None,
+    market_data_fresh: bool = False,
+    order_book_fresh: bool = False,
+    kill_switch_ready: bool = False,
+    emergency_shutdown_ready: bool = False,
+    daily_loss_lockout_clear: bool = False,
+    journaling_ready: bool = True,
+    fee_bps: float | None = None,
+    slippage_pct: float | None = None,
+    min_order_size: float | None = None,
+    candidate_snapshots: dict[str, dict[str, Any]] | None = None,
+    max_spread_pct: float = 0.0015,
+    max_fee_impact_pct: float = 0.0015,
+    max_slippage_pct: float = 0.0015,
+    min_24h_volume: float = 100_000_000.0,
+    target_profit_pct: float | None = None,
+    stop_loss_pct: float | None = None,
+    emergency_max_loss: float | None = None,
+    backtest_symbol_limit: int = 20,
+    period: str = "1d",
+    interval: str = "5m",
+) -> dict:
+    return container.crypto_paper.live_test_gate(
+        symbols=symbols,
+        starting_cash=starting_cash,
+        intended_cash=intended_cash,
+        account_balance=account_balance,
+        buying_power=buying_power,
+        exchange_connected=exchange_connected,
+        open_positions_checked=open_positions_checked,
+        open_position_count=open_position_count,
+        open_orders_checked=open_orders_checked,
+        open_order_count=open_order_count,
+        market_data_fresh=market_data_fresh,
+        order_book_fresh=order_book_fresh,
+        kill_switch_ready=kill_switch_ready,
+        emergency_shutdown_ready=emergency_shutdown_ready,
+        daily_loss_lockout_clear=daily_loss_lockout_clear,
+        journaling_ready=journaling_ready,
+        fee_bps=fee_bps,
+        slippage_pct=slippage_pct,
+        min_order_size=min_order_size,
+        candidate_snapshots=candidate_snapshots,
+        max_spread_pct=max_spread_pct,
+        max_fee_impact_pct=max_fee_impact_pct,
+        max_slippage_pct=max_slippage_pct,
+        min_24h_volume=min_24h_volume,
+        target_profit_pct=target_profit_pct,
+        stop_loss_pct=stop_loss_pct,
+        emergency_max_loss=emergency_max_loss,
+        backtest_symbol_limit=backtest_symbol_limit,
+        period=period,
+        interval=interval,
+    )
+
+
+@mcp.tool
+def run_autonomous_crypto_cycle(
+    symbols: list[str] | None = None,
+    starting_cash: float = 5.0,
+    intended_cash: float = 5.0,
+    account_balance: float | None = None,
+    buying_power: float | None = None,
+    exchange_connected: bool = False,
+    open_positions_checked: bool = False,
+    open_position_count: int | None = None,
+    open_orders_checked: bool = False,
+    open_order_count: int | None = None,
+    market_data_fresh: bool = False,
+    order_book_fresh: bool = False,
+    kill_switch_ready: bool = False,
+    emergency_shutdown_ready: bool = False,
+    daily_loss_lockout_clear: bool = False,
+    journaling_ready: bool = True,
+    fee_bps: float | None = None,
+    slippage_pct: float | None = None,
+    min_order_size: float | None = None,
+    candidate_snapshots: dict[str, dict[str, Any]] | None = None,
+    max_spread_pct: float = 0.0015,
+    max_fee_impact_pct: float = 0.0015,
+    max_slippage_pct: float = 0.0015,
+    min_24h_volume: float = 100_000_000.0,
+    target_profit_pct: float | None = None,
+    stop_loss_pct: float | None = None,
+    emergency_max_loss: float | None = None,
+    backtest_symbol_limit: int = 20,
+    execution_mode: str = "paper",
+    max_open_positions: int = 1,
+    period: str = "1d",
+    interval: str = "5m",
+) -> dict:
+    return container.crypto_paper.run_autonomous_cycle(
+        symbols=symbols,
+        starting_cash=starting_cash,
+        intended_cash=intended_cash,
+        account_balance=account_balance,
+        buying_power=buying_power,
+        exchange_connected=exchange_connected,
+        open_positions_checked=open_positions_checked,
+        open_position_count=open_position_count,
+        open_orders_checked=open_orders_checked,
+        open_order_count=open_order_count,
+        market_data_fresh=market_data_fresh,
+        order_book_fresh=order_book_fresh,
+        kill_switch_ready=kill_switch_ready,
+        emergency_shutdown_ready=emergency_shutdown_ready,
+        daily_loss_lockout_clear=daily_loss_lockout_clear,
+        journaling_ready=journaling_ready,
+        fee_bps=fee_bps,
+        slippage_pct=slippage_pct,
+        min_order_size=min_order_size,
+        candidate_snapshots=candidate_snapshots,
+        max_spread_pct=max_spread_pct,
+        max_fee_impact_pct=max_fee_impact_pct,
+        max_slippage_pct=max_slippage_pct,
+        min_24h_volume=min_24h_volume,
+        target_profit_pct=target_profit_pct,
+        stop_loss_pct=stop_loss_pct,
+        emergency_max_loss=emergency_max_loss,
+        backtest_symbol_limit=backtest_symbol_limit,
+        execution_mode=execution_mode,
+        max_open_positions=max_open_positions,
+        period=period,
+        interval=interval,
+    )
+
+
+@mcp.tool
+def summarize_crypto_live_test_report(
+    starting_balance: float = 5.0,
+    ending_balance: float | None = None,
+    fees_paid: float = 0.0,
+    estimated_slippage: float = 0.0,
+    live_trades: list[dict[str, Any]] | None = None,
+    rejected_candidates: list[dict[str, Any]] | None = None,
+    limit_events: int = 100,
+) -> dict:
+    return container.crypto_paper.summarize_live_test_report(
+        starting_balance=starting_balance,
+        ending_balance=ending_balance,
+        fees_paid=fees_paid,
+        estimated_slippage=estimated_slippage,
+        live_trades=live_trades,
+        rejected_candidates=rejected_candidates,
+        limit_events=limit_events,
+    )
 
 
 @mcp.tool

@@ -1,1 +1,1 @@
-BUILD_VERSION = "2026.06.11-journal-vault"
+BUILD_VERSION = "2026.06.12-full-crypto-universe"
