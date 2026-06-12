@@ -160,6 +160,10 @@ def whole_share_quantity(notional: float, limit_price: float) -> int:
     return int(notional // limit_price)
 
 
+def is_fractional_tradable(tradability: dict[str, Any]) -> bool:
+    return str(tradability.get("fractional_tradability") or "").lower() == "tradable"
+
+
 def new_entries_paused(state: dict[str, Any]) -> bool:
     paused_until = parse_timestamp(state.get("new_entries_paused_until"))
     if not paused_until:
@@ -460,7 +464,28 @@ def build_entry_order_args(config: BridgeConfig, selected: dict[str, Any], notio
     market_hours = resolve_market_hours(config)
     if current_equity_session() == "closed" and market_hours == "extended_hours":
         return None, "equity_market_closed"
+    quote = selected.get("quote") or {}
+    trade = selected.get("tradability") or {}
     if market_hours == "regular_hours":
+        if not is_fractional_tradable(trade):
+            ref_price = as_float(quote.get("ask_price")) or as_float(quote.get("last_trade_price"))
+            quantity = whole_share_quantity(min(notional, buying_power), ref_price)
+            if ref_price <= 0:
+                return None, "non_fractional_symbol_has_no_valid_reference_price"
+            if quantity < 1:
+                return None, f"regular_hours_non_fractional_symbol_requires_whole_share_but_budget_{notional:.2f}_is_below_price_{ref_price:.2f}"
+            return (
+                {
+                    "account_number": config.account_number,
+                    "symbol": symbol,
+                    "side": "buy",
+                    "type": "market",
+                    "quantity": str(quantity),
+                    "time_in_force": "gfd",
+                    "market_hours": "regular_hours",
+                },
+                None,
+            )
         return (
             {
                 "account_number": config.account_number,
@@ -473,7 +498,6 @@ def build_entry_order_args(config: BridgeConfig, selected: dict[str, Any], notio
             },
             None,
         )
-    quote = selected.get("quote") or {}
     limit_price = marketable_limit_price("buy", quote)
     quantity = whole_share_quantity(min(notional, buying_power), limit_price)
     if limit_price <= 0:
