@@ -30,7 +30,9 @@ from app.mcp_server import (
     _get_failure_mode_audit,
     _get_full_market_visibility_map,
     _get_event_volatility_war_room,
+    _get_listed_equity_master_universe,
     _get_loss_review_reassessment,
+    _get_broker_executor_bridge,
     _get_tomorrow_operator_brief,
     _get_trading_day_launch_checklist,
     _get_trading_monster_dashboard,
@@ -4031,6 +4033,36 @@ async def fallback_cross_asset_capital_plan(request: Request) -> JSONResponse:
 
 async def fallback_full_market_visibility(request: Request) -> JSONResponse:
     return JSONResponse(_review_only_envelope({"result": _get_full_market_visibility_map(container)}))
+
+
+async def fallback_listed_equity_universe(request: Request) -> JSONResponse:
+    params = request.query_params
+    result = _get_listed_equity_master_universe(
+        container,
+        include_etfs=(params.get("include_etfs") or "true").strip().lower() not in {"0", "false", "no"},
+        include_test_issues=_truthy(params.get("include_test_issues")),
+        max_symbols=_int_or_default(params.get("max_symbols"), 0),
+    )
+    return JSONResponse(_review_only_envelope({"result": result}))
+
+
+async def fallback_broker_executor_bridge(request: Request) -> JSONResponse:
+    params = request.query_params
+    result = _get_broker_executor_bridge(
+        container,
+        params.get("executor_base_url") or "",
+        _truthy(params.get("has_crypto_api_key")),
+        _truthy(params.get("read_account_enabled")),
+        _truthy(params.get("read_positions_enabled")),
+        _truthy(params.get("read_orders_enabled")),
+        _truthy(params.get("order_preview_enabled")),
+        _truthy(params.get("place_order_enabled")),
+        _truthy(params.get("cancel_order_enabled")),
+        _truthy(params.get("kill_switch_enabled")),
+        not (params.get("paper_mode_default") is not None and not _truthy(params.get("paper_mode_default"))),
+        _float_or_none(params.get("max_daily_loss")) or 20.0,
+    )
+    return JSONResponse(_review_only_envelope({"result": result}))
 
 
 async def fallback_event_war_room(request: Request) -> JSONResponse | HTMLResponse:

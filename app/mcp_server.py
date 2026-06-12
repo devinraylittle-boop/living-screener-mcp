@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import csv
+import urllib.request
 from collections import Counter
 from datetime import UTC, datetime, timedelta
+from io import StringIO
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -277,6 +280,11 @@ def get_full_market_visibility_map() -> dict:
 
 
 @mcp.tool
+def get_listed_equity_master_universe(include_etfs: bool = True, include_test_issues: bool = False, max_symbols: int = 0) -> dict:
+    return _get_listed_equity_master_universe(container, include_etfs, include_test_issues, max_symbols)
+
+
+@mcp.tool
 def get_event_volatility_war_room(event_name: str = "spacex_ipo", account_value: float = 50.0, max_daily_loss: float = 20.0) -> dict:
     return _get_event_volatility_war_room(container, event_name, account_value, max_daily_loss)
 
@@ -284,6 +292,36 @@ def get_event_volatility_war_room(event_name: str = "spacex_ipo", account_value:
 @mcp.tool
 def get_loss_review_reassessment(max_daily_loss: float = 20.0, realized_pnl: float = 0.0, unrealized_pnl: float = 0.0) -> dict:
     return _get_loss_review_reassessment(container, max_daily_loss, realized_pnl, unrealized_pnl)
+
+
+@mcp.tool
+def get_broker_executor_bridge(
+    executor_base_url: str = "",
+    has_crypto_api_key: bool = False,
+    read_account_enabled: bool = False,
+    read_positions_enabled: bool = False,
+    read_orders_enabled: bool = False,
+    order_preview_enabled: bool = False,
+    place_order_enabled: bool = False,
+    cancel_order_enabled: bool = False,
+    kill_switch_enabled: bool = False,
+    paper_mode_default: bool = True,
+    max_daily_loss: float = 20.0,
+) -> dict:
+    return _get_broker_executor_bridge(
+        container,
+        executor_base_url,
+        has_crypto_api_key,
+        read_account_enabled,
+        read_positions_enabled,
+        read_orders_enabled,
+        order_preview_enabled,
+        place_order_enabled,
+        cancel_order_enabled,
+        kill_switch_enabled,
+        paper_mode_default,
+        max_daily_loss,
+    )
 
 
 @mcp.tool
@@ -1999,12 +2037,14 @@ def _get_cross_asset_capital_plan(service_container, account_value: float, buyin
 def _get_full_market_visibility_map(service_container) -> dict:
     settings = service_container.settings
     crypto_universe = service_container.crypto_paper.universe()
+    equity_master = _get_listed_equity_master_universe(service_container, include_etfs=True, include_test_issues=False, max_symbols=0, log_event=False)
     payload = {
         "status": "FULL_MARKET_VISIBILITY_READY",
         "schema_version": "full_market_visibility_v1",
         "generated_at": utc_now(),
         "coverage": {
             "crypto_robinhood_assets": crypto_universe["general_consideration_count"],
+            "listed_equity_master_universe": equity_master.get("symbol_count", 0),
             "scalp_equity_watchlist": len(settings.scalp_watchlist),
             "broad_equity_watchlist": len(settings.broad_opportunity_watchlist),
             "event_volatility_watchlist": len(settings.event_volatility_watchlist),
@@ -2012,13 +2052,13 @@ def _get_full_market_visibility_map(service_container) -> dict:
         },
         "universes": {
             "crypto": crypto_universe["symbols"],
+            "listed_equity_master_universe_sample": equity_master.get("sample_symbols") or [],
             "scalp_equities": list(settings.scalp_watchlist),
             "broad_equities": list(settings.broad_opportunity_watchlist),
             "event_volatility": list(settings.event_volatility_watchlist),
             "microcap_research": list(settings.microcap_research_watchlist),
         },
         "visibility_gaps": [
-            "Full listed-equity market is not yet ingested from a broker/exchange master symbol file.",
             "Options chains are still manual/broker-snapshot or provider-limited.",
             "News/catalyst feed is not a true low-latency paid event feed.",
             "Robinhood order/position truth is not machine-verified in this MCP.",
@@ -2033,6 +2073,169 @@ def _get_full_market_visibility_map(service_container) -> dict:
         "can_place_order_from_this_mcp": False,
     }
     return service_container.events.log("full_market_visibility", payload)
+
+
+def _get_listed_equity_master_universe(
+    service_container,
+    include_etfs: bool = True,
+    include_test_issues: bool = False,
+    max_symbols: int = 0,
+    log_event: bool = True,
+) -> dict:
+    urls = {
+        "nasdaq": "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt",
+        "otherlisted": "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt",
+    }
+    symbols: dict[str, dict[str, Any]] = {}
+    source_status: dict[str, str] = {}
+    errors: list[str] = []
+    for source, url in urls.items():
+        try:
+            with urllib.request.urlopen(url, timeout=10) as response:
+                text = response.read().decode("utf-8", errors="replace")
+            source_status[source] = "LOADED"
+            for row in _parse_symbol_directory(source, text):
+                symbol = row["symbol"]
+                if not include_test_issues and row.get("test_issue"):
+                    continue
+                if not include_etfs and row.get("etf"):
+                    continue
+                symbols[symbol] = row
+        except Exception as exc:
+            source_status[source] = "FAILED"
+            errors.append(f"{source}: {exc}")
+    fallback_used = False
+    if not symbols:
+        fallback_used = True
+        for symbol in sorted(set(service_container.settings.broad_opportunity_watchlist) | set(service_container.settings.scalp_watchlist) | set(service_container.settings.event_volatility_watchlist)):
+            symbols[symbol] = {
+                "symbol": symbol,
+                "name": symbol,
+                "exchange": "fallback_watchlist",
+                "etf": symbol in {"SPY", "QQQ", "IWM", "DIA", "ARKX", "ITA", "UFO"},
+                "test_issue": False,
+                "source": "configured_watchlists",
+            }
+    rows = list(symbols.values())
+    rows.sort(key=lambda item: item["symbol"])
+    if max_symbols and max_symbols > 0:
+        rows = rows[: int(max_symbols)]
+    exchange_counts = Counter(str(row.get("exchange") or "unknown") for row in symbols.values())
+    payload = {
+        "status": "LISTED_EQUITY_MASTER_UNIVERSE_READY" if not fallback_used else "LISTED_EQUITY_MASTER_UNIVERSE_FALLBACK",
+        "schema_version": "listed_equity_master_universe_v1",
+        "generated_at": utc_now(),
+        "source_urls": urls,
+        "source_status": source_status,
+        "fallback_used": fallback_used,
+        "errors": errors,
+        "include_etfs": bool(include_etfs),
+        "include_test_issues": bool(include_test_issues),
+        "symbol_count": len(symbols),
+        "returned_count": len(rows),
+        "exchange_counts": dict(exchange_counts),
+        "sample_symbols": [row["symbol"] for row in rows[:100]],
+        "symbols": rows if max_symbols and max_symbols > 0 else [],
+        "usage": "Use this as the full listed-equity visibility layer. Scan pipelines should rank from filtered subsets rather than pretending watchlists are the full market.",
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+    }
+    return service_container.events.log("listed_equity_master_universe", payload) if log_event else payload
+
+
+def _parse_symbol_directory(source: str, text: str) -> list[dict[str, Any]]:
+    clean_lines = [line for line in text.splitlines() if line and not line.startswith("File Creation Time")]
+    reader = csv.DictReader(StringIO("\n".join(clean_lines)), delimiter="|")
+    rows: list[dict[str, Any]] = []
+    for raw in reader:
+        symbol = str(raw.get("Symbol") or raw.get("ACT Symbol") or raw.get("NASDAQ Symbol") or "").strip().upper()
+        if not symbol:
+            continue
+        rows.append(
+            {
+                "symbol": symbol,
+                "name": str(raw.get("Security Name") or "").strip(),
+                "exchange": str(raw.get("Exchange") or ("NASDAQ" if source == "nasdaq" else "")).strip() or source,
+                "etf": str(raw.get("ETF") or "").strip().upper() == "Y",
+                "test_issue": str(raw.get("Test Issue") or "").strip().upper() == "Y",
+                "round_lot_size": raw.get("Round Lot Size"),
+                "source": source,
+            }
+        )
+    return rows
+
+
+def _get_broker_executor_bridge(
+    service_container,
+    executor_base_url: str,
+    has_crypto_api_key: bool,
+    read_account_enabled: bool,
+    read_positions_enabled: bool,
+    read_orders_enabled: bool,
+    order_preview_enabled: bool,
+    place_order_enabled: bool,
+    cancel_order_enabled: bool,
+    kill_switch_enabled: bool,
+    paper_mode_default: bool,
+    max_daily_loss: float,
+) -> dict:
+    base = executor_base_url.rstrip("/")
+    checks = {
+        "executor_base_url_configured": bool(base),
+        "crypto_api_credentials_available": bool(has_crypto_api_key),
+        "read_account_enabled": bool(read_account_enabled),
+        "read_positions_enabled": bool(read_positions_enabled),
+        "read_orders_enabled": bool(read_orders_enabled),
+        "order_preview_enabled": bool(order_preview_enabled),
+        "place_order_enabled": bool(place_order_enabled),
+        "cancel_order_enabled": bool(cancel_order_enabled),
+        "kill_switch_enabled": bool(kill_switch_enabled),
+        "paper_mode_default": bool(paper_mode_default),
+        "max_daily_loss_configured": float(max_daily_loss) > 0,
+    }
+    readiness_blockers = [name for name, passed in checks.items() if not passed]
+    live_ready = not readiness_blockers
+    payload = {
+        "status": "BROKER_EXECUTOR_BRIDGE_PROVEN" if live_ready else "BROKER_EXECUTOR_BRIDGE_INCOMPLETE",
+        "schema_version": "broker_executor_bridge_v1",
+        "generated_at": utc_now(),
+        "official_crypto_api_context": {
+            "provider": "Robinhood Crypto Trading API",
+            "source": "https://robinhood.com/us/en/support/articles/crypto-api/",
+            "supported_here": "Bridge contract only; credentials and signing remain in separate executor.",
+        },
+        "executor_base_url": base,
+        "checks": checks,
+        "blockers": readiness_blockers,
+        "required_executor_contract": {
+            "GET /health": "Executor version, mode, kill-switch state, and supported asset types.",
+            "GET /account": "Cash, buying power, account id hash, fee tier, and restrictions.",
+            "GET /positions": "Open stock/options/crypto positions and reserved risk.",
+            "GET /orders/open": "Open orders with side, symbol, quantity, limit, status, and age.",
+            "POST /orders/preview": "Validate ticket, estimate fees/slippage/max loss, return preview id.",
+            "POST /orders/place": "Place only a preview-matched limit order when live mode is explicitly armed.",
+            "POST /orders/cancel": "Cancel one order by id.",
+            "POST /kill-switch": "Cancel open orders and reject new entries.",
+        },
+        "live_execution_rules": [
+            "This MCP never stores API secrets.",
+            "Executor must default to paper mode.",
+            "Live place requires preview id, exact ticket hash, limit order, max loss, and active kill switch.",
+            "Market orders remain blocked.",
+            "At -$20 daily loss, executor must halt new entries and require re-arm.",
+        ],
+        "what_i_need_from_user": [
+            "Robinhood Crypto API key configured in a separate executor, not pasted into chat.",
+            "Whether the key has read-only only, preview, place-order, and cancel-order permissions.",
+            "Executor base URL or local service address.",
+            "A dry-run /health and /account response with sensitive fields redacted.",
+            "Confirmation that executor defaults to paper mode and has a kill-switch endpoint.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+    return service_container.events.log("broker_executor_bridge", payload)
 
 
 def _get_event_volatility_war_room(service_container, event_name: str, account_value: float, max_daily_loss: float) -> dict:

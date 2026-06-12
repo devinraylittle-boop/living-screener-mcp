@@ -23,6 +23,7 @@ from app.fallback_endpoints import (
     fallback_autonomy_control,
     fallback_real_cash_proof_gate,
     fallback_broker_proof_bridge,
+    fallback_broker_executor_bridge,
     fallback_cross_asset_capital_plan,
     fallback_evidence_summary,
     fallback_event_radar,
@@ -34,6 +35,7 @@ from app.fallback_endpoints import (
     fallback_feature_registry,
     fallback_global_research_scan,
     fallback_full_market_visibility,
+    fallback_listed_equity_universe,
     fallback_go_live_rehearsal,
     fallback_harvest_followup,
     fallback_journal_checkpoint,
@@ -133,9 +135,11 @@ def create_app():
     app.add_route("/ops/trading-monster-dashboard", fallback_trading_monster_dashboard, methods=["GET"])
     app.add_route("/ops/real-cash-proof-gate", fallback_real_cash_proof_gate, methods=["GET"])
     app.add_route("/ops/broker-proof-bridge", fallback_broker_proof_bridge, methods=["GET"])
+    app.add_route("/ops/broker-executor-bridge", fallback_broker_executor_bridge, methods=["GET"])
     app.add_route("/risk/capital-plan", fallback_cross_asset_capital_plan, methods=["GET"])
     app.add_route("/risk/loss-reassessment", fallback_loss_reassessment, methods=["GET"])
     app.add_route("/ops/full-market-visibility", fallback_full_market_visibility, methods=["GET"])
+    app.add_route("/ops/listed-equity-universe", fallback_listed_equity_universe, methods=["GET"])
     app.add_route("/ops/event-war-room", fallback_event_war_room, methods=["GET"])
     app.add_route("/ops/strategy-modules", fallback_strategy_module_registry, methods=["GET"])
     app.add_route("/ops/shared-intelligence", fallback_shared_intelligence_layer, methods=["GET"])
