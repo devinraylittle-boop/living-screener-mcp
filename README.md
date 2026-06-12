@@ -2,12 +2,12 @@
 
 Review-only hosted MCP for market scanning, trade planning, risk checks, journaling, and postmortems.
 
-This app does **not** store Robinhood credentials, does **not** call Robinhood APIs, and cannot place brokerage orders. Robinhood Trading MCP stays separate for broker data, order review, and any future exact user-approved execution.
+This app does **not** store Robinhood credentials. Live order placement must route through a proven broker adapter such as the host Robinhood Trading MCP or a separate executor. The package now exposes a gated `LIVE_EXECUTION_ENABLED` control plane: scanning, sizing, entry/stop/target ticket creation, management rules, rejection reasons, and logging are handled here, while broker credentials and final order transport stay outside this service.
 
 ## Current Build
 
 ```text
-2026.06.11-journal-vault
+2026.06.12-full-crypto-universe
 ```
 
 ## Render Environment
@@ -84,6 +84,18 @@ Paper option ledger tools let you study manual or hypothetical option decisions 
 
 Paper exploration deliberately increases paper-trade volume for data mining. Use `run_paper_exploration` or `/paper/exploration/run` to open many paper-only research trials from candidates, watch-only reviews, and controlled rejects. Bad trades are allowed in this lane on purpose, but every entry is tagged with its exploration quality, why it was cash-blocked, and `cash_gates_changed: false`. Use `run_paper_exploration_followup` or `/paper/exploration/followup` after more candles have passed to grade whether the underlying move helped or hurt. Use `summarize_paper_exploration` or `/paper/exploration/summary` to review trial counts, quality buckets, top tickers, and latest follow-up. Never mix this noisy paper-exploration data with real-cash approval.
 
+Crypto live-test validation is separated from exchange execution. Use `get_robinhood_crypto_universe` or `/crypto/universe` to verify the full Robinhood Crypto universe: all 82 supported tradable assets are in general consideration. Use `get_crypto_live_test_gate` or `/crypto/live-test` for the $5 spot-crypto after-hours validation gate. It scans the full universe by default, prioritizes assets with live snapshots and core-liquid names for expensive candle backtests, classifies every selected asset, builds a final order ticket when proof is supplied, and returns `REVIEW_ONLY`, `NO_TRADE_PLAN`, `PASS`, or `LIMITED_AUTONOMOUS_CRYPTO_ENABLED`. The gate still cannot place, submit, simulate, modify, or cancel exchange orders. If exchange connection, cash, buying power, open-order/open-position checks, fresh market data, fresh order book, spread, liquidity, fees, slippage, minimum order size, stop, target, max loss, kill switch, daily lockout, emergency shutdown, or journaling proof is missing, the result must remain PASS/review-only. Use `run_autonomous_crypto_cycle` or `/crypto/autonomous-cycle` for the active data-gathering loop: it manages open paper positions, closes them mechanically at target/stop/setup failure, scans for a new approved ticket, and either opens a paper position or returns a live-executor handoff. This MCP still cannot place live exchange orders. Use `summarize_crypto_live_test_report` or `/crypto/test-report` after the session to report balance, P/L, rejected candidates, fees, slippage, rule following, account protection, module status, and tomorrow launch decision.
+
+Trading monster controls centralize tomorrow's operating system. Use `set_autonomous_trading_controls` or `/ops/autonomy-control` for one-click arming of stock, options, crypto, paper, and live-handoff modes. Use `get_trading_monster_dashboard` or `/ops/trading-monster-dashboard` as the central cockpit. Use `get_cross_asset_capital_plan` or `/risk/capital-plan` to divide buying power across simultaneous stock/options/crypto lanes and release unused buying power when a lane closes or is disabled. Use `get_full_market_visibility_map` or `/ops/full-market-visibility` to see all configured market universes and visibility gaps. Use `get_event_volatility_war_room` or `/ops/event-war-room?event_name=spacex_ipo` for the SpaceX IPO volatility playbook. Use `get_loss_review_reassessment` or `/risk/loss-reassessment?max_daily_loss=20` to disable new entries at the configurable daily loss limit while still allowing management of current open positions and requiring review after every loss, move, and observation.
+
+Full listed-equity visibility uses `get_listed_equity_master_universe` or `/ops/listed-equity-universe`. It loads NASDAQ Trader's public `nasdaqlisted.txt` and `otherlisted.txt` symbol directories when reachable, filters ETFs/test issues according to request flags, and clearly marks fallback mode if the remote directory cannot be loaded. Broker execution remains a separate bridge. Use `get_broker_executor_bridge` or `/ops/broker-executor-bridge` to prove the executor contract: health, account, positions, open orders, preview, place, cancel, kill switch, paper-default mode, and configurable daily loss halt. This MCP still does not store API secrets and still cannot place orders by itself.
+
+Broker execution routing is explicit. Use `get_broker_execution_router` or `/ops/broker-execution-router` to decide whether an exact scanner ticket should route through host-orchestrated Robinhood Trading MCP tools or a separate executor. Use `create_stock_execution_intent` or `/trade/stock-intent` to build the immutable stock order intent: exact account, symbol, side, order type, size, limit, time-in-force, market-hours, policy, and ticket hash. Equities can route through the Robinhood Trading MCP when the host has account number, tradability, review, place, cancel, and logging available. Options remain blocked for live placement unless Robinhood exposes option chain/quote/review/place/cancel tools in the current host session or a separate options-capable executor is connected. Living Screener remains the scan/risk/journal authority and keeps `can_place_order_from_this_mcp=false` by design.
+
+The official Robinhood Trading MCP URL is `https://agent.robinhood.com/mcp/trading`. In Codex CLI, register it with `codex mcp add robinhood-trading --url https://agent.robinhood.com/mcp/trading`, then enter `/mcp` and select `robinhood-trading`. In Codex Desktop, use Settings -> MCP servers -> Streamable HTTP and add the same URL. Robinhood's documented options contract is `get_option_chains`, `get_option_instruments`, `get_option_quotes`, `get_option_positions`, `get_option_orders`, `review_option_order`, `cancel_option_order`, and `place_option_order`; options remain rolling out account-by-account, so the active session still must prove those tools are exposed before live options routing can unlock.
+
+Live execution is no longer a read-only concept. Use `get_live_execution_control_plane` or `/trade/live-execution-control` to prove `LIVE_EXECUTION_ENABLED`: autonomous controls on, paper off, account and buying-power proof, open-order/open-position proof, duplicate-order check, broker review/place/cancel capability, active kill switch, healthy market data, acceptable market condition, spread/liquidity/slippage, catalyst clearance, daily-loss clearance, trade-count capacity, and position capacity. Use `build_autonomous_execution_ticket` or `/trade/autonomous-execution-ticket` to build the executable lifecycle package: entry, stop-loss, take-profit, management plan, ticket hash, broker sequence, confidence, setup quality, risk/reward, risk amount, gate pass/fail map, and rejection reasons. If any gate fails, the output is `NO_TRADE`; the system must keep scanning rather than force a trade. `LIVE_EXECUTION_ENABLED` removes per-order manual approval only after every proof gate passes, but it still does not let a scanner, strategy, or learning module override the master risk governor.
+
 Autonomous firewall tools convert the moonshot goal into a safe operating system. Use `get_strategy_module_registry` or `/ops/strategy-modules` to see which strategy lanes are review-only, paper-only, or disabled for cash. Use `get_shared_intelligence_layer` or `/ops/shared-intelligence` to merge scan rows, paper trials, outcomes, and learning labels into actionable/supporting/suppressed knowledge without letting noise become confidence. Use `get_autonomous_launch_decision` or `/ops/autonomous-launch-decision` before any real-money autonomy discussion; it keeps autonomous scanning and paper learning enabled while blocking real-money execution until broker state, order preview, buying power, open orders, open positions, options truth, market data, and risk lockouts are all proven.
 
 Real-cash proof gate is the final prebuild checkpoint before any autonomous execution build. Use `get_real_cash_proof_gate` or `/ops/real-cash-proof-gate` to classify each required proof item as `PROVEN`, `MISSING`, `BLOCKED`, or `WARNING`. It separates `autonomous_scanning`, `aggressive_paper_learning`, `manual_real_cash_review`, and `fully_autonomous_real_cash_execution` so a missing broker/order/position proof cannot be hidden behind good scan results. Operator-supplied broker confirmations may support manual review, but they are labeled as operator proof and do not become machine-verified broker integration.
@@ -148,7 +160,7 @@ These routes call the same review-only services as the MCP tools. They exist so 
 GET /safety
 GET /
 GET /release-manifest
-GET /health/full?expected_build_version=2026.06.11-journal-vault
+GET /health/full?expected_build_version=2026.06.12-full-crypto-universe
 GET /ops/event-radar?format=html
 GET /ops/broad-opportunity-scan?format=html
 GET /ops/data-truth-cockpit?format=html
@@ -226,7 +238,7 @@ POST /research/evidence-packets-from-scan
 GET /research/evidence-summary
 POST /research/evidence-summary
 GET /debug/tool-manifest
-GET /debug/scan-schema?expected_build_version=2026.06.11-journal-vault
+GET /debug/scan-schema?expected_build_version=2026.06.12-full-crypto-universe
 GET /crypto/rules
 GET /crypto/backtest?symbols=ETH-USD,SOL-USD&period=10d&interval=5m&profile=strict&exclude_symbols=BTC-USD,DOGE-USD
 ```
@@ -245,7 +257,7 @@ If Render is still building, run the watcher instead:
 .\tools\watch_deploy.ps1
 ```
 
-It polls `/version` every 30 seconds. When `2026.06.11-journal-vault` appears, it automatically runs `validate_live.ps1`.
+It polls `/version` every 30 seconds. When `2026.06.12-full-crypto-universe` appears, it automatically runs `validate_live.ps1`.
 
 On market morning, after validation passes, run:
 
@@ -354,7 +366,7 @@ https://living-screener-mcp.onrender.com/health
 
 ```json
 {
-  "build_version": "2026.06.11-journal-vault",
+  "build_version": "2026.06.12-full-crypto-universe",
   "market_data_provider": "finnhub",
   "has_finnhub_api_key": true,
   "can_place_order_from_this_mcp": false

@@ -1,6 +1,6 @@
 param(
     [string]$BaseUrl = "https://living-screener-mcp.onrender.com",
-    [string]$ExpectedBuild = "2026.06.11-broker-proof-bridge",
+    [string]$ExpectedBuild = "2026.06.12-full-crypto-universe",
     [int]$AccountValue = 50,
     [int]$TimeoutSeconds = 20
 )
@@ -57,6 +57,18 @@ $checks = @(
     Invoke-Check -Name "Go-live rehearsal" -Path "/ops/go-live-rehearsal?account_value=$AccountValue&format=html" -MustContain "Go-Live Rehearsal"
     Invoke-Check -Name "Manual snapshot form" -Path "/trade/manual-form?format=html" -MustContain "Manual Snapshot Form"
     Invoke-Check -Name "Failure-mode audit" -Path "/risk/failure-mode-audit?format=html" -MustContain "Failure-Mode Audit"
+    Invoke-Check -Name "Trading monster dashboard" -Path "/ops/trading-monster-dashboard?format=html" -MustContain "Trading Monster Dashboard"
+    Invoke-Check -Name "Event war room" -Path "/ops/event-war-room?event_name=spacex_ipo&format=html" -MustContain "Event Volatility War Room"
+    Invoke-Check -Name "Listed equity universe" -Path "/ops/listed-equity-universe?max_symbols=20" -MustContain "LISTED_EQUITY_MASTER_UNIVERSE"
+    Invoke-Check -Name "Broker executor bridge" -Path "/ops/broker-executor-bridge?max_daily_loss=20" -MustContain "BROKER_EXECUTOR_BRIDGE"
+    Invoke-Check -Name "Broker execution router" -Path "/ops/broker-execution-router?asset_class=equity&account_number=628006199&symbol=SPY&side=buy&order_type=limit&quantity=1&limit_price=1&max_daily_loss=20" -MustContain "ROBINHOOD_EQUITY_MCP_ROUTE_READY"
+    Invoke-Check -Name "Stock execution intent" -Path "/trade/stock-intent?account_number=628006199&symbol=SPY&side=buy&order_type=limit&quantity=1&limit_price=1&max_daily_loss=20" -MustContain "STOCK_EXECUTION_INTENT_READY"
+    Invoke-Check -Name "Live execution control" -Path "/trade/live-execution-control?account_number=628006199&account_value=100&buying_power=100&max_daily_loss=20&broker_account_confirmed=true&buying_power_confirmed=true&open_positions_checked=true&open_orders_checked=true&no_duplicate_order_confirmed=true&broker_review_enabled=true&broker_place_enabled=true&broker_cancel_enabled=true&kill_switch_enabled=true&market_data_healthy=true&market_condition_clear=true&spread_liquidity_clear=true&slippage_clear=true&catalyst_clear=true" -MustContain "LIVE_EXECUTION_ENABLED"
+    Invoke-Check -Name "Autonomous execution ticket" -Path "/trade/autonomous-execution-ticket?account_number=628006199&symbol=SPY&side=buy&order_type=limit&quantity=1&limit_price=1&stop_price=0.98&take_profit_price=1.04&confidence_score=92&setup_quality=VALID_CANDIDATE&risk_reward=2&account_value=100&buying_power=100&proposed_risk_dollars=1&max_daily_loss=20&broker_account_confirmed=true&buying_power_confirmed=true&open_positions_checked=true&open_orders_checked=true&no_duplicate_order_confirmed=true&broker_review_enabled=true&broker_place_enabled=true&broker_cancel_enabled=true&kill_switch_enabled=true&market_data_healthy=true&market_condition_clear=true&setup_quality_clear=true&liquidity_clear=true&spread_clear=true&slippage_clear=true&catalyst_clear=true&execution_confidence_clear=true" -MustContain "AUTONOMOUS_ORDER_TICKET_READY"
+    Invoke-Check -Name "Robinhood crypto universe" -Path "/crypto/universe?format=html" -MustContain "Robinhood Crypto Universe"
+    Invoke-Check -Name "Autonomous crypto cycle" -Path "/crypto/autonomous-cycle?format=html" -MustContain "Autonomous Crypto Cycle"
+    Invoke-Check -Name "Crypto live test gate" -Path "/crypto/live-test?format=html" -MustContain "Crypto Live Test Gate"
+    Invoke-Check -Name "Crypto test report" -Path "/crypto/test-report?format=html" -MustContain "Crypto Test Report"
 )
 
 $checks | Format-Table Name,StatusCode,Pass,Note -AutoSize

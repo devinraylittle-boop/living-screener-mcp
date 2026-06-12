@@ -1,6 +1,6 @@
 param(
     [string]$BaseUrl = "https://living-screener-mcp.onrender.com",
-    [string]$ExpectedBuild = "2026.06.11-broker-proof-bridge",
+    [string]$ExpectedBuild = "2026.06.12-full-crypto-universe",
     [int]$AccountValue = 50,
     [string]$Tickers = "AMZN,SOFI,SHOP,XOM,LULU,AAPL,QQQ,IWM,MSFT,NVDA,AMD,META,AVGO,SMCI,RBLX,CVX,LLY,UNH,HOOD,TSLA"
 )

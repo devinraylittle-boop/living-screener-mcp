@@ -7,13 +7,13 @@ We are working on Living Screener MCP in:
 C:\Users\devin\OneDrive\Documents\Screener
 
 Use the latest package folder unless I specify otherwise:
-living-screener-mcp-options-provider-20260610-223000
+living-screener-mcp-journal-vault-20260611-145500
 
 The live Render app is:
 https://living-screener-mcp.onrender.com
 
 Expected build:
-2026.06.11-broker-proof-bridge
+2026.06.12-full-crypto-universe
 
 First, run:
 powershell -ExecutionPolicy Bypass -File .\tools\agent_status_snapshot.ps1
@@ -31,12 +31,12 @@ Primary objective:
 Prepare and operate a review-only stock/options screener for tomorrow’s market session. Accuracy is priority one, profit is priority two. The system should scan, review, validate, log, paper-track, classify outcomes, and improve by evidence. It must not execute broker actions.
 
 Most recent improvement:
-Added failure-mode audit build with:
-- get_failure_mode_audit tool
-- /risk/failure-mode-audit endpoint
-- expected tool count 67
+Added journal-vault build with:
+- /journal/vault endpoint
+- paper exploration summary/run validation
+- expected tool count 98
 - validation script updated
-- start_tomorrow helper updated
+- continuity docs updated
 
 Next useful improvements, in order:
 1. Add broker-visible snapshot/fill/slippage comparison to every manual action journal entry.
