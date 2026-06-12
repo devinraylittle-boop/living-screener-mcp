@@ -1,5 +1,4 @@
 {
-  "consecutive_errors": 2,
   "date": "2026-06-12",
   "day_start_value": 100.00861409,
   "halted": false,
@@ -11,7 +10,5 @@
     "6a2c286b-ea0e-48c0-b508-69739905f97c",
     "6a2c2922-0aa4-4625-a2a3-390796b58939"
   ],
-  "new_entries_paused_until": "2026-06-12T16:39:00.677918+00:00",
-  "pause_reason": "consecutive_data_or_broker_errors",
   "trade_count": 6
 }

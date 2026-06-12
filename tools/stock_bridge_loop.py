@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import sys
@@ -206,6 +207,75 @@ def stock_intent_stop_risk_override_allowed(intent: dict[str, Any], notional: fl
         return False
     stop_risk = round(notional * config.stop_loss_pct, 4)
     return 0 < stop_risk <= config.max_daily_loss and notional <= config.max_order_notional
+
+
+def local_stock_intent_fallback(
+    symbol: str,
+    order_args: dict[str, str],
+    notional: float,
+    config: BridgeConfig,
+    error: Exception,
+) -> dict[str, Any] | None:
+    estimated_stop_risk = round(notional * abs(config.stop_loss_pct), 4)
+    max_fallback_risk = min(2.0, abs(config.max_daily_loss))
+    if estimated_stop_risk <= 0 or estimated_stop_risk > max_fallback_risk:
+        append_log(
+            {
+                "event": "intent_service_error_blocked",
+                "symbol": symbol,
+                "error": repr(error),
+                "estimated_stop_risk": estimated_stop_risk,
+                "max_fallback_risk": max_fallback_risk,
+            }
+        )
+        return None
+
+    ticket = {
+        "account_number": order_args.get("account_number", ""),
+        "asset_class": "equity",
+        "symbol": symbol,
+        "side": order_args.get("side", ""),
+        "type": order_args.get("type", ""),
+        "quantity": order_args.get("quantity", ""),
+        "dollar_amount": order_args.get("dollar_amount", ""),
+        "limit_price": order_args.get("limit_price", ""),
+        "time_in_force": order_args.get("time_in_force", "gfd"),
+        "market_hours": order_args.get("market_hours", "regular_hours"),
+    }
+    canonical = json.dumps(ticket, sort_keys=True, separators=(",", ":"))
+    intent_hash = "local_fallback_" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    intent = {
+        "status": "STOCK_EXECUTION_INTENT_READY",
+        "intent_hash": intent_hash,
+        "ticket": ticket,
+        "canonical_ticket_json": canonical,
+        "robinhood_review_equity_order_args": order_args,
+        "estimated_max_risk_dollars": round(estimated_stop_risk, 2),
+        "warnings": ["Using local bridge intent fallback because remote /trade/stock-intent returned an error."],
+    }
+    append_log(
+        {
+            "event": "intent_service_error_local_fallback",
+            "symbol": symbol,
+            "error": repr(error),
+            "intent_hash": intent_hash,
+            "estimated_stop_risk": estimated_stop_risk,
+        }
+    )
+    return intent
+
+
+def fetch_stock_intent(
+    config: BridgeConfig,
+    ticket_query: str,
+    symbol: str,
+    order_args: dict[str, str],
+    notional: float,
+) -> dict[str, Any] | None:
+    try:
+        return read_json_url(f"{config.base_url.rstrip('/')}/trade/stock-intent?{ticket_query}", timeout=30).get("result") or {}
+    except Exception as exc:  # noqa: BLE001 - bridge should keep cycling through transient service errors
+        return local_stock_intent_fallback(symbol, order_args, notional, config, exc)
 
 
 def broker_setup_blocker(error_text: str) -> bool:
@@ -616,7 +686,10 @@ async def run_cycle(broker: RobinhoodBroker, config: BridgeConfig, state: dict[s
             "stop_loss_pct": config.stop_loss_pct,
         }
     )
-    intent = read_json_url(f"{config.base_url.rstrip('/')}/trade/stock-intent?{ticket_query}", timeout=30).get("result") or {}
+    intent = fetch_stock_intent(config, ticket_query, symbol, order_args, notional)
+    if not intent:
+        save_state(state)
+        return
     if intent.get("status") != "STOCK_EXECUTION_INTENT_READY":
         if stock_intent_stop_risk_override_allowed(intent, notional, config):
             append_log(
