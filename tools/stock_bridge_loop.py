@@ -759,7 +759,7 @@ def parse_args(argv: list[str]) -> BridgeConfig:
     parser.add_argument("--max-spread-bps", type=float, default=float(os.getenv("STOCK_BRIDGE_MAX_SPREAD_BPS", "35")))
     parser.add_argument("--max-order-notional", type=float, default=float(os.getenv("STOCK_BRIDGE_MAX_ORDER_NOTIONAL", "10")))
     parser.add_argument("--min-order-notional", type=float, default=float(os.getenv("STOCK_BRIDGE_MIN_ORDER_NOTIONAL", "1")))
-    parser.add_argument("--max-open-positions", type=int, default=int(os.getenv("STOCK_BRIDGE_MAX_OPEN_POSITIONS", "2")))
+    parser.add_argument("--max-open-positions", type=int, default=int(os.getenv("STOCK_BRIDGE_MAX_OPEN_POSITIONS", "3")))
     parser.add_argument("--max-trades-per-day", type=int, default=int(os.getenv("STOCK_BRIDGE_MAX_TRADES_PER_DAY", "10")))
     parser.add_argument("--max-daily-loss", type=float, default=float(os.getenv("STOCK_BRIDGE_MAX_DAILY_LOSS", "20")))
     parser.add_argument("--stop-loss-pct", type=float, default=float(os.getenv("STOCK_BRIDGE_STOP_LOSS_PCT", "0.0035")))
