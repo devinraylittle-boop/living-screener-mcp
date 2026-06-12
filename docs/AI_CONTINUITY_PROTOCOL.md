@@ -18,7 +18,7 @@ Purpose: make every future Codex or ChatGPT session able to resume the Living Sc
 
 - Render URL: `https://living-screener-mcp.onrender.com`
 - Expected build: `2026.06.12-full-crypto-universe`
-- Expected tool count: 90
+- Expected tool count: 96
 - Required pass signal: `LIVE_VALIDATION_PASS`
 - Tomorrow start signal: `START_TOMORROW_READY`
 

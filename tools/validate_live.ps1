@@ -57,6 +57,8 @@ $checks = @(
     Invoke-Check -Name "Go-live rehearsal" -Path "/ops/go-live-rehearsal?account_value=$AccountValue&format=html" -MustContain "Go-Live Rehearsal"
     Invoke-Check -Name "Manual snapshot form" -Path "/trade/manual-form?format=html" -MustContain "Manual Snapshot Form"
     Invoke-Check -Name "Failure-mode audit" -Path "/risk/failure-mode-audit?format=html" -MustContain "Failure-Mode Audit"
+    Invoke-Check -Name "Trading monster dashboard" -Path "/ops/trading-monster-dashboard?format=html" -MustContain "Trading Monster Dashboard"
+    Invoke-Check -Name "Event war room" -Path "/ops/event-war-room?event_name=spacex_ipo&format=html" -MustContain "Event Volatility War Room"
     Invoke-Check -Name "Robinhood crypto universe" -Path "/crypto/universe?format=html" -MustContain "Robinhood Crypto Universe"
     Invoke-Check -Name "Autonomous crypto cycle" -Path "/crypto/autonomous-cycle?format=html" -MustContain "Autonomous Crypto Cycle"
     Invoke-Check -Name "Crypto live test gate" -Path "/crypto/live-test?format=html" -MustContain "Crypto Live Test Gate"

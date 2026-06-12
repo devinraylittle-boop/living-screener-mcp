@@ -43,6 +43,12 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("get_autonomous_launch_decision", tools.json()["tools"])
         self.assertIn("get_real_cash_proof_gate", tools.json()["tools"])
         self.assertIn("get_broker_proof_bridge", tools.json()["tools"])
+        self.assertIn("set_autonomous_trading_controls", tools.json()["tools"])
+        self.assertIn("get_trading_monster_dashboard", tools.json()["tools"])
+        self.assertIn("get_cross_asset_capital_plan", tools.json()["tools"])
+        self.assertIn("get_full_market_visibility_map", tools.json()["tools"])
+        self.assertIn("get_event_volatility_war_room", tools.json()["tools"])
+        self.assertIn("get_loss_review_reassessment", tools.json()["tools"])
         self.assertIn("market_readiness_check", tools.json()["tools"])
         self.assertIn("run_review_harvest", tools.json()["tools"])
         self.assertIn("get_market_session_playbook", tools.json()["tools"])
@@ -1213,6 +1219,31 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(report.status_code, 200)
         self.assertIn("Crypto Test Report", report.text)
 
+    def test_trading_monster_dashboard_control_and_war_room(self) -> None:
+        client = TestClient(create_app())
+
+        control = client.get(
+            "/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss=20"
+        )
+        dashboard = client.get("/ops/trading-monster-dashboard?format=html")
+        capital = client.get("/risk/capital-plan?buying_power=5&max_daily_loss=20")
+        visibility = client.get("/ops/full-market-visibility")
+        war_room = client.get("/ops/event-war-room?event_name=spacex_ipo&format=html")
+        loss = client.get("/risk/loss-reassessment?max_daily_loss=20&realized_pnl=-20")
+
+        self.assertEqual(control.status_code, 200)
+        self.assertTrue(control.json()["result"]["controls"]["autonomous_enabled"])
+        self.assertEqual(control.json()["result"]["controls"]["max_daily_loss"], 20.0)
+        self.assertEqual(dashboard.status_code, 200)
+        self.assertIn("Trading Monster Dashboard", dashboard.text)
+        self.assertEqual(capital.status_code, 200)
+        self.assertIn("lane_budgets", capital.json()["result"])
+        self.assertEqual(visibility.status_code, 200)
+        self.assertEqual(visibility.json()["result"]["coverage"]["crypto_robinhood_assets"], 82)
+        self.assertEqual(war_room.status_code, 200)
+        self.assertIn("Event Volatility War Room", war_room.text)
+        self.assertEqual(loss.json()["result"]["status"], "LOSS_REASSESSMENT_HALTED")
+
     def test_premove_research_endpoints_are_review_only(self) -> None:
         client = TestClient(create_app())
 
@@ -1302,7 +1333,7 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(release.status_code, 200)
         self.assertEqual(release.json()["status"], "RELEASE_MANIFEST_READY")
         self.assertEqual(release.json()["manifest"]["target_build_version"], "2026.06.12-full-crypto-universe")
-        self.assertEqual(release.json()["manifest"]["expected_live_tool_count"], 90)
+        self.assertEqual(release.json()["manifest"]["expected_live_tool_count"], 96)
         self.assertIn("tools/start_tomorrow.ps1", release.json()["manifest"]["operator_helpers"])
         self.assertEqual(manifest.status_code, 200)
         self.assertEqual(manifest.json()["result"]["status"], "TOOL_MANIFEST_READY")
