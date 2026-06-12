@@ -4121,6 +4121,7 @@ async def fallback_stock_execution_intent(request: Request) -> JSONResponse:
         params.get("market_hours") or "regular_hours",
         _float_or_none(params.get("account_value")) or 100.0,
         max_daily_loss if max_daily_loss is not None else 20.0,
+        _float_or_none(params.get("stop_loss_pct")) or 0.0035,
     )
     return JSONResponse(_review_only_envelope({"result": result}))
 

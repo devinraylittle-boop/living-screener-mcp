@@ -369,6 +369,7 @@ def create_stock_execution_intent(
     market_hours: str = "regular_hours",
     account_value: float = 100.0,
     max_daily_loss: float = 20.0,
+    stop_loss_pct: float = 0.0035,
 ) -> dict:
     return _create_stock_execution_intent(
         container,
@@ -383,6 +384,7 @@ def create_stock_execution_intent(
         market_hours,
         account_value,
         max_daily_loss,
+        stop_loss_pct,
     )
 
 
@@ -2621,6 +2623,7 @@ def _create_stock_execution_intent(
     market_hours: str,
     account_value: float,
     max_daily_loss: float,
+    stop_loss_pct: float = 0.0035,
 ) -> dict:
     account = str(account_number or "").strip()
     ticker = str(symbol or "").strip().upper()
@@ -2645,10 +2648,11 @@ def _create_stock_execution_intent(
         max_daily_loss,
     )
     proposed_risk = 0.0
-    if notional:
-        proposed_risk = _float_or_zero(notional)
-    elif qty and limit:
-        proposed_risk = round(_float_or_zero(qty) * _float_or_zero(limit), 2)
+    stop_risk_pct = max(0.0, _float_or_zero(stop_loss_pct, 0.0035))
+    if side_norm == "buy" and notional:
+        proposed_risk = round(_float_or_zero(notional) * stop_risk_pct, 4)
+    elif side_norm == "buy" and qty and limit:
+        proposed_risk = round(_float_or_zero(qty) * _float_or_zero(limit) * stop_risk_pct, 4)
     session_risk = _get_session_risk_guard(service_container, account_value, proposed_risk if proposed_risk > 0 else None, 5, max_daily_loss)
     blocking_reasons: list[str] = []
     warnings: list[str] = []
