@@ -269,12 +269,12 @@ def set_autonomous_trading_controls(
 
 
 @mcp.tool
-def get_trading_monster_dashboard(account_value: float = 50.0, buying_power: float = 5.0, max_daily_loss: float = 20.0) -> dict:
+def get_trading_monster_dashboard(account_value: float = 100.0, buying_power: float = 100.0, max_daily_loss: float = 20.0) -> dict:
     return _get_trading_monster_dashboard(container, account_value, buying_power, max_daily_loss)
 
 
 @mcp.tool
-def get_cross_asset_capital_plan(account_value: float = 50.0, buying_power: float = 5.0, max_daily_loss: float = 20.0) -> dict:
+def get_cross_asset_capital_plan(account_value: float = 100.0, buying_power: float = 100.0, max_daily_loss: float = 20.0) -> dict:
     return _get_cross_asset_capital_plan(container, account_value, buying_power, max_daily_loss)
 
 

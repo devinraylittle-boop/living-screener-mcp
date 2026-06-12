@@ -4008,7 +4008,7 @@ async def fallback_autonomy_control(request: Request) -> JSONResponse | HTMLResp
     )
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
-        dashboard = _get_trading_monster_dashboard(container, 50.0, 5.0, result["controls"]["max_daily_loss"])
+        dashboard = _get_trading_monster_dashboard(container, 100.0, 100.0, result["controls"]["max_daily_loss"])
         return _monster_dashboard_html(_review_only_envelope({"result": dashboard}))
     return JSONResponse(payload)
 
@@ -4018,8 +4018,8 @@ async def fallback_trading_monster_dashboard(request: Request) -> JSONResponse |
     max_daily_loss = _float_or_none(params.get("max_daily_loss"))
     result = _get_trading_monster_dashboard(
         container,
-        _float_or_none(params.get("account_value")) or 50.0,
-        _float_or_none(params.get("buying_power")) or 5.0,
+        _float_or_none(params.get("account_value")) or 100.0,
+        _float_or_none(params.get("buying_power")) or 100.0,
         max_daily_loss if max_daily_loss is not None else 20.0,
     )
     payload = _review_only_envelope({"result": result})
@@ -4033,8 +4033,8 @@ async def fallback_cross_asset_capital_plan(request: Request) -> JSONResponse:
     max_daily_loss = _float_or_none(params.get("max_daily_loss"))
     result = _get_cross_asset_capital_plan(
         container,
-        _float_or_none(params.get("account_value")) or 50.0,
-        _float_or_none(params.get("buying_power")) or 5.0,
+        _float_or_none(params.get("account_value")) or 100.0,
+        _float_or_none(params.get("buying_power")) or 100.0,
         max_daily_loss if max_daily_loss is not None else 20.0,
     )
     return JSONResponse(_review_only_envelope({"result": result}))
