@@ -90,7 +90,7 @@ Minimum live checks:
 
 ```text
 /version -> build_version 2026.06.12-full-crypto-universe
-/tools -> tool_count 96
+/tools -> tool_count 98
 /release-manifest -> target_build_version 2026.06.12-full-crypto-universe
 /health/full?expected_build_version=2026.06.12-full-crypto-universe -> status OK
 / -> Tomorrow Operator Brief

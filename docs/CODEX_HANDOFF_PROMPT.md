@@ -34,7 +34,7 @@ Most recent improvement:
 Added journal-vault build with:
 - /journal/vault endpoint
 - paper exploration summary/run validation
-- expected tool count 96
+- expected tool count 98
 - validation script updated
 - continuity docs updated
 

@@ -2,7 +2,7 @@
     "service":  "Living Screener MCP",
     "release_folder":  "living-screener-mcp-full-crypto-universe-20260612-000000",
     "target_build_version":  "2026.06.12-full-crypto-universe",
-    "expected_live_tool_count":  96,
+    "expected_live_tool_count":  98,
     "safety_invariants":  {
                               "review_only":  true,
                               "place_orders":  false,
@@ -61,6 +61,8 @@
                                       "/ops/trading-monster-dashboard?format=html",
                                       "/ops/autonomy-control?autonomous_enabled=true\u0026stocks_enabled=true\u0026options_enabled=true\u0026crypto_enabled=true\u0026paper_trading_enabled=true\u0026live_handoff_enabled=false\u0026max_daily_loss=20\u0026format=html",
                                       "/ops/full-market-visibility",
+                                      "/ops/listed-equity-universe?max_symbols=20",
+                                      "/ops/broker-executor-bridge?max_daily_loss=20",
                                       "/ops/event-war-room?event_name=spacex_ipo\u0026format=html",
                                       "/risk/capital-plan?buying_power=5\u0026max_daily_loss=20",
                                       "/risk/loss-reassessment?max_daily_loss=20",
