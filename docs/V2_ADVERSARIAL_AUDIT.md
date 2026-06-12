@@ -1,6 +1,6 @@
 # Living Screener MCP V2.0 Adversarial Audit
 
-Build reviewed: `2026.06.12-full-crypto-universe`
+Build reviewed: `2026.06.11-broker-proof-bridge`
 
 ## 1. Executive Summary
 

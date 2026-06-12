@@ -1,6 +1,6 @@
 # Tomorrow Market Runbook
 
-Build target: `2026.06.12-full-crypto-universe`
+Build target: `2026.06.11-broker-proof-bridge`
 
 This runbook keeps the day boring on purpose: validate first, observe first, review only, and never let urgency bypass the gates.
 
@@ -35,7 +35,7 @@ This opens the control pages. It does not run scans or broker actions.
 Paste this into ChatGPT with the Living Screener app selected:
 
 ```text
-Use Living Screener MCP. Confirm safety config first. Then call get_version and confirm build_version is 2026.06.12-full-crypto-universe. Then call get_tomorrow_operator_brief and run_go_live_rehearsal with account_value=50 and include_market_check=false. Do not run a market scan yet. Report safety status, build version, tool count if available, and whether rehearsal is READY, CAUTION, or BLOCKED. Do not create a trade plan or perform any order action.
+Use Living Screener MCP. Confirm safety config first. Then call get_version and confirm build_version is 2026.06.11-broker-proof-bridge. Then call get_tomorrow_operator_brief and run_go_live_rehearsal with account_value=50 and include_market_check=false. Do not run a market scan yet. Report safety status, build version, tool count if available, and whether rehearsal is READY, CAUTION, or BLOCKED. Do not create a trade plan or perform any order action.
 ```
 
 If the connector is not exposed, use the browser endpoints:
@@ -44,7 +44,7 @@ If the connector is not exposed, use the browser endpoints:
 https://living-screener-mcp.onrender.com/version
 https://living-screener-mcp.onrender.com/tools
 https://living-screener-mcp.onrender.com/release-manifest
-https://living-screener-mcp.onrender.com/health/full?expected_build_version=2026.06.12-full-crypto-universe
+https://living-screener-mcp.onrender.com/health/full?expected_build_version=2026.06.11-broker-proof-bridge
 https://living-screener-mcp.onrender.com/ops/go-live-rehearsal?account_value=50&format=html
 ```
 

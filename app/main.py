@@ -6,11 +6,7 @@ from app.fallback_endpoints import (
     fallback_check_review_outcome,
     fallback_command_center,
     fallback_crypto_backtest,
-    fallback_crypto_autonomous_cycle,
-    fallback_crypto_live_test_gate,
     fallback_crypto_rules,
-    fallback_crypto_test_report,
-    fallback_crypto_universe,
     fallback_build_evidence_packet,
     fallback_build_evidence_packets_from_scan,
     fallback_debug_scan_schema,
@@ -20,26 +16,16 @@ from app.fallback_endpoints import (
     fallback_day_monitor,
     fallback_autonomous_morning_scan,
     fallback_autonomous_launch_decision,
-    fallback_autonomy_control,
     fallback_real_cash_proof_gate,
     fallback_broker_proof_bridge,
-    fallback_broker_executor_bridge,
-    fallback_broker_execution_router,
-    fallback_stock_execution_intent,
-    fallback_live_execution_control,
-    fallback_autonomous_execution_ticket,
-    fallback_cross_asset_capital_plan,
     fallback_evidence_summary,
     fallback_event_radar,
-    fallback_event_war_room,
     fallback_event_volatility_playbook,
     fallback_event_volatility_scan,
     fallback_broad_opportunity_scan,
     fallback_explain_premove_score,
     fallback_feature_registry,
     fallback_global_research_scan,
-    fallback_full_market_visibility,
-    fallback_listed_equity_universe,
     fallback_go_live_rehearsal,
     fallback_harvest_followup,
     fallback_journal_checkpoint,
@@ -48,7 +34,6 @@ from app.fallback_endpoints import (
     fallback_learning_dashboard,
     fallback_learning_proposals,
     fallback_failure_mode_audit,
-    fallback_loss_reassessment,
     fallback_setup_memory,
     fallback_live_review_cycle,
     fallback_log_review_decision,
@@ -86,7 +71,6 @@ from app.fallback_endpoints import (
     fallback_scalp_scan,
     fallback_scoring_model,
     fallback_tomorrow_operator_brief,
-    fallback_trading_monster_dashboard,
     fallback_trading_day_launch,
     fallback_trading_day_heartbeat,
     fallback_truth_source_status,
@@ -135,20 +119,8 @@ def create_app():
     app.add_route("/ops/day-alerts", fallback_day_alerts, methods=["GET"])
     app.add_route("/ops/autonomous-morning-scan", fallback_autonomous_morning_scan, methods=["GET"])
     app.add_route("/ops/autonomous-launch-decision", fallback_autonomous_launch_decision, methods=["GET"])
-    app.add_route("/ops/autonomy-control", fallback_autonomy_control, methods=["GET"])
-    app.add_route("/ops/trading-monster-dashboard", fallback_trading_monster_dashboard, methods=["GET"])
     app.add_route("/ops/real-cash-proof-gate", fallback_real_cash_proof_gate, methods=["GET"])
     app.add_route("/ops/broker-proof-bridge", fallback_broker_proof_bridge, methods=["GET"])
-    app.add_route("/ops/broker-executor-bridge", fallback_broker_executor_bridge, methods=["GET"])
-    app.add_route("/ops/broker-execution-router", fallback_broker_execution_router, methods=["GET"])
-    app.add_route("/trade/stock-intent", fallback_stock_execution_intent, methods=["GET"])
-    app.add_route("/trade/live-execution-control", fallback_live_execution_control, methods=["GET"])
-    app.add_route("/trade/autonomous-execution-ticket", fallback_autonomous_execution_ticket, methods=["GET"])
-    app.add_route("/risk/capital-plan", fallback_cross_asset_capital_plan, methods=["GET"])
-    app.add_route("/risk/loss-reassessment", fallback_loss_reassessment, methods=["GET"])
-    app.add_route("/ops/full-market-visibility", fallback_full_market_visibility, methods=["GET"])
-    app.add_route("/ops/listed-equity-universe", fallback_listed_equity_universe, methods=["GET"])
-    app.add_route("/ops/event-war-room", fallback_event_war_room, methods=["GET"])
     app.add_route("/ops/strategy-modules", fallback_strategy_module_registry, methods=["GET"])
     app.add_route("/ops/shared-intelligence", fallback_shared_intelligence_layer, methods=["GET"])
     app.add_route("/ops/morning-autopilot", fallback_morning_autopilot, methods=["GET"])
@@ -193,11 +165,7 @@ def create_app():
     app.add_route("/debug/tool-manifest", fallback_debug_tool_manifest, methods=["GET"])
     app.add_route("/debug/scan-schema", fallback_debug_scan_schema, methods=["GET"])
     app.add_route("/crypto/rules", fallback_crypto_rules, methods=["GET"])
-    app.add_route("/crypto/universe", fallback_crypto_universe, methods=["GET"])
     app.add_route("/crypto/backtest", fallback_crypto_backtest, methods=["GET"])
-    app.add_route("/crypto/autonomous-cycle", fallback_crypto_autonomous_cycle, methods=["GET"])
-    app.add_route("/crypto/live-test", fallback_crypto_live_test_gate, methods=["GET"])
-    app.add_route("/crypto/test-report", fallback_crypto_test_report, methods=["GET"])
     app.add_middleware(BearerAuthMiddleware, settings=settings)
     return app
 

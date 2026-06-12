@@ -43,18 +43,6 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("get_autonomous_launch_decision", tools.json()["tools"])
         self.assertIn("get_real_cash_proof_gate", tools.json()["tools"])
         self.assertIn("get_broker_proof_bridge", tools.json()["tools"])
-        self.assertIn("set_autonomous_trading_controls", tools.json()["tools"])
-        self.assertIn("get_trading_monster_dashboard", tools.json()["tools"])
-        self.assertIn("get_cross_asset_capital_plan", tools.json()["tools"])
-        self.assertIn("get_full_market_visibility_map", tools.json()["tools"])
-        self.assertIn("get_listed_equity_master_universe", tools.json()["tools"])
-        self.assertIn("get_event_volatility_war_room", tools.json()["tools"])
-        self.assertIn("get_loss_review_reassessment", tools.json()["tools"])
-        self.assertIn("get_broker_executor_bridge", tools.json()["tools"])
-        self.assertIn("get_broker_execution_router", tools.json()["tools"])
-        self.assertIn("create_stock_execution_intent", tools.json()["tools"])
-        self.assertIn("get_live_execution_control_plane", tools.json()["tools"])
-        self.assertIn("build_autonomous_execution_ticket", tools.json()["tools"])
         self.assertIn("market_readiness_check", tools.json()["tools"])
         self.assertIn("run_review_harvest", tools.json()["tools"])
         self.assertIn("get_market_session_playbook", tools.json()["tools"])
@@ -99,12 +87,8 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("generate_learning_rule_proposals", tools.json()["tools"])
         self.assertIn("review_pending_buy_order", tools.json()["tools"])
         self.assertIn("get_crypto_paper_rules", tools.json()["tools"])
-        self.assertIn("get_robinhood_crypto_universe", tools.json()["tools"])
         self.assertIn("start_crypto_paper_session", tools.json()["tools"])
         self.assertIn("run_crypto_paper_backtest", tools.json()["tools"])
-        self.assertIn("get_crypto_live_test_gate", tools.json()["tools"])
-        self.assertIn("run_autonomous_crypto_cycle", tools.json()["tools"])
-        self.assertIn("summarize_crypto_live_test_report", tools.json()["tools"])
         self.assertIn("get_offhours_research_plan", tools.json()["tools"])
         self.assertIn("run_global_research_scan", tools.json()["tools"])
         self.assertIn("get_trading_monster_blueprint", tools.json()["tools"])
@@ -546,7 +530,7 @@ class EndpointTests(unittest.TestCase):
     def test_tomorrow_operator_brief_endpoint_can_render_human_readable_html(self) -> None:
         fake_brief = {
             "status": "OPERATOR_READY_TO_START",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "next_action": "Open launch, morning autopilot, and day monitor.",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -571,7 +555,7 @@ class EndpointTests(unittest.TestCase):
                 {
                     "step": "1. Confirm deployment",
                     "target_time_ct": "Before open",
-                    "link": "/health/full?expected_build_version=2026.06.12-full-crypto-universe",
+                    "link": "/health/full?expected_build_version=2026.06.11-journal-vault",
                     "pass_condition": "OK and build matches.",
                 }
             ],
@@ -606,7 +590,7 @@ class EndpointTests(unittest.TestCase):
     def test_root_route_opens_operator_brief(self) -> None:
         fake_brief = {
             "status": "OPERATOR_READY_TO_START",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "next_action": "Open launch, morning autopilot, and day monitor.",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -636,7 +620,7 @@ class EndpointTests(unittest.TestCase):
     def test_root_defaults_to_human_readable_operator_brief(self) -> None:
         fake_brief = {
             "status": "OPERATOR_READY_TO_START",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "generated_at": "2026-06-10T12:00:00+00:00",
             "account_value_reference": 50.0,
             "safety": {"review_only": True},
@@ -666,7 +650,7 @@ class EndpointTests(unittest.TestCase):
     def test_go_live_rehearsal_endpoint_can_render_human_readable_html(self) -> None:
         fake_rehearsal = {
             "status": "GO_LIVE_REHEARSAL_READY",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "next_action": "Deploy and validate this build.",
             "include_market_check": False,
             "operator_brief": {
@@ -719,7 +703,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_trade_desk_endpoint_can_render_human_readable_html(self) -> None:
         fake_trade_desk = {
             "status": "MANUAL_TRADE_DESK_READY",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "ticker": "SOFI",
             "direction": "put",
             "contract_symbol": "SOFI260612P00015000",
@@ -795,7 +779,7 @@ class EndpointTests(unittest.TestCase):
     def test_market_open_observer_endpoint_logs_evidence_without_broker_action(self) -> None:
         fake_observer = {
             "status": "OBSERVER_STOCK_CANDIDATES",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "mode": "market_open_observer",
             "cadence_minutes": 5,
             "candidate_count": 1,
@@ -851,7 +835,7 @@ class EndpointTests(unittest.TestCase):
     def test_observer_followup_endpoint_can_render_missed_move_learning(self) -> None:
         fake_followup = {
             "status": "OBSERVER_FOLLOWUP_LEARNING_NEEDED",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "mode": "observer_followup",
             "source_observation_count": 2,
             "items_checked": 3,
@@ -902,7 +886,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_broker_action_endpoint_records_pending_recheck_card(self) -> None:
         fake_action = {
             "status": "MANUAL_ACTION_PENDING_RECHECK_REQUIRED",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "ticker": "SOFI",
             "contract_symbol": "SOFI260612P00015000",
             "action_type": "pending_buy",
@@ -982,7 +966,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_launch_endpoint_renders_go_no_go_map(self) -> None:
         fake_launch = {
             "status": "LAUNCH_START_HERE",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "mode": "trading_day_launch_checklist",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -998,7 +982,7 @@ class EndpointTests(unittest.TestCase):
                 {
                     "phase": "Build and safety",
                     "go_condition": "Build matches expected version.",
-                    "primary_link": "/health/full?expected_build_version=2026.06.12-full-crypto-universe",
+                    "primary_link": "/health/full?expected_build_version=2026.06.11-journal-vault",
                     "stop_if": "Wrong build.",
                 },
                 {
@@ -1031,7 +1015,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_heartbeat_endpoint_renders_safe_cadence_tick(self) -> None:
         fake_heartbeat = {
             "status": "HEARTBEAT_NO_TRADE_PLAN",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "mode": "trading_day_heartbeat",
             "phase": {"phase": "active", "forced": True, "now_et": "2026-06-10T11:00:00-04:00"},
             "universe": ["SOFI", "SMCI"],
@@ -1068,7 +1052,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_alerts_endpoint_renders_attention_queue(self) -> None:
         fake_alerts = {
             "status": "ALERTS_MANUAL_REVIEW_READY",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "top_level": "REVIEW",
             "alert_count": 1,
             "alerts": [
@@ -1142,7 +1126,6 @@ class EndpointTests(unittest.TestCase):
             plan = client.get("/research/offhours")
             scan = client.get("/research/global-scan?market=crypto", headers={"accept": "text/html"})
             rules = client.get("/crypto/rules")
-            universe = client.get("/crypto/universe?format=html")
             backtest = client.get("/crypto/backtest?symbols=ETH-USD,SOL-USD", headers={"accept": "text/html"})
 
         self.assertEqual(plan.status_code, 200)
@@ -1151,172 +1134,8 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("Off-Hours Research Scan", scan.text)
         self.assertEqual(rules.status_code, 200)
         self.assertFalse(rules.json()["can_place_order_from_this_mcp"])
-        self.assertEqual(universe.status_code, 200)
-        self.assertIn("Robinhood Crypto Universe", universe.text)
-        self.assertIn("82 assets", universe.text)
         self.assertEqual(backtest.status_code, 200)
         self.assertIn("Crypto Paper Backtest", backtest.text)
-
-    def test_crypto_live_test_gate_and_report_fallbacks_are_review_only(self) -> None:
-        fake_gate = {
-            "status": "CRYPTO_LIVE_TEST_GATE_READY",
-            "final_decision": "REVIEW_ONLY",
-            "exchange_gates": {"status": "EXCHANGE_PROOF_INCOMPLETE", "blockers": ["exchange_connected"]},
-            "approved_candidate_count": 0,
-            "candidate_classifications": [
-                {
-                    "symbol": "BTC-USD",
-                    "classification": "WATCH_ONLY",
-                    "setup_score": 70,
-                    "liquidity_score": 0,
-                    "spread_score": 0,
-                    "approval_or_rejection_reasons": ["No fresh broker/exchange quote and order-book snapshot supplied."],
-                    "order_ticket": {"final_verdict": "REJECTED", "max_loss": 0.02},
-                }
-            ],
-            "next_action": "Stay review-only.",
-            "can_place_order_from_this_mcp": False,
-            "can_cancel_order_from_this_mcp": False,
-        }
-        fake_cycle = {
-            "status": "CRYPTO_AUTONOMOUS_CYCLE_COMPLETE",
-            "execution_mode": "paper",
-            "gate_decision": "NO_TRADE_PLAN",
-            "final_decision": "NO_TRADE_PLAN",
-            "open_positions_before": [],
-            "management_actions": [],
-            "new_entry": None,
-            "gate": fake_gate,
-            "can_place_order_from_this_mcp": False,
-            "can_cancel_order_from_this_mcp": False,
-        }
-        fake_report = {
-            "status": "CRYPTO_LIVE_TEST_REPORT_READY",
-            "final_decision_for_tomorrow": "REVIEW_ONLY",
-            "starting_balance": 5.0,
-            "ending_balance": 5.0,
-            "total_profit_loss": 0.0,
-            "trade_count": 0,
-            "rejected_candidate_count": 1,
-            "fees_paid": 0.0,
-            "module_decisions": {"crypto_live_execution": "DISABLED"},
-            "tomorrow_stock_options_improvements": ["Keep crypto separate."],
-            "can_place_order_from_this_mcp": False,
-            "can_cancel_order_from_this_mcp": False,
-        }
-        client = TestClient(create_app())
-        with patch("app.fallback_endpoints.container.crypto_paper.live_test_gate", return_value=fake_gate), patch(
-            "app.fallback_endpoints.container.crypto_paper.run_autonomous_cycle", return_value=fake_cycle
-        ), patch(
-            "app.fallback_endpoints.container.crypto_paper.summarize_live_test_report", return_value=fake_report
-        ):
-            gate_json = client.get("/crypto/live-test?symbols=BTC-USD")
-            gate_html = client.get("/crypto/live-test?symbols=BTC-USD&format=html")
-            cycle_html = client.get("/crypto/autonomous-cycle?symbols=BTC-USD&format=html")
-            report = client.get("/crypto/test-report?format=html")
-
-        self.assertEqual(gate_json.status_code, 200)
-        self.assertFalse(gate_json.json()["can_place_order_from_this_mcp"])
-        self.assertEqual(gate_json.json()["result"]["final_decision"], "REVIEW_ONLY")
-        self.assertEqual(gate_html.status_code, 200)
-        self.assertIn("Crypto Live Test Gate", gate_html.text)
-        self.assertEqual(cycle_html.status_code, 200)
-        self.assertIn("Autonomous Crypto Cycle", cycle_html.text)
-        self.assertEqual(report.status_code, 200)
-        self.assertIn("Crypto Test Report", report.text)
-
-    def test_trading_monster_dashboard_control_and_war_room(self) -> None:
-        client = TestClient(create_app())
-
-        control = client.get(
-            "/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss=20"
-        )
-        dashboard = client.get("/ops/trading-monster-dashboard?format=html")
-        capital = client.get("/risk/capital-plan?buying_power=5&max_daily_loss=20")
-        visibility = client.get("/ops/full-market-visibility")
-        equity = client.get("/ops/listed-equity-universe?max_symbols=5")
-        bridge = client.get("/ops/broker-executor-bridge?max_daily_loss=20")
-        equity_router = client.get("/ops/broker-execution-router?asset_class=equity&account_number=628006199&symbol=SPY&side=buy&order_type=limit&quantity=1&limit_price=1&max_daily_loss=20")
-        options_router = client.get("/ops/broker-execution-router?asset_class=options&account_number=628006199&symbol=SPY&side=buy&max_daily_loss=20")
-        stock_intent = client.get("/trade/stock-intent?account_number=628006199&symbol=SPY&side=buy&order_type=limit&quantity=1&limit_price=1&max_daily_loss=20")
-        live_control_blocked = client.get("/trade/live-execution-control?account_number=628006199&account_value=100&buying_power=100&max_daily_loss=20")
-        live_arm = client.get(
-            "/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=false&paper_trading_enabled=false&live_handoff_enabled=false&max_daily_loss=20&max_crypto_cash=0"
-        )
-        live_control_enabled = client.get(
-            "/trade/live-execution-control?account_number=628006199&account_value=100&buying_power=100&max_daily_loss=20&broker_account_confirmed=true&buying_power_confirmed=true&open_positions_checked=true&open_orders_checked=true&no_duplicate_order_confirmed=true&broker_review_enabled=true&broker_place_enabled=true&broker_cancel_enabled=true&kill_switch_enabled=true&market_data_healthy=true&market_condition_clear=true&spread_liquidity_clear=true&slippage_clear=true&catalyst_clear=true"
-        )
-        autonomous_ticket = client.get(
-            "/trade/autonomous-execution-ticket?account_number=628006199&symbol=SPY&side=buy&order_type=limit&quantity=1&limit_price=1&stop_price=0.98&take_profit_price=1.04&confidence_score=92&setup_quality=VALID_CANDIDATE&risk_reward=2&account_value=100&buying_power=100&proposed_risk_dollars=1&max_daily_loss=20&broker_account_confirmed=true&buying_power_confirmed=true&open_positions_checked=true&open_orders_checked=true&no_duplicate_order_confirmed=true&broker_review_enabled=true&broker_place_enabled=true&broker_cancel_enabled=true&kill_switch_enabled=true&market_data_healthy=true&market_condition_clear=true&setup_quality_clear=true&liquidity_clear=true&spread_clear=true&slippage_clear=true&catalyst_clear=true&execution_confidence_clear=true"
-        )
-        war_room = client.get("/ops/event-war-room?event_name=spacex_ipo&format=html")
-        loss = client.get("/risk/loss-reassessment?max_daily_loss=20&realized_pnl=-20")
-        showtime_control = client.get(
-            "/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=false&paper_trading_enabled=false&live_handoff_enabled=false&max_daily_loss=20&max_crypto_cash=0"
-        )
-        showtime_dashboard = client.get("/ops/trading-monster-dashboard?account_value=100&buying_power=100&max_daily_loss=20")
-        showtime_risk = client.get("/risk/session?account_value=100&max_daily_loss=20&max_open_positions=5")
-
-        self.assertEqual(control.status_code, 200)
-        self.assertTrue(control.json()["result"]["controls"]["autonomous_enabled"])
-        self.assertEqual(control.json()["result"]["controls"]["max_daily_loss"], 20.0)
-        self.assertEqual(dashboard.status_code, 200)
-        self.assertIn("Trading Monster Dashboard", dashboard.text)
-        self.assertEqual(capital.status_code, 200)
-        self.assertIn("lane_budgets", capital.json()["result"])
-        self.assertEqual(visibility.status_code, 200)
-        self.assertEqual(visibility.json()["result"]["coverage"]["crypto_robinhood_assets"], 82)
-        self.assertEqual(equity.status_code, 200)
-        self.assertIn("symbol_count", equity.json()["result"])
-        self.assertGreaterEqual(equity.json()["result"]["returned_count"], 0)
-        self.assertEqual(bridge.status_code, 200)
-        self.assertEqual(bridge.json()["result"]["status"], "BROKER_EXECUTOR_BRIDGE_INCOMPLETE")
-        self.assertFalse(bridge.json()["can_place_order_from_this_mcp"])
-        self.assertEqual(equity_router.status_code, 200)
-        self.assertEqual(equity_router.json()["result"]["status"], "ROBINHOOD_EQUITY_MCP_ROUTE_READY")
-        self.assertEqual(equity_router.json()["result"]["route"], "host_orchestrated_robinhood_trading_mcp_equity")
-        self.assertFalse(equity_router.json()["result"]["scanner_mcp_can_place_orders"])
-        self.assertEqual(options_router.status_code, 200)
-        self.assertEqual(options_router.json()["result"]["status"], "ROBINHOOD_OPTIONS_MCP_ROUTE_BLOCKED")
-        self.assertIn("review_option_order", options_router.json()["result"]["required_options_tools"])
-        self.assertEqual(stock_intent.status_code, 200)
-        self.assertEqual(stock_intent.json()["result"]["status"], "STOCK_EXECUTION_INTENT_READY")
-        self.assertIn("intent_hash", stock_intent.json()["result"])
-        self.assertEqual(stock_intent.json()["result"]["robinhood_review_equity_order_args"]["symbol"], "SPY")
-        self.assertEqual(live_control_blocked.status_code, 200)
-        self.assertEqual(live_control_blocked.json()["result"]["status"], "LIVE_EXECUTION_BLOCKED")
-        self.assertFalse(live_control_blocked.json()["live_execution_enabled"])
-        self.assertIn("broker_place_enabled", live_control_blocked.json()["result"]["blockers"])
-        self.assertEqual(live_arm.status_code, 200)
-        self.assertEqual(live_control_enabled.status_code, 200)
-        self.assertEqual(live_control_enabled.json()["result"]["status"], "LIVE_EXECUTION_ENABLED")
-        self.assertFalse(live_control_enabled.json()["can_place_order_from_this_mcp"])
-        self.assertTrue(live_control_enabled.json()["can_place_order_via_broker_adapter"])
-        self.assertFalse(live_control_enabled.json()["result"]["manual_approval_required_per_order"])
-        self.assertEqual(autonomous_ticket.status_code, 200)
-        self.assertEqual(autonomous_ticket.json()["result"]["status"], "AUTONOMOUS_ORDER_TICKET_READY")
-        self.assertEqual(autonomous_ticket.json()["result"]["execution_mode"], "LIVE_EXECUTION_ENABLED")
-        self.assertFalse(autonomous_ticket.json()["result"]["force_trade_allowed"])
-        self.assertTrue(autonomous_ticket.json()["result"]["can_route_live_orders"])
-        self.assertEqual(war_room.status_code, 200)
-        self.assertIn("Event Volatility War Room", war_room.text)
-        self.assertEqual(loss.json()["result"]["status"], "LOSS_REASSESSMENT_HALTED")
-        self.assertFalse(loss.json()["result"]["new_entries_allowed"])
-        self.assertTrue(loss.json()["result"]["position_management_allowed"])
-        self.assertTrue(loss.json()["result"]["resume_new_entries_when_threshold_cleared"])
-        self.assertEqual(showtime_control.status_code, 200)
-        self.assertEqual(showtime_control.json()["result"]["controls"]["max_daily_loss"], 20.0)
-        self.assertFalse(showtime_control.json()["result"]["controls"]["paper_trading_enabled"])
-        self.assertFalse(showtime_control.json()["result"]["controls"]["live_handoff_enabled"])
-        self.assertEqual(showtime_control.json()["result"]["controls"]["max_crypto_cash"], 0.0)
-        self.assertIn("max_daily_loss=20", showtime_dashboard.json()["result"]["one_click_controls"]["enable_full_autonomy"])
-        self.assertEqual(showtime_dashboard.json()["result"]["loss_reassessment"]["max_daily_loss"], 20.0)
-        self.assertTrue(showtime_dashboard.json()["result"]["loss_reassessment"]["new_entries_allowed"])
-        self.assertTrue(showtime_dashboard.json()["result"]["loss_reassessment"]["position_management_allowed"])
-        self.assertTrue(showtime_dashboard.json()["result"]["loss_reassessment"]["resume_new_entries_when_threshold_cleared"])
-        self.assertEqual(showtime_risk.json()["result"]["daily_loss_limit_dollars"], 20.0)
-        self.assertEqual(showtime_risk.json()["result"]["hard_lockout_dollars"], 20.0)
-        self.assertEqual(showtime_risk.json()["result"]["max_open_positions"], 5)
 
     def test_premove_research_endpoints_are_review_only(self) -> None:
         client = TestClient(create_app())
@@ -1389,12 +1208,12 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.12-full-crypto-universe")
-        full_html = client.get("/health/full?expected_build_version=2026.06.12-full-crypto-universe&format=html")
+        full = client.get("/health/full?expected_build_version=2026.06.11-journal-vault")
+        full_html = client.get("/health/full?expected_build_version=2026.06.11-journal-vault&format=html")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         release = client.get("/release-manifest")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.12-full-crypto-universe")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.11-journal-vault")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -1406,8 +1225,8 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(mismatch.json()["result"]["status"], "BUILD_MISMATCH")
         self.assertEqual(release.status_code, 200)
         self.assertEqual(release.json()["status"], "RELEASE_MANIFEST_READY")
-        self.assertEqual(release.json()["manifest"]["target_build_version"], "2026.06.12-full-crypto-universe")
-        self.assertEqual(release.json()["manifest"]["expected_live_tool_count"], 102)
+        self.assertEqual(release.json()["manifest"]["target_build_version"], "2026.06.11-journal-vault")
+        self.assertEqual(release.json()["manifest"]["expected_live_tool_count"], 86)
         self.assertIn("tools/start_tomorrow.ps1", release.json()["manifest"]["operator_helpers"])
         self.assertEqual(manifest.status_code, 200)
         self.assertEqual(manifest.json()["result"]["status"], "TOOL_MANIFEST_READY")
@@ -1423,10 +1242,6 @@ class EndpointTests(unittest.TestCase):
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_autonomous_launch_decision"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_real_cash_proof_gate"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_broker_proof_bridge"])
-        self.assertTrue(manifest.json()["result"]["required_tools"]["get_broker_execution_router"])
-        self.assertTrue(manifest.json()["result"]["required_tools"]["create_stock_execution_intent"])
-        self.assertTrue(manifest.json()["result"]["required_tools"]["get_live_execution_control_plane"])
-        self.assertTrue(manifest.json()["result"]["required_tools"]["build_autonomous_execution_ticket"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_review_harvest"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["get_market_session_playbook"])
         self.assertTrue(manifest.json()["result"]["required_tools"]["run_latest_harvest_followup"])
@@ -1481,7 +1296,7 @@ class EndpointTests(unittest.TestCase):
     def test_event_volatility_endpoints_are_readable_and_review_only(self) -> None:
         fake_scan = {
             "status": "EVENT_STOCK_REVIEW_ONLY",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "event_name": "spacex_ipo",
             "direct_symbol": "SPCX",
             "direct_symbol_status": "NOT_RETURNED_BY_DATA_PROVIDER_YET",
@@ -1508,7 +1323,7 @@ class EndpointTests(unittest.TestCase):
         }
         fake_broad = {
             "status": "BROAD_STOCK_REVIEW_ONLY",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "universe_count": 30,
             "stock_candidate_count": 1,
             "options_review_count": 0,
@@ -1536,7 +1351,7 @@ class EndpointTests(unittest.TestCase):
         }
         fake_truth = {
             "status": "DATA_TRUTH_EQUITY_READY_OPTIONS_MANUAL",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "market_data_health": {
                 "status": "MARKET_DATA_HEALTHY",
                 "provider": "finnhub",
@@ -1555,7 +1370,7 @@ class EndpointTests(unittest.TestCase):
         }
         fake_audit = {
             "status": "SYSTEM_COMMUNICATION_AUDIT_READY",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "recent_event_count": 3,
             "recent_event_type_counts": {"scan": 1, "review": 2},
             "communication_map": [{"system": "scanner", "writes": ["evidence"], "read_by": ["learning"], "clutter_control": "Lane labels."}],
@@ -1620,7 +1435,7 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(audit_html.status_code, 200)
         self.assertIn("System Communication Audit", audit_html.text)
         self.assertIn("Clutter Limits", audit_html.text)
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.12-full-crypto-universe")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.11-journal-vault")
         self.assertEqual(schema.status_code, 200)
         followup_preview = schema.json()["result"]["harvest_followup_schema_preview"]
         self.assertEqual(followup_preview["status"], "HARVEST_FOLLOWUP_COMPLETE")
@@ -1900,7 +1715,7 @@ class EndpointTests(unittest.TestCase):
     def test_autonomous_firewall_endpoints_are_review_only(self) -> None:
         fake_registry = {
             "status": "STRATEGY_MODULE_REGISTRY_READY",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "module_count": 1,
             "modules": [
                 {
@@ -1918,7 +1733,7 @@ class EndpointTests(unittest.TestCase):
         }
         fake_intelligence = {
             "status": "SHARED_INTELLIGENCE_READY",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "signal_count": 1,
             "actionable_count": 0,
             "supporting_count": 1,
@@ -1942,7 +1757,7 @@ class EndpointTests(unittest.TestCase):
         }
         fake_decision = {
             "status": "AUTONOMOUS_FIREWALL_READY",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "final_launch_decision": "DELAY_LAUNCH",
             "account_value_reference": 100,
             "intended_cash_reference": 100,
@@ -1982,7 +1797,7 @@ class EndpointTests(unittest.TestCase):
     def test_real_cash_proof_gate_endpoint_is_review_only(self) -> None:
         fake_gate = {
             "status": "REAL_CASH_PROOF_GATE_READY",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "schema_version": "real_cash_proof_gate_v1",
             "decisions": {
                 "autonomous_scanning": "PROVEN_READY",
@@ -2020,7 +1835,7 @@ class EndpointTests(unittest.TestCase):
     def test_broker_proof_bridge_endpoint_is_review_only(self) -> None:
         fake_bridge = {
             "status": "BROKER_PROOF_MANUAL_READY",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "schema_version": "broker_proof_bridge_v1",
             "ticker": "SOFI",
             "contract_symbol": "SOFI260612P00015500",
@@ -2058,7 +1873,7 @@ class EndpointTests(unittest.TestCase):
     def test_session_risk_guard_endpoint_is_review_only(self) -> None:
         fake_risk = {
             "status": "SESSION_RISK_CLEAR",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "account_value_reference": 50,
             "proposed_risk_dollars": 5,
             "per_trade_cap_dollars": 5,
@@ -2106,9 +1921,9 @@ class EndpointTests(unittest.TestCase):
         }
         fake_restore = {
             "status": "CHECKPOINT_RESTORE_READY",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "source_label": "unit_test",
-            "checkpoint_build_version": "2026.06.12-full-crypto-universe",
+            "checkpoint_build_version": "2026.06.11-journal-vault",
             "requested_event_count": 1,
             "restored_count": 1,
             "skipped_duplicate_count": 0,
@@ -2146,7 +1961,7 @@ class EndpointTests(unittest.TestCase):
         client = TestClient(create_app())
         checkpoint = {
             "status": "JOURNAL_CHECKPOINT_READY",
-            "build_version": "2026.06.12-full-crypto-universe",
+            "build_version": "2026.06.11-journal-vault",
             "events": [
                 {
                     "id": 10,
