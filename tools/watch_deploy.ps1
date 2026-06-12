@@ -1,6 +1,6 @@
 param(
     [string]$BaseUrl = "https://living-screener-mcp.onrender.com",
-    [string]$ExpectedBuild = "2026.06.11-journal-vault",
+    [string]$ExpectedBuild = "2026.06.12-full-crypto-universe",
     [int]$AccountValue = 50,
     [int]$PollSeconds = 30,
     [int]$MaxMinutes = 20

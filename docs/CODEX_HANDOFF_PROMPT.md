@@ -13,7 +13,7 @@ The live Render app is:
 https://living-screener-mcp.onrender.com
 
 Expected build:
-2026.06.11-journal-vault
+2026.06.12-full-crypto-universe
 
 First, run:
 powershell -ExecutionPolicy Bypass -File .\tools\agent_status_snapshot.ps1
@@ -34,7 +34,7 @@ Most recent improvement:
 Added journal-vault build with:
 - /journal/vault endpoint
 - paper exploration summary/run validation
-- expected tool count 88
+- expected tool count 90
 - validation script updated
 - continuity docs updated
 

@@ -87,9 +87,11 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("generate_learning_rule_proposals", tools.json()["tools"])
         self.assertIn("review_pending_buy_order", tools.json()["tools"])
         self.assertIn("get_crypto_paper_rules", tools.json()["tools"])
+        self.assertIn("get_robinhood_crypto_universe", tools.json()["tools"])
         self.assertIn("start_crypto_paper_session", tools.json()["tools"])
         self.assertIn("run_crypto_paper_backtest", tools.json()["tools"])
         self.assertIn("get_crypto_live_test_gate", tools.json()["tools"])
+        self.assertIn("run_autonomous_crypto_cycle", tools.json()["tools"])
         self.assertIn("summarize_crypto_live_test_report", tools.json()["tools"])
         self.assertIn("get_offhours_research_plan", tools.json()["tools"])
         self.assertIn("run_global_research_scan", tools.json()["tools"])
@@ -532,7 +534,7 @@ class EndpointTests(unittest.TestCase):
     def test_tomorrow_operator_brief_endpoint_can_render_human_readable_html(self) -> None:
         fake_brief = {
             "status": "OPERATOR_READY_TO_START",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "next_action": "Open launch, morning autopilot, and day monitor.",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -557,7 +559,7 @@ class EndpointTests(unittest.TestCase):
                 {
                     "step": "1. Confirm deployment",
                     "target_time_ct": "Before open",
-                    "link": "/health/full?expected_build_version=2026.06.11-journal-vault",
+                    "link": "/health/full?expected_build_version=2026.06.12-full-crypto-universe",
                     "pass_condition": "OK and build matches.",
                 }
             ],
@@ -592,7 +594,7 @@ class EndpointTests(unittest.TestCase):
     def test_root_route_opens_operator_brief(self) -> None:
         fake_brief = {
             "status": "OPERATOR_READY_TO_START",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "next_action": "Open launch, morning autopilot, and day monitor.",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -622,7 +624,7 @@ class EndpointTests(unittest.TestCase):
     def test_root_defaults_to_human_readable_operator_brief(self) -> None:
         fake_brief = {
             "status": "OPERATOR_READY_TO_START",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "generated_at": "2026-06-10T12:00:00+00:00",
             "account_value_reference": 50.0,
             "safety": {"review_only": True},
@@ -652,7 +654,7 @@ class EndpointTests(unittest.TestCase):
     def test_go_live_rehearsal_endpoint_can_render_human_readable_html(self) -> None:
         fake_rehearsal = {
             "status": "GO_LIVE_REHEARSAL_READY",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "next_action": "Deploy and validate this build.",
             "include_market_check": False,
             "operator_brief": {
@@ -705,7 +707,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_trade_desk_endpoint_can_render_human_readable_html(self) -> None:
         fake_trade_desk = {
             "status": "MANUAL_TRADE_DESK_READY",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "ticker": "SOFI",
             "direction": "put",
             "contract_symbol": "SOFI260612P00015000",
@@ -781,7 +783,7 @@ class EndpointTests(unittest.TestCase):
     def test_market_open_observer_endpoint_logs_evidence_without_broker_action(self) -> None:
         fake_observer = {
             "status": "OBSERVER_STOCK_CANDIDATES",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "mode": "market_open_observer",
             "cadence_minutes": 5,
             "candidate_count": 1,
@@ -837,7 +839,7 @@ class EndpointTests(unittest.TestCase):
     def test_observer_followup_endpoint_can_render_missed_move_learning(self) -> None:
         fake_followup = {
             "status": "OBSERVER_FOLLOWUP_LEARNING_NEEDED",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "mode": "observer_followup",
             "source_observation_count": 2,
             "items_checked": 3,
@@ -888,7 +890,7 @@ class EndpointTests(unittest.TestCase):
     def test_manual_broker_action_endpoint_records_pending_recheck_card(self) -> None:
         fake_action = {
             "status": "MANUAL_ACTION_PENDING_RECHECK_REQUIRED",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "ticker": "SOFI",
             "contract_symbol": "SOFI260612P00015000",
             "action_type": "pending_buy",
@@ -968,7 +970,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_launch_endpoint_renders_go_no_go_map(self) -> None:
         fake_launch = {
             "status": "LAUNCH_START_HERE",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "mode": "trading_day_launch_checklist",
             "universe": ["SOFI", "SMCI"],
             "account_value_reference": 50,
@@ -984,7 +986,7 @@ class EndpointTests(unittest.TestCase):
                 {
                     "phase": "Build and safety",
                     "go_condition": "Build matches expected version.",
-                    "primary_link": "/health/full?expected_build_version=2026.06.11-journal-vault",
+                    "primary_link": "/health/full?expected_build_version=2026.06.12-full-crypto-universe",
                     "stop_if": "Wrong build.",
                 },
                 {
@@ -1017,7 +1019,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_heartbeat_endpoint_renders_safe_cadence_tick(self) -> None:
         fake_heartbeat = {
             "status": "HEARTBEAT_NO_TRADE_PLAN",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "mode": "trading_day_heartbeat",
             "phase": {"phase": "active", "forced": True, "now_et": "2026-06-10T11:00:00-04:00"},
             "universe": ["SOFI", "SMCI"],
@@ -1054,7 +1056,7 @@ class EndpointTests(unittest.TestCase):
     def test_trading_day_alerts_endpoint_renders_attention_queue(self) -> None:
         fake_alerts = {
             "status": "ALERTS_MANUAL_REVIEW_READY",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "top_level": "REVIEW",
             "alert_count": 1,
             "alerts": [
@@ -1128,6 +1130,7 @@ class EndpointTests(unittest.TestCase):
             plan = client.get("/research/offhours")
             scan = client.get("/research/global-scan?market=crypto", headers={"accept": "text/html"})
             rules = client.get("/crypto/rules")
+            universe = client.get("/crypto/universe?format=html")
             backtest = client.get("/crypto/backtest?symbols=ETH-USD,SOL-USD", headers={"accept": "text/html"})
 
         self.assertEqual(plan.status_code, 200)
@@ -1136,6 +1139,9 @@ class EndpointTests(unittest.TestCase):
         self.assertIn("Off-Hours Research Scan", scan.text)
         self.assertEqual(rules.status_code, 200)
         self.assertFalse(rules.json()["can_place_order_from_this_mcp"])
+        self.assertEqual(universe.status_code, 200)
+        self.assertIn("Robinhood Crypto Universe", universe.text)
+        self.assertIn("82 assets", universe.text)
         self.assertEqual(backtest.status_code, 200)
         self.assertIn("Crypto Paper Backtest", backtest.text)
 
@@ -1160,6 +1166,18 @@ class EndpointTests(unittest.TestCase):
             "can_place_order_from_this_mcp": False,
             "can_cancel_order_from_this_mcp": False,
         }
+        fake_cycle = {
+            "status": "CRYPTO_AUTONOMOUS_CYCLE_COMPLETE",
+            "execution_mode": "paper",
+            "gate_decision": "NO_TRADE_PLAN",
+            "final_decision": "NO_TRADE_PLAN",
+            "open_positions_before": [],
+            "management_actions": [],
+            "new_entry": None,
+            "gate": fake_gate,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
         fake_report = {
             "status": "CRYPTO_LIVE_TEST_REPORT_READY",
             "final_decision_for_tomorrow": "REVIEW_ONLY",
@@ -1176,10 +1194,13 @@ class EndpointTests(unittest.TestCase):
         }
         client = TestClient(create_app())
         with patch("app.fallback_endpoints.container.crypto_paper.live_test_gate", return_value=fake_gate), patch(
+            "app.fallback_endpoints.container.crypto_paper.run_autonomous_cycle", return_value=fake_cycle
+        ), patch(
             "app.fallback_endpoints.container.crypto_paper.summarize_live_test_report", return_value=fake_report
         ):
             gate_json = client.get("/crypto/live-test?symbols=BTC-USD")
             gate_html = client.get("/crypto/live-test?symbols=BTC-USD&format=html")
+            cycle_html = client.get("/crypto/autonomous-cycle?symbols=BTC-USD&format=html")
             report = client.get("/crypto/test-report?format=html")
 
         self.assertEqual(gate_json.status_code, 200)
@@ -1187,6 +1208,8 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(gate_json.json()["result"]["final_decision"], "REVIEW_ONLY")
         self.assertEqual(gate_html.status_code, 200)
         self.assertIn("Crypto Live Test Gate", gate_html.text)
+        self.assertEqual(cycle_html.status_code, 200)
+        self.assertIn("Autonomous Crypto Cycle", cycle_html.text)
         self.assertEqual(report.status_code, 200)
         self.assertIn("Crypto Test Report", report.text)
 
@@ -1261,12 +1284,12 @@ class EndpointTests(unittest.TestCase):
     def test_debug_validation_endpoints_are_static_and_safe(self) -> None:
         client = TestClient(create_app())
 
-        full = client.get("/health/full?expected_build_version=2026.06.11-journal-vault")
-        full_html = client.get("/health/full?expected_build_version=2026.06.11-journal-vault&format=html")
+        full = client.get("/health/full?expected_build_version=2026.06.12-full-crypto-universe")
+        full_html = client.get("/health/full?expected_build_version=2026.06.12-full-crypto-universe&format=html")
         mismatch = client.get("/health/full?expected_build_version=wrong-build")
         release = client.get("/release-manifest")
         manifest = client.get("/debug/tool-manifest")
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.11-journal-vault")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.12-full-crypto-universe")
 
         self.assertEqual(full.status_code, 200)
         self.assertEqual(full.json()["result"]["status"], "OK")
@@ -1278,8 +1301,8 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(mismatch.json()["result"]["status"], "BUILD_MISMATCH")
         self.assertEqual(release.status_code, 200)
         self.assertEqual(release.json()["status"], "RELEASE_MANIFEST_READY")
-        self.assertEqual(release.json()["manifest"]["target_build_version"], "2026.06.11-journal-vault")
-        self.assertEqual(release.json()["manifest"]["expected_live_tool_count"], 88)
+        self.assertEqual(release.json()["manifest"]["target_build_version"], "2026.06.12-full-crypto-universe")
+        self.assertEqual(release.json()["manifest"]["expected_live_tool_count"], 90)
         self.assertIn("tools/start_tomorrow.ps1", release.json()["manifest"]["operator_helpers"])
         self.assertEqual(manifest.status_code, 200)
         self.assertEqual(manifest.json()["result"]["status"], "TOOL_MANIFEST_READY")
@@ -1349,7 +1372,7 @@ class EndpointTests(unittest.TestCase):
     def test_event_volatility_endpoints_are_readable_and_review_only(self) -> None:
         fake_scan = {
             "status": "EVENT_STOCK_REVIEW_ONLY",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "event_name": "spacex_ipo",
             "direct_symbol": "SPCX",
             "direct_symbol_status": "NOT_RETURNED_BY_DATA_PROVIDER_YET",
@@ -1376,7 +1399,7 @@ class EndpointTests(unittest.TestCase):
         }
         fake_broad = {
             "status": "BROAD_STOCK_REVIEW_ONLY",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "universe_count": 30,
             "stock_candidate_count": 1,
             "options_review_count": 0,
@@ -1404,7 +1427,7 @@ class EndpointTests(unittest.TestCase):
         }
         fake_truth = {
             "status": "DATA_TRUTH_EQUITY_READY_OPTIONS_MANUAL",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "market_data_health": {
                 "status": "MARKET_DATA_HEALTHY",
                 "provider": "finnhub",
@@ -1423,7 +1446,7 @@ class EndpointTests(unittest.TestCase):
         }
         fake_audit = {
             "status": "SYSTEM_COMMUNICATION_AUDIT_READY",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "recent_event_count": 3,
             "recent_event_type_counts": {"scan": 1, "review": 2},
             "communication_map": [{"system": "scanner", "writes": ["evidence"], "read_by": ["learning"], "clutter_control": "Lane labels."}],
@@ -1488,7 +1511,7 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(audit_html.status_code, 200)
         self.assertIn("System Communication Audit", audit_html.text)
         self.assertIn("Clutter Limits", audit_html.text)
-        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.11-journal-vault")
+        schema = client.get("/debug/scan-schema?expected_build_version=2026.06.12-full-crypto-universe")
         self.assertEqual(schema.status_code, 200)
         followup_preview = schema.json()["result"]["harvest_followup_schema_preview"]
         self.assertEqual(followup_preview["status"], "HARVEST_FOLLOWUP_COMPLETE")
@@ -1768,7 +1791,7 @@ class EndpointTests(unittest.TestCase):
     def test_autonomous_firewall_endpoints_are_review_only(self) -> None:
         fake_registry = {
             "status": "STRATEGY_MODULE_REGISTRY_READY",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "module_count": 1,
             "modules": [
                 {
@@ -1786,7 +1809,7 @@ class EndpointTests(unittest.TestCase):
         }
         fake_intelligence = {
             "status": "SHARED_INTELLIGENCE_READY",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "signal_count": 1,
             "actionable_count": 0,
             "supporting_count": 1,
@@ -1810,7 +1833,7 @@ class EndpointTests(unittest.TestCase):
         }
         fake_decision = {
             "status": "AUTONOMOUS_FIREWALL_READY",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "final_launch_decision": "DELAY_LAUNCH",
             "account_value_reference": 100,
             "intended_cash_reference": 100,
@@ -1850,7 +1873,7 @@ class EndpointTests(unittest.TestCase):
     def test_real_cash_proof_gate_endpoint_is_review_only(self) -> None:
         fake_gate = {
             "status": "REAL_CASH_PROOF_GATE_READY",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "schema_version": "real_cash_proof_gate_v1",
             "decisions": {
                 "autonomous_scanning": "PROVEN_READY",
@@ -1888,7 +1911,7 @@ class EndpointTests(unittest.TestCase):
     def test_broker_proof_bridge_endpoint_is_review_only(self) -> None:
         fake_bridge = {
             "status": "BROKER_PROOF_MANUAL_READY",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "schema_version": "broker_proof_bridge_v1",
             "ticker": "SOFI",
             "contract_symbol": "SOFI260612P00015500",
@@ -1926,7 +1949,7 @@ class EndpointTests(unittest.TestCase):
     def test_session_risk_guard_endpoint_is_review_only(self) -> None:
         fake_risk = {
             "status": "SESSION_RISK_CLEAR",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "account_value_reference": 50,
             "proposed_risk_dollars": 5,
             "per_trade_cap_dollars": 5,
@@ -1974,9 +1997,9 @@ class EndpointTests(unittest.TestCase):
         }
         fake_restore = {
             "status": "CHECKPOINT_RESTORE_READY",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "source_label": "unit_test",
-            "checkpoint_build_version": "2026.06.11-journal-vault",
+            "checkpoint_build_version": "2026.06.12-full-crypto-universe",
             "requested_event_count": 1,
             "restored_count": 1,
             "skipped_duplicate_count": 0,
@@ -2014,7 +2037,7 @@ class EndpointTests(unittest.TestCase):
         client = TestClient(create_app())
         checkpoint = {
             "status": "JOURNAL_CHECKPOINT_READY",
-            "build_version": "2026.06.11-journal-vault",
+            "build_version": "2026.06.12-full-crypto-universe",
             "events": [
                 {
                     "id": 10,

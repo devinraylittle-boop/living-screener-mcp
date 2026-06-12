@@ -1,8 +1,8 @@
 {
     "service":  "Living Screener MCP",
-    "release_folder":  "living-screener-mcp-journal-vault-20260611-145500",
-    "target_build_version":  "2026.06.11-journal-vault",
-    "expected_live_tool_count":  88,
+    "release_folder":  "living-screener-mcp-full-crypto-universe-20260612-000000",
+    "target_build_version":  "2026.06.12-full-crypto-universe",
+    "expected_live_tool_count":  90,
     "safety_invariants":  {
                               "review_only":  true,
                               "place_orders":  false,
@@ -36,7 +36,7 @@
     "live_validation_endpoints":  [
                                       "/version",
                                       "/tools",
-                                      "/health/full?expected_build_version=2026.06.11-journal-vault",
+                                      "/health/full?expected_build_version=2026.06.12-full-crypto-universe",
                                       "/ops/autonomous-morning-scan?format=html",
                                       "/ops/event-radar?format=html",
                                       "/ops/broad-opportunity-scan?format=html",
@@ -58,6 +58,8 @@
                                       "/risk/failure-mode-audit?format=html",
                                       "/paper/exploration/summary?format=html",
                                       "/journal/vault?format=html",
+                                      "/crypto/universe?format=html",
+                                      "/crypto/autonomous-cycle?format=html",
                                       "/crypto/live-test?format=html",
                                       "/crypto/test-report?format=html",
                                       "/paper/exploration/run?max_trials=10\u0026exploration_level=aggressive\u0026format=html"
@@ -67,6 +69,7 @@
                              "tools/watch_deploy.ps1",
                              "tools/start_tomorrow.ps1",
                              "tools/morning_pinger.ps1",
+                             "tools/crypto_cycle_pinger.ps1",
                              ".github/workflows/morning-autonomous-pinger.yml",
                              "docs/SCHEDULER_PINGER.md",
                              "docs/TOMORROW_MARKET_RUNBOOK.md"

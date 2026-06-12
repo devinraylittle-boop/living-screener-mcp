@@ -1,6 +1,6 @@
 # Living Screener MCP V2.0 Adversarial Audit
 
-Build reviewed: `2026.06.11-journal-vault`
+Build reviewed: `2026.06.12-full-crypto-universe`
 
 ## 1. Executive Summary
 

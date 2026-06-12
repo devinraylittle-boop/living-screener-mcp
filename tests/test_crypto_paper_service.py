@@ -17,6 +17,16 @@ class CryptoPaperServiceTests(unittest.TestCase):
         self.assertFalse(result["can_place_order_from_this_mcp"])
         self.assertFalse(result["background_worker_started"])
 
+    def test_robinhood_universe_has_all_supported_crypto_in_consideration(self) -> None:
+        with TempContainer() as container:
+            service = CryptoPaperService(container.events)
+            universe = service.universe()
+
+        self.assertEqual(universe["tradable_symbol_count"], 82)
+        self.assertEqual(universe["general_consideration_count"], 82)
+        self.assertIn("BTC-USD", universe["symbols"])
+        self.assertIn("ZORA-USD", universe["symbols"])
+
     def test_simulator_uses_no_broker_execution(self) -> None:
         with TempContainer() as container:
             service = CryptoPaperService(container.events)
@@ -113,6 +123,23 @@ class CryptoPaperServiceTests(unittest.TestCase):
         self.assertEqual(result["candidate_classifications"][0]["classification"], "WATCH_ONLY")
         self.assertFalse(result["can_place_order_from_this_mcp"])
 
+    def test_live_test_gate_considers_full_universe_by_default(self) -> None:
+        with TempContainer() as container:
+            service = CryptoPaperService(container.events)
+            fake_backtest = {
+                "result": "PASS",
+                "best_symbol": None,
+                "aggregate": {"total_trade_count": 0, "aggregate_return_pct": 0},
+                "results": [],
+            }
+            with patch.object(service, "run_backtest", return_value=fake_backtest):
+                result = service.live_test_gate(backtest_symbol_limit=5)
+
+        self.assertEqual(result["universe"]["general_consideration_count"], 82)
+        self.assertEqual(result["universe"]["selected_symbol_count"], 82)
+        self.assertEqual(result["universe"]["backtested_symbol_count"], 5)
+        self.assertEqual(len(result["candidate_classifications"]), 82)
+
     def test_live_test_gate_builds_ticket_when_all_crypto_gates_pass(self) -> None:
         with TempContainer() as container:
             service = CryptoPaperService(container.events)
@@ -151,6 +178,9 @@ class CryptoPaperServiceTests(unittest.TestCase):
                     fee_bps=2,
                     slippage_pct=0.0002,
                     min_order_size=1.0,
+                    target_profit_pct=0.01,
+                    stop_loss_pct=0.003,
+                    emergency_max_loss=2.0,
                     candidate_snapshots={
                         "BTC-USD": {
                             "bid": 100.00,
@@ -162,6 +192,9 @@ class CryptoPaperServiceTests(unittest.TestCase):
 
         candidate = result["candidate_classifications"][0]
         self.assertEqual(result["final_decision"], "LIMITED_AUTONOMOUS_CRYPTO_ENABLED")
+        self.assertEqual(result["risk_controls"]["planned_target_pct"], 0.01)
+        self.assertEqual(result["risk_controls"]["planned_trade_max_loss"], 0.015)
+        self.assertEqual(result["risk_controls"]["emergency_account_max_loss"], 2.0)
         self.assertEqual(candidate["classification"], "AUTONOMOUS_CRYPTO_APPROVED")
         self.assertEqual(candidate["order_ticket"]["final_verdict"], "AUTONOMOUS_CRYPTO_APPROVED")
         self.assertFalse(candidate["order_ticket"]["can_place_order_from_this_mcp"])
@@ -174,6 +207,64 @@ class CryptoPaperServiceTests(unittest.TestCase):
         self.assertEqual(report["trade_count"], 0)
         self.assertFalse(report["did_force_trades"])
         self.assertEqual(report["final_decision_for_tomorrow"], "REVIEW_ONLY")
+
+    def test_autonomous_cycle_opens_and_manages_paper_position(self) -> None:
+        with TempContainer() as container:
+            service = CryptoPaperService(container.events)
+            fake_gate = {
+                "id": 12,
+                "final_decision": "LIMITED_AUTONOMOUS_CRYPTO_ENABLED",
+                "risk_controls": {"planned_target_pct": 0.01, "planned_stop_loss_pct": 0.003},
+                "candidate_classifications": [
+                    {
+                        "classification": "AUTONOMOUS_CRYPTO_APPROVED",
+                        "order_ticket": {
+                            "coin_pair": "BTC-USD",
+                            "intended_limit_price": 100.0,
+                            "mid": 100.0,
+                            "ask": 100.0,
+                            "position_size": 5.0,
+                            "can_place_order_from_this_mcp": False,
+                        },
+                    }
+                ],
+            }
+            with patch.object(service, "live_test_gate", return_value=fake_gate):
+                opened = service.run_autonomous_cycle(symbols=["BTC-USD"], execution_mode="paper")
+
+            with patch.object(service, "live_test_gate", return_value={"final_decision": "NO_TRADE_PLAN", "candidate_classifications": []}):
+                closed = service.run_autonomous_cycle(
+                    symbols=["BTC-USD"],
+                    execution_mode="paper",
+                    candidate_snapshots={"BTC-USD": {"bid": 101.2}},
+                )
+
+        self.assertEqual(opened["final_decision"], "PAPER_POSITION_OPENED")
+        self.assertEqual(opened["new_entry"]["status"], "PAPER_POSITION_OPEN")
+        self.assertEqual(closed["management_actions"][0]["action"], "PAPER_CLOSE")
+        self.assertEqual(closed["management_actions"][0]["exit_reason"], "target_hit")
+        self.assertFalse(opened["can_place_order_from_this_mcp"])
+
+    def test_autonomous_cycle_live_mode_only_hands_off_ticket(self) -> None:
+        with TempContainer() as container:
+            service = CryptoPaperService(container.events)
+            fake_gate = {
+                "id": 13,
+                "final_decision": "LIMITED_AUTONOMOUS_CRYPTO_ENABLED",
+                "risk_controls": {"planned_target_pct": 0.01, "planned_stop_loss_pct": 0.003},
+                "candidate_classifications": [
+                    {
+                        "classification": "AUTONOMOUS_CRYPTO_APPROVED",
+                        "order_ticket": {"coin_pair": "BTC-USD", "intended_limit_price": 100.0, "position_size": 5.0},
+                    }
+                ],
+            }
+            with patch.object(service, "live_test_gate", return_value=fake_gate):
+                result = service.run_autonomous_cycle(symbols=["BTC-USD"], execution_mode="live_handoff")
+
+        self.assertEqual(result["final_decision"], "LIVE_EXECUTOR_HANDOFF_READY")
+        self.assertEqual(result["new_entry"]["status"], "LIVE_EXECUTOR_HANDOFF_READY")
+        self.assertFalse(result["can_place_order_from_this_mcp"])
 
 
 if __name__ == "__main__":
