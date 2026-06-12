@@ -6124,6 +6124,11 @@ def get_crypto_paper_rules() -> dict:
 
 
 @mcp.tool
+def get_robinhood_crypto_universe() -> dict:
+    return container.crypto_paper.universe()
+
+
+@mcp.tool
 def start_crypto_paper_session(starting_cash: float = 5.0, symbols: list[str] | None = None, duration_hours: int = 8, interval_minutes: int = 15) -> dict:
     return container.crypto_paper.start_session(starting_cash, symbols, duration_hours, interval_minutes)
 
@@ -6159,6 +6164,10 @@ def get_crypto_live_test_gate(
     max_fee_impact_pct: float = 0.0015,
     max_slippage_pct: float = 0.0015,
     min_24h_volume: float = 100_000_000.0,
+    target_profit_pct: float | None = None,
+    stop_loss_pct: float | None = None,
+    emergency_max_loss: float | None = None,
+    backtest_symbol_limit: int = 20,
     period: str = "1d",
     interval: str = "5m",
 ) -> dict:
@@ -6187,6 +6196,81 @@ def get_crypto_live_test_gate(
         max_fee_impact_pct=max_fee_impact_pct,
         max_slippage_pct=max_slippage_pct,
         min_24h_volume=min_24h_volume,
+        target_profit_pct=target_profit_pct,
+        stop_loss_pct=stop_loss_pct,
+        emergency_max_loss=emergency_max_loss,
+        backtest_symbol_limit=backtest_symbol_limit,
+        period=period,
+        interval=interval,
+    )
+
+
+@mcp.tool
+def run_autonomous_crypto_cycle(
+    symbols: list[str] | None = None,
+    starting_cash: float = 5.0,
+    intended_cash: float = 5.0,
+    account_balance: float | None = None,
+    buying_power: float | None = None,
+    exchange_connected: bool = False,
+    open_positions_checked: bool = False,
+    open_position_count: int | None = None,
+    open_orders_checked: bool = False,
+    open_order_count: int | None = None,
+    market_data_fresh: bool = False,
+    order_book_fresh: bool = False,
+    kill_switch_ready: bool = False,
+    emergency_shutdown_ready: bool = False,
+    daily_loss_lockout_clear: bool = False,
+    journaling_ready: bool = True,
+    fee_bps: float | None = None,
+    slippage_pct: float | None = None,
+    min_order_size: float | None = None,
+    candidate_snapshots: dict[str, dict[str, Any]] | None = None,
+    max_spread_pct: float = 0.0015,
+    max_fee_impact_pct: float = 0.0015,
+    max_slippage_pct: float = 0.0015,
+    min_24h_volume: float = 100_000_000.0,
+    target_profit_pct: float | None = None,
+    stop_loss_pct: float | None = None,
+    emergency_max_loss: float | None = None,
+    backtest_symbol_limit: int = 20,
+    execution_mode: str = "paper",
+    max_open_positions: int = 1,
+    period: str = "1d",
+    interval: str = "5m",
+) -> dict:
+    return container.crypto_paper.run_autonomous_cycle(
+        symbols=symbols,
+        starting_cash=starting_cash,
+        intended_cash=intended_cash,
+        account_balance=account_balance,
+        buying_power=buying_power,
+        exchange_connected=exchange_connected,
+        open_positions_checked=open_positions_checked,
+        open_position_count=open_position_count,
+        open_orders_checked=open_orders_checked,
+        open_order_count=open_order_count,
+        market_data_fresh=market_data_fresh,
+        order_book_fresh=order_book_fresh,
+        kill_switch_ready=kill_switch_ready,
+        emergency_shutdown_ready=emergency_shutdown_ready,
+        daily_loss_lockout_clear=daily_loss_lockout_clear,
+        journaling_ready=journaling_ready,
+        fee_bps=fee_bps,
+        slippage_pct=slippage_pct,
+        min_order_size=min_order_size,
+        candidate_snapshots=candidate_snapshots,
+        max_spread_pct=max_spread_pct,
+        max_fee_impact_pct=max_fee_impact_pct,
+        max_slippage_pct=max_slippage_pct,
+        min_24h_volume=min_24h_volume,
+        target_profit_pct=target_profit_pct,
+        stop_loss_pct=stop_loss_pct,
+        emergency_max_loss=emergency_max_loss,
+        backtest_symbol_limit=backtest_symbol_limit,
+        execution_mode=execution_mode,
+        max_open_positions=max_open_positions,
         period=period,
         interval=interval,
     )

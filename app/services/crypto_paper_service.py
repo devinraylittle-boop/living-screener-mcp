@@ -26,11 +26,48 @@ class CryptoPaperRules:
 
 
 class CryptoPaperService:
-    default_symbols = ("BTC-USD", "ETH-USD", "SOL-USD", "DOGE-USD")
-    liquid_live_symbols = ("BTC-USD", "ETH-USD", "SOL-USD")
+    robinhood_crypto_symbols = (
+        "BTC-USD", "ETH-USD", "DOGE-USD", "LTC-USD", "SHIB-USD", "ZRX-USD", "AAVE-USD", "AERO-USD",
+        "ALGO-USD", "ARB-USD", "ASTER-USD", "AVAX-USD", "AVNT-USD", "AXS-USD", "BAT-USD", "BIO-USD",
+        "BCH-USD", "BNB-USD", "BONK-USD", "CC-USD", "ADA-USD", "MEW-USD", "LINK-USD", "COMP-USD",
+        "ATOM-USD", "CRV-USD", "WIF-USD", "EIGEN-USD", "ENA-USD", "ETC-USD", "FLR-USD", "FLOKI-USD",
+        "USDG-USD", "HBAR-USD", "HYPE-USD", "IMX-USD", "JTO-USD", "ZRO-USD", "LDO-USD", "LIT-USD",
+        "MNT-USD", "SYRUP-USD", "MEGA-USD", "MOODENG-USD", "NEAR-USD", "TRUMP-USD", "ONDO-USD",
+        "XCN-USD", "OP-USD", "ORCA-USD", "PAXG-USD", "PNUT-USD", "PEPE-USD", "XPL-USD", "DOT-USD",
+        "POPCAT-USD", "PENGU-USD", "PYTH-USD", "QNT-USD", "RAY-USD", "RENDER-USD", "SKR-USD",
+        "SEI-USD", "SKY-USD", "SOL-USD", "STRK-USD", "SUI-USD", "XLM-USD", "SNX-USD", "XTZ-USD",
+        "GRT-USD", "TON-USD", "UNI-USD", "USDC-USD", "CHIP-USD", "VVV-USD", "VIRTUAL-USD",
+        "WLFI-USD", "W-USD", "XRP-USD", "ZEC-USD", "ZORA-USD",
+    )
+    default_symbols = robinhood_crypto_symbols
+    core_live_symbols = ("BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "DOGE-USD", "ADA-USD", "AVAX-USD", "LINK-USD", "LTC-USD", "BCH-USD")
+    liquid_live_symbols = robinhood_crypto_symbols
 
     def __init__(self, events: EventRepository):
         self.events = events
+
+    def universe(self) -> dict[str, Any]:
+        core = set(self.core_live_symbols)
+        symbols = list(self.robinhood_crypto_symbols)
+        return {
+            "status": "ROBINHOOD_CRYPTO_UNIVERSE_READY",
+            "schema_version": "robinhood_crypto_universe_v1",
+            "source": "Robinhood Crypto availability supported-crypto table",
+            "tradable_symbol_count": len(symbols),
+            "general_consideration_count": len(symbols),
+            "symbols": symbols,
+            "tiers": {
+                "core_liquid_first_pass": [symbol for symbol in symbols if symbol in core],
+                "full_universe_watch": [symbol for symbol in symbols if symbol not in core],
+            },
+            "policy": [
+                "Every Robinhood-supported tradable crypto is in general consideration.",
+                "General consideration is not approval; each asset must pass data, liquidity, spread, fee, slippage, setup, and account-size gates.",
+                "Assets without usable candle/quote/order-book data remain WATCH_ONLY until proof exists.",
+            ],
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+        }
 
     def start_session(self, starting_cash: float = 5.0, symbols: list[str] | None = None, duration_hours: int = 8, interval_minutes: int = 15) -> dict:
         payload = {
@@ -155,13 +192,24 @@ class CryptoPaperService:
         max_fee_impact_pct: float = 0.0015,
         max_slippage_pct: float = 0.0015,
         min_24h_volume: float = 100_000_000.0,
+        target_profit_pct: float | None = None,
+        stop_loss_pct: float | None = None,
+        emergency_max_loss: float | None = None,
+        backtest_symbol_limit: int = 20,
         period: str = "1d",
         interval: str = "5m",
     ) -> dict:
-        rules = self.rules(starting_cash, {"fee_bps": fee_bps or 0.0})
+        rule_overrides: dict[str, Any] = {"fee_bps": fee_bps or 0.0}
+        if target_profit_pct is not None:
+            rule_overrides["take_profit_pct"] = target_profit_pct
+        if stop_loss_pct is not None:
+            rule_overrides["stop_loss_pct"] = stop_loss_pct
+        rules = self.rules(starting_cash, rule_overrides)
         selected_symbols = [symbol for symbol in self._symbols(symbols) if symbol in self.liquid_live_symbols]
-        excluded_symbols = [symbol for symbol in self._symbols(symbols) if symbol not in self.liquid_live_symbols] if symbols else ["DOGE-USD"]
-        backtest = self.run_backtest(selected_symbols, period, interval, starting_cash, 20, {"fee_bps": fee_bps or 0.0})
+        excluded_symbols = [symbol for symbol in self._symbols(symbols) if symbol not in self.liquid_live_symbols]
+        snapshots = {str(key).upper(): value for key, value in (candidate_snapshots or {}).items() if isinstance(value, dict)}
+        prioritized_symbols = self._prioritize_symbols(selected_symbols, snapshots, max(1, int(backtest_symbol_limit)))
+        backtest = self.run_backtest(prioritized_symbols, period, interval, starting_cash, 20, rule_overrides)
         exchange_gates = self._exchange_gates(
             account_balance=account_balance,
             buying_power=buying_power,
@@ -180,9 +228,17 @@ class CryptoPaperService:
             min_order_size=min_order_size,
         )
         candidates = []
-        snapshots = {str(key).upper(): value for key, value in (candidate_snapshots or {}).items() if isinstance(value, dict)}
-        for result in backtest.get("results", []):
-            symbol = str(result.get("symbol") or "").upper()
+        results_by_symbol = {str(result.get("symbol") or "").upper(): result for result in backtest.get("results", [])}
+        for symbol in selected_symbols:
+            result = results_by_symbol.get(symbol) or {
+                "symbol": symbol,
+                "status": "UNSCANNED",
+                "symbol_recommendation": "WATCH_ONLY",
+                "trade_count": 0,
+                "win_rate": 0.0,
+                "return_pct": 0.0,
+                "reason": "Included in Robinhood full universe, but skipped by current backtest resource limit or unavailable market-data adapter.",
+            }
             snapshot = snapshots.get(symbol) or {}
             if fee_bps is not None and "fee_bps" not in snapshot:
                 snapshot["fee_bps"] = fee_bps
@@ -214,8 +270,21 @@ class CryptoPaperService:
             "intended_cash": round(float(intended_cash), 2),
             "allowed_symbols": list(self.liquid_live_symbols),
             "selected_symbols": selected_symbols,
+            "universe": {
+                "general_consideration_count": len(self.robinhood_crypto_symbols),
+                "selected_symbol_count": len(selected_symbols),
+                "backtested_symbol_count": len(prioritized_symbols),
+                "backtested_symbols": prioritized_symbols,
+            },
             "excluded_symbols": excluded_symbols,
             "exchange_gates": exchange_gates,
+            "risk_controls": {
+                "planned_target_pct": rules.take_profit_pct,
+                "planned_stop_loss_pct": rules.stop_loss_pct,
+                "planned_trade_max_loss": round(float(intended_cash) * rules.stop_loss_pct, 4),
+                "emergency_account_max_loss": None if emergency_max_loss is None else round(float(emergency_max_loss), 4),
+                "emergency_shutdown_note": "Emergency max loss is an account shutdown, not permission to risk that much on one scalp.",
+            },
             "candidate_classifications": candidates,
             "approved_candidate_count": len(approved),
             "best_candidate": approved[0] if approved else (candidates[0] if candidates else None),
@@ -236,6 +305,129 @@ class CryptoPaperService:
             "can_cancel_order_from_this_mcp": False,
         }
         return self.events.log("crypto_live_test_gate", payload)
+
+    def run_autonomous_cycle(
+        self,
+        symbols: list[str] | None = None,
+        starting_cash: float = 5.0,
+        intended_cash: float = 5.0,
+        account_balance: float | None = None,
+        buying_power: float | None = None,
+        exchange_connected: bool = False,
+        open_positions_checked: bool = False,
+        open_position_count: int | None = None,
+        open_orders_checked: bool = False,
+        open_order_count: int | None = None,
+        market_data_fresh: bool = False,
+        order_book_fresh: bool = False,
+        kill_switch_ready: bool = False,
+        emergency_shutdown_ready: bool = False,
+        daily_loss_lockout_clear: bool = False,
+        journaling_ready: bool = True,
+        fee_bps: float | None = None,
+        slippage_pct: float | None = None,
+        min_order_size: float | None = None,
+        candidate_snapshots: dict[str, dict[str, Any]] | None = None,
+        max_spread_pct: float = 0.0015,
+        max_fee_impact_pct: float = 0.0015,
+        max_slippage_pct: float = 0.0015,
+        min_24h_volume: float = 100_000_000.0,
+        target_profit_pct: float | None = None,
+        stop_loss_pct: float | None = None,
+        emergency_max_loss: float | None = None,
+        backtest_symbol_limit: int = 20,
+        execution_mode: str = "paper",
+        max_open_positions: int = 1,
+        period: str = "1d",
+        interval: str = "5m",
+    ) -> dict:
+        normalized_snapshots = {str(key).upper(): value for key, value in (candidate_snapshots or {}).items() if isinstance(value, dict)}
+        open_positions = self._open_autonomous_positions()
+        management_actions = [self._manage_autonomous_position(position, normalized_snapshots) for position in open_positions]
+        still_open = [position for position, action in zip(open_positions, management_actions) if action.get("action") != "PAPER_CLOSE"]
+        if len(still_open) >= max(1, int(max_open_positions)):
+            payload = {
+                "status": "CRYPTO_AUTONOMOUS_POSITION_MANAGEMENT_ONLY",
+                "schema_version": "crypto_autonomous_cycle_v1",
+                "execution_mode": execution_mode,
+                "open_positions": still_open,
+                "management_actions": management_actions,
+                "new_entry": None,
+                "final_decision": "POSITION_LIMIT_REACHED",
+                "review_only": True,
+                "can_place_order_from_this_mcp": False,
+                "can_cancel_order_from_this_mcp": False,
+            }
+            return self.events.log("crypto_autonomous_cycle", payload)
+
+        gate = self.live_test_gate(
+            symbols=symbols,
+            starting_cash=starting_cash,
+            intended_cash=intended_cash,
+            account_balance=account_balance,
+            buying_power=buying_power,
+            exchange_connected=exchange_connected,
+            open_positions_checked=open_positions_checked,
+            open_position_count=open_position_count,
+            open_orders_checked=open_orders_checked,
+            open_order_count=open_order_count,
+            market_data_fresh=market_data_fresh,
+            order_book_fresh=order_book_fresh,
+            kill_switch_ready=kill_switch_ready,
+            emergency_shutdown_ready=emergency_shutdown_ready,
+            daily_loss_lockout_clear=daily_loss_lockout_clear,
+            journaling_ready=journaling_ready,
+            fee_bps=fee_bps,
+            slippage_pct=slippage_pct,
+            min_order_size=min_order_size,
+            candidate_snapshots=normalized_snapshots,
+            max_spread_pct=max_spread_pct,
+            max_fee_impact_pct=max_fee_impact_pct,
+            max_slippage_pct=max_slippage_pct,
+            min_24h_volume=min_24h_volume,
+            target_profit_pct=target_profit_pct,
+            stop_loss_pct=stop_loss_pct,
+            emergency_max_loss=emergency_max_loss,
+            backtest_symbol_limit=backtest_symbol_limit,
+            period=period,
+            interval=interval,
+        )
+        approved = [item for item in gate.get("candidate_classifications", []) if item.get("classification") == "AUTONOMOUS_CRYPTO_APPROVED"]
+        mode = str(execution_mode or "paper").lower().strip()
+        new_entry = None
+        final_decision = gate.get("final_decision")
+        if approved and gate.get("final_decision") == "LIMITED_AUTONOMOUS_CRYPTO_ENABLED":
+            ticket = approved[0]["order_ticket"]
+            if mode == "paper":
+                new_entry = self._open_autonomous_paper_position(ticket, gate.get("risk_controls") or {}, gate.get("id"))
+                final_decision = "PAPER_POSITION_OPENED"
+            else:
+                new_entry = {
+                    "status": "LIVE_EXECUTOR_HANDOFF_READY",
+                    "ticket": ticket,
+                    "notes": [
+                        "Separate exchange executor required.",
+                        "This MCP cannot place, submit, modify, simulate, or cancel orders.",
+                        "Use limit-only execution and cancel if the ticket no longer matches the live screen.",
+                    ],
+                }
+                final_decision = "LIVE_EXECUTOR_HANDOFF_READY"
+
+        payload = {
+            "status": "CRYPTO_AUTONOMOUS_CYCLE_COMPLETE",
+            "schema_version": "crypto_autonomous_cycle_v1",
+            "execution_mode": mode,
+            "gate_decision": gate.get("final_decision"),
+            "final_decision": final_decision,
+            "open_positions_before": open_positions,
+            "management_actions": management_actions,
+            "new_entry": new_entry,
+            "gate": gate,
+            "review_only": True,
+            "can_place_order_from_this_mcp": False,
+            "can_cancel_order_from_this_mcp": False,
+        }
+        return self.events.log("crypto_autonomous_cycle", payload)
 
     def summarize_live_test_report(
         self,
@@ -300,6 +492,94 @@ class CryptoPaperService:
         }
         return self.events.log("crypto_live_test_report", payload)
 
+    def _open_autonomous_positions(self, limit_events: int = 200) -> list[dict[str, Any]]:
+        closed = {
+            str(event["payload"].get("trade_id"))
+            for event in self.events.recent("crypto_autonomous_paper_close", limit_events)
+            if event.get("payload", {}).get("trade_id")
+        }
+        positions = []
+        for event in self.events.recent("crypto_autonomous_paper_open", limit_events):
+            payload = dict(event.get("payload") or {})
+            trade_id = str(payload.get("trade_id") or "")
+            if trade_id and trade_id not in closed:
+                positions.append(payload)
+        return positions
+
+    def _manage_autonomous_position(self, position: dict[str, Any], snapshots: dict[str, dict[str, Any]]) -> dict[str, Any]:
+        symbol = str(position.get("symbol") or "").upper()
+        snapshot = snapshots.get(symbol) or {}
+        price = self._snapshot_exit_price(snapshot)
+        if price is None:
+            return {"action": "HOLD", "trade_id": position.get("trade_id"), "symbol": symbol, "reason": "No fresh exit price supplied."}
+        target = self._float(position.get("target_price"))
+        stop = self._float(position.get("stop_price"))
+        entry = self._float(position.get("entry_price")) or price
+        exit_reason = None
+        if target is not None and price >= target:
+            exit_reason = "target_hit"
+        elif stop is not None and price <= stop:
+            exit_reason = "stop_hit"
+        elif str(snapshot.get("setup_failed") or "").lower() in {"1", "true", "yes"}:
+            exit_reason = "setup_failed"
+        elif str(snapshot.get("spread_unsafe") or "").lower() in {"1", "true", "yes"}:
+            exit_reason = "spread_unsafe"
+        if not exit_reason:
+            return {
+                "action": "HOLD",
+                "trade_id": position.get("trade_id"),
+                "symbol": symbol,
+                "current_price": round(price, 8),
+                "unrealized_return_pct": round((price - entry) / entry, 6) if entry else 0.0,
+            }
+        close_payload = {
+            "status": "PAPER_POSITION_CLOSED",
+            "trade_id": position.get("trade_id"),
+            "symbol": symbol,
+            "entry_price": entry,
+            "exit_price": round(price, 8),
+            "exit_reason": exit_reason,
+            "size_units": position.get("size_units"),
+            "entry_cash": position.get("entry_cash"),
+            "return_pct": round((price - entry) / entry, 6) if entry else 0.0,
+            "pnl_dollars": round(float(position.get("entry_cash") or 0.0) * ((price - entry) / entry), 4) if entry else 0.0,
+            "timestamp": datetime.now(UTC).isoformat(),
+            "paper_only": True,
+            "can_place_order_from_this_mcp": False,
+        }
+        logged = self.events.log("crypto_autonomous_paper_close", close_payload)
+        return {"action": "PAPER_CLOSE", "logged_event_id": logged["id"], **close_payload}
+
+    def _open_autonomous_paper_position(self, ticket: dict[str, Any], risk_controls: dict[str, Any], gate_event_id: int | None) -> dict[str, Any]:
+        symbol = str(ticket.get("coin_pair") or "").upper()
+        entry = self._float(ticket.get("intended_limit_price") or ticket.get("mid") or ticket.get("ask"))
+        entry_cash = self._float(ticket.get("position_size")) or 0.0
+        target_pct = self._float(risk_controls.get("planned_target_pct")) or self.rules().take_profit_pct
+        stop_pct = self._float(risk_controls.get("planned_stop_loss_pct")) or self.rules().stop_loss_pct
+        timestamp = datetime.now(UTC).isoformat()
+        trade_id = f"{symbol}-{timestamp}"
+        payload = {
+            "status": "PAPER_POSITION_OPEN",
+            "trade_id": trade_id,
+            "symbol": symbol,
+            "entry_price": entry,
+            "entry_cash": round(entry_cash, 4),
+            "size_units": round(entry_cash / entry, 10) if entry and entry > 0 else 0.0,
+            "target_price": round(entry * (1 + target_pct), 8) if entry else None,
+            "stop_price": round(entry * (1 - stop_pct), 8) if entry else None,
+            "target_pct": target_pct,
+            "stop_loss_pct": stop_pct,
+            "gate_event_id": gate_event_id,
+            "ticket": ticket,
+            "timestamp": timestamp,
+            "paper_only": True,
+            "can_place_order_from_this_mcp": False,
+        }
+        return self.events.log("crypto_autonomous_paper_open", payload)
+
+    def _snapshot_exit_price(self, snapshot: dict[str, Any]) -> float | None:
+        return self._float(snapshot.get("bid") or snapshot.get("last") or snapshot.get("mid") or snapshot.get("ask"))
+
     def _exchange_gates(
         self,
         account_balance: float | None,
@@ -360,7 +640,7 @@ class CryptoPaperService:
         reasons: list[str] = []
         recommendation = result.get("symbol_recommendation")
         if recommendation != "PAPER_ELIGIBLE":
-            classification = "LIQUID_BUT_NO_EDGE" if result.get("status") == "BACKTEST_COMPLETE" else "PASS"
+            classification = "WATCH_ONLY" if recommendation == "WATCH_ONLY" or result.get("status") == "UNSCANNED" else ("LIQUID_BUT_NO_EDGE" if result.get("status") == "BACKTEST_COMPLETE" else "PASS")
             reasons.append(f"Backtest recommendation is {recommendation or result.get('status')}.")
         elif not snapshot:
             classification = "WATCH_ONLY"
@@ -539,6 +819,19 @@ class CryptoPaperService:
         if last_gate.get("final_decision") in {"PASS", "NO_TRADE_PLAN", "REVIEW_ONLY"}:
             return "DISCIPLINED_ABSTENTION"
         return "UNPROVEN"
+
+    def _prioritize_symbols(self, selected_symbols: list[str], snapshots: dict[str, dict[str, Any]], limit: int) -> list[str]:
+        priority = []
+        for symbol in snapshots:
+            if symbol in selected_symbols and symbol not in priority:
+                priority.append(symbol)
+        for symbol in self.core_live_symbols:
+            if symbol in selected_symbols and symbol not in priority:
+                priority.append(symbol)
+        for symbol in selected_symbols:
+            if symbol not in priority:
+                priority.append(symbol)
+        return priority[: max(1, int(limit))]
 
     def _simulate_symbol(self, symbol: str, candles: list[dict[str, Any]], rules: CryptoPaperRules, max_trades: int) -> dict:
         cash = rules.starting_cash
@@ -762,7 +1055,7 @@ class CryptoPaperService:
             normalized = symbol.upper().strip()
             if normalized and normalized not in output:
                 output.append(normalized)
-        return output[:12]
+        return output
 
     def _float(self, value: Any) -> float | None:
         try:

@@ -64,8 +64,10 @@ class DebugValidationService:
                 "autonomous_launch_decision": "autonomous_launch_decision_v1",
                 "real_cash_proof_gate": "real_cash_proof_gate_v1",
                 "broker_proof_bridge": "broker_proof_bridge_v1",
+                "robinhood_crypto_universe": "robinhood_crypto_universe_v1",
                 "crypto_live_test_gate": "crypto_live_test_gate_v1",
                 "crypto_live_test_report": "crypto_live_test_report_v1",
+                "crypto_autonomous_cycle": "crypto_autonomous_cycle_v1",
             },
             "debug_routes": [
                 "/health/full",
@@ -106,6 +108,8 @@ class DebugValidationService:
                 "/research/catalyst-context",
                 "/risk/session",
                 "/risk/failure-mode-audit",
+                "/crypto/universe",
+                "/crypto/autonomous-cycle",
                 "/crypto/live-test",
                 "/crypto/test-report",
             ],
@@ -160,6 +164,8 @@ class DebugValidationService:
                 "catalyst_context_route": True,
                 "session_risk_guard_route": True,
                 "failure_mode_audit_route": True,
+                "crypto_universe_route": True,
+                "crypto_autonomous_cycle_route": True,
                 "crypto_live_test_gate_route": True,
                 "crypto_live_test_report_route": True,
             },
@@ -1151,7 +1157,9 @@ class DebugValidationService:
             "summarize_evidence_packets",
             "build_setup_fingerprint",
             "compare_setup_memory",
+            "get_robinhood_crypto_universe",
             "get_crypto_live_test_gate",
+            "run_autonomous_crypto_cycle",
             "summarize_crypto_live_test_report",
         ]
         available = set(tools)

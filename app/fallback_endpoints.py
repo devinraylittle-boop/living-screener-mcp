@@ -677,6 +677,35 @@ def _crypto_test_report_html(payload: dict[str, Any]) -> HTMLResponse:
     return _html_page("Crypto Test Report", body, payload)
 
 
+def _crypto_autonomous_cycle_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    gate = result.get("gate") or {}
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Autonomous Crypto Cycle</h1>
+    <p>One scan/manage paper cycle. Live execution remains a separate disabled handoff.</p>
+  </div>
+  <div><span class="badge warn">{escape(str(result.get('final_decision') or 'PASS'))}</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Execution Mode", result.get("execution_mode")),
+    ("Gate Decision", result.get("gate_decision")),
+    ("Open Before", len(result.get("open_positions_before") or [])),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Management</h2>
+{_list(result.get("management_actions") or [])}
+<h2>New Entry</h2>
+<pre>{escape(json.dumps(result.get("new_entry"), indent=2, sort_keys=True, default=str))}</pre>
+<h2>Gate</h2>
+<p>{escape(str(gate.get("final_decision") or "PASS"))}</p>
+"""
+    return _html_page("Autonomous Crypto Cycle", body, payload)
+
+
 def _review_harvest_html(payload: dict[str, Any]) -> HTMLResponse:
     result = payload.get("result") or {}
     rows = []
@@ -4241,6 +4270,32 @@ async def fallback_crypto_rules(request: Request) -> JSONResponse:
     )
 
 
+async def fallback_crypto_universe(request: Request) -> JSONResponse | HTMLResponse:
+    result = container.crypto_paper.universe()
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        body = f"""
+<div class="topbar">
+  <div>
+    <h1>Robinhood Crypto Universe</h1>
+    <p>Full tradable crypto universe in general consideration.</p>
+  </div>
+  <div><span class="badge ok">{escape(str(result.get('general_consideration_count')))} assets</span></div>
+</div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Status", result.get("status")),
+    ("Tradable Count", result.get("tradable_symbol_count")),
+    ("General Consideration", result.get("general_consideration_count")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Symbols</h2>
+{_list(result.get("symbols") or [])}
+"""
+        return _html_page("Robinhood Crypto Universe", body, payload)
+    return JSONResponse(payload)
+
+
 async def fallback_crypto_backtest(request: Request) -> JSONResponse | HTMLResponse:
     params = request.query_params
     overrides: dict[str, Any] = {}
@@ -4312,6 +4367,10 @@ async def fallback_crypto_live_test_gate(request: Request) -> JSONResponse | HTM
         max_fee_impact_pct=_float_or_none(params.get("max_fee_impact_pct")) or 0.0015,
         max_slippage_pct=_float_or_none(params.get("max_slippage_pct")) or 0.0015,
         min_24h_volume=_float_or_none(params.get("min_24h_volume")) or 100_000_000.0,
+        target_profit_pct=_float_or_none(params.get("target_profit_pct")),
+        stop_loss_pct=_float_or_none(params.get("stop_loss_pct")),
+        emergency_max_loss=_float_or_none(params.get("emergency_max_loss")),
+        backtest_symbol_limit=_int_or_default(params.get("backtest_symbol_limit"), 20),
         period=params.get("period") or "1d",
         interval=params.get("interval") or "5m",
     )
@@ -4333,6 +4392,71 @@ async def fallback_crypto_test_report(request: Request) -> JSONResponse | HTMLRe
     payload = _review_only_envelope({"result": result})
     if _wants_html(request):
         return _crypto_test_report_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_crypto_autonomous_cycle(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    symbol = (params.get("snapshot_symbol") or "").upper().strip()
+    snapshots: dict[str, dict[str, Any]] = {}
+    if symbol:
+        snapshots[symbol] = {
+            "bid": _float_or_none(params.get("bid")),
+            "ask": _float_or_none(params.get("ask")),
+            "mid": _float_or_none(params.get("mid")),
+            "last": _float_or_none(params.get("last")),
+            "volume_24h": _float_or_none(params.get("volume_24h")),
+            "fee_bps": _float_or_none(params.get("fee_bps")),
+            "slippage_pct": _float_or_none(params.get("slippage_pct")),
+            "min_order_size": _float_or_none(params.get("min_order_size")),
+            "setup_failed": params.get("setup_failed"),
+            "spread_unsafe": params.get("spread_unsafe"),
+        }
+    raw_snapshots = params.get("candidate_snapshots")
+    if raw_snapshots:
+        try:
+            parsed = json.loads(raw_snapshots)
+            if isinstance(parsed, dict):
+                snapshots.update({str(key).upper(): value for key, value in parsed.items() if isinstance(value, dict)})
+        except json.JSONDecodeError:
+            pass
+    result = container.crypto_paper.run_autonomous_cycle(
+        symbols=_tickers(params.get("symbols")),
+        starting_cash=_float_or_none(params.get("starting_cash")) or 5.0,
+        intended_cash=_float_or_none(params.get("intended_cash")) or 5.0,
+        account_balance=_float_or_none(params.get("account_balance")),
+        buying_power=_float_or_none(params.get("buying_power")),
+        exchange_connected=_truthy(params.get("exchange_connected")),
+        open_positions_checked=_truthy(params.get("open_positions_checked")),
+        open_position_count=_int_or_default(params.get("open_position_count"), -1) if params.get("open_position_count") is not None else None,
+        open_orders_checked=_truthy(params.get("open_orders_checked")),
+        open_order_count=_int_or_default(params.get("open_order_count"), -1) if params.get("open_order_count") is not None else None,
+        market_data_fresh=_truthy(params.get("market_data_fresh")),
+        order_book_fresh=_truthy(params.get("order_book_fresh")),
+        kill_switch_ready=_truthy(params.get("kill_switch_ready")),
+        emergency_shutdown_ready=_truthy(params.get("emergency_shutdown_ready")),
+        daily_loss_lockout_clear=_truthy(params.get("daily_loss_lockout_clear")),
+        journaling_ready=not (params.get("journaling_ready") is not None and not _truthy(params.get("journaling_ready"))),
+        fee_bps=_float_or_none(params.get("fee_bps")),
+        slippage_pct=_float_or_none(params.get("slippage_pct")),
+        min_order_size=_float_or_none(params.get("min_order_size")),
+        candidate_snapshots=snapshots or None,
+        max_spread_pct=_float_or_none(params.get("max_spread_pct")) or 0.0015,
+        max_fee_impact_pct=_float_or_none(params.get("max_fee_impact_pct")) or 0.0015,
+        max_slippage_pct=_float_or_none(params.get("max_slippage_pct")) or 0.0015,
+        min_24h_volume=_float_or_none(params.get("min_24h_volume")) or 100_000_000.0,
+        target_profit_pct=_float_or_none(params.get("target_profit_pct")),
+        stop_loss_pct=_float_or_none(params.get("stop_loss_pct")),
+        emergency_max_loss=_float_or_none(params.get("emergency_max_loss")),
+        backtest_symbol_limit=_int_or_default(params.get("backtest_symbol_limit"), 20),
+        execution_mode=params.get("execution_mode") or "paper",
+        max_open_positions=_int_or_default(params.get("max_open_positions"), 1),
+        period=params.get("period") or "1d",
+        interval=params.get("interval") or "5m",
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _crypto_autonomous_cycle_html(payload)
     return JSONResponse(payload)
 
 
