@@ -3,7 +3,7 @@
 Target build:
 
 ```text
-2026.06.12-full-crypto-universe
+2026.06.10-manual-snapshot-form
 ```
 
 Upload the contents of the clean release folder or zip. Do not upload the parent folder itself.
@@ -84,15 +84,15 @@ From the package folder, run:
 .\tools\watch_deploy.ps1
 ```
 
-It waits for the deployed build to become `2026.06.12-full-crypto-universe`, then runs live validation.
+It waits for the deployed build to become `2026.06.10-manual-snapshot-form`, then runs live validation.
 
 Minimum live checks:
 
 ```text
-/version -> build_version 2026.06.12-full-crypto-universe
-/tools -> tool_count 98
-/release-manifest -> target_build_version 2026.06.12-full-crypto-universe
-/health/full?expected_build_version=2026.06.12-full-crypto-universe -> status OK
+/version -> build_version 2026.06.10-manual-snapshot-form
+/tools -> tool_count 74
+/release-manifest -> target_build_version 2026.06.10-manual-snapshot-form
+/health/full?expected_build_version=2026.06.10-manual-snapshot-form -> status OK
 / -> Tomorrow Operator Brief
 /ops/go-live-rehearsal?account_value=50&format=html -> Go-Live Rehearsal
 /trade/manual-form?format=html -> Manual Snapshot Form
