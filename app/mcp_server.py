@@ -3140,6 +3140,28 @@ def _get_trading_monster_dashboard(service_container, account_value: float, buyi
     visibility = _get_full_market_visibility_map(service_container)
     loss = _get_loss_review_reassessment(service_container, active_daily_loss, 0.0, 0.0)
     recent_crypto = service_container.events.recent("crypto_autonomous_cycle", 5)
+    stock_route_enabled = bool(controls.get("autonomous_enabled") and controls.get("stocks_enabled"))
+    option_route_enabled = bool(controls.get("autonomous_enabled") and controls.get("options_enabled"))
+    execution_status = {
+        "scanner_mcp_direct_order_placement": False,
+        "scanner_mcp_direct_order_label": "NO: Living Screener scans, scores, gates, tickets, and journals; it does not store broker credentials or submit orders directly.",
+        "stock_broker_route_enabled": stock_route_enabled,
+        "stock_broker_route_label": (
+            "YES, GATED: eligible stock tickets can route through the Robinhood Trading MCP after broker/account/risk/liquidity/slippage/catalyst gates pass."
+            if stock_route_enabled
+            else "DISABLED: stock lane is not armed."
+        ),
+        "options_broker_route_enabled": False,
+        "options_broker_route_label": (
+            "BLOCKED: waiting for Robinhood options chain/quote/review/place/cancel tools in this Codex session."
+            if option_route_enabled
+            else "DISABLED: options lane is intentionally off until options execution tools appear."
+        ),
+        "crypto_broker_route_enabled": False,
+        "crypto_broker_route_label": "DISABLED: crypto lane is off for current capital allocation.",
+        "market_orders_blocked": True,
+        "exact_ticket_and_broker_review_required": True,
+    }
     payload = {
         "status": "TRADING_MONSTER_DASHBOARD_READY",
         "schema_version": "trading_monster_dashboard_v1",
@@ -3152,6 +3174,7 @@ def _get_trading_monster_dashboard(service_container, account_value: float, buyi
             "enable_crypto_paper": f"/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=false&options_enabled=false&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss={active_daily_loss_param}&format=html",
             "disable_all": "/ops/autonomy-control?autonomous_enabled=false&stocks_enabled=false&options_enabled=false&crypto_enabled=false&paper_trading_enabled=false&live_handoff_enabled=false&format=html",
         },
+        "execution_status": execution_status,
         "capital_plan": capital,
         "visibility_map": visibility,
         "loss_reassessment": loss,

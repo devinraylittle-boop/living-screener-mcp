@@ -723,6 +723,7 @@ def _monster_dashboard_html(payload: dict[str, Any]) -> HTMLResponse:
     controls = result.get("controls") or {}
     capital = result.get("capital_plan") or {}
     visibility = result.get("visibility_map") or {}
+    execution = result.get("execution_status") or {}
     one_click = result.get("one_click_controls") or {}
     body = f"""
 <div class="topbar">
@@ -745,7 +746,17 @@ def _monster_dashboard_html(payload: dict[str, Any]) -> HTMLResponse:
     ("Options", controls.get("options_enabled")),
     ("Crypto", controls.get("crypto_enabled")),
     ("Max Daily Loss", controls.get("max_daily_loss")),
-    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+    ("Scanner Direct Orders", execution.get("scanner_mcp_direct_order_placement", payload.get("can_place_order_from_this_mcp"))),
+    ("Stock Broker Route", execution.get("stock_broker_route_label")),
+    ("Options Broker Route", execution.get("options_broker_route_label")),
+])}
+<h2>Execution Status</h2>
+{_field_grid([
+    ("Living Screener Direct Submit", execution.get("scanner_mcp_direct_order_label")),
+    ("Stock Route Enabled", execution.get("stock_broker_route_enabled")),
+    ("Options Route Enabled", execution.get("options_broker_route_enabled")),
+    ("Market Orders Blocked", execution.get("market_orders_blocked")),
+    ("Exact Ticket Required", execution.get("exact_ticket_and_broker_review_required")),
 ])}
 <h2>Capital</h2>
 {_field_grid(list((capital.get("lane_budgets") or {}).items()))}
