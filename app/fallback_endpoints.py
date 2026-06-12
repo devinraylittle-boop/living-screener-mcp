@@ -34,6 +34,7 @@ from app.mcp_server import (
     _get_loss_review_reassessment,
     _get_broker_executor_bridge,
     _get_broker_execution_router,
+    _create_stock_execution_intent,
     _get_tomorrow_operator_brief,
     _get_trading_day_launch_checklist,
     _get_trading_monster_dashboard,
@@ -4086,6 +4087,26 @@ async def fallback_broker_execution_router(request: Request) -> JSONResponse:
         params.get("dollar_amount") or "",
         params.get("limit_price") or "",
         params.get("time_in_force") or "gfd",
+        max_daily_loss if max_daily_loss is not None else 20.0,
+    )
+    return JSONResponse(_review_only_envelope({"result": result}))
+
+
+async def fallback_stock_execution_intent(request: Request) -> JSONResponse:
+    params = request.query_params
+    max_daily_loss = _float_or_none(params.get("max_daily_loss"))
+    result = _create_stock_execution_intent(
+        container,
+        params.get("account_number") or "",
+        params.get("symbol") or "",
+        params.get("side") or "",
+        params.get("order_type") or params.get("type") or "limit",
+        params.get("quantity") or "",
+        params.get("dollar_amount") or "",
+        params.get("limit_price") or "",
+        params.get("time_in_force") or "gfd",
+        params.get("market_hours") or "regular_hours",
+        _float_or_none(params.get("account_value")) or 100.0,
         max_daily_loss if max_daily_loss is not None else 20.0,
     )
     return JSONResponse(_review_only_envelope({"result": result}))

@@ -353,6 +353,36 @@ def get_broker_execution_router(
 
 
 @mcp.tool
+def create_stock_execution_intent(
+    account_number: str,
+    symbol: str,
+    side: str,
+    order_type: str = "limit",
+    quantity: str = "",
+    dollar_amount: str = "",
+    limit_price: str = "",
+    time_in_force: str = "gfd",
+    market_hours: str = "regular_hours",
+    account_value: float = 100.0,
+    max_daily_loss: float = 20.0,
+) -> dict:
+    return _create_stock_execution_intent(
+        container,
+        account_number,
+        symbol,
+        side,
+        order_type,
+        quantity,
+        dollar_amount,
+        limit_price,
+        time_in_force,
+        market_hours,
+        account_value,
+        max_daily_loss,
+    )
+
+
+@mcp.tool
 def market_readiness_check(tickers: list[str] | None = None, max_candidates: int = 25) -> dict:
     return _market_readiness_check(container, tickers, max_candidates)
 
@@ -2402,6 +2432,131 @@ def _get_broker_execution_router(
         "can_cancel_order_from_this_mcp": False,
     }
     return service_container.events.log("broker_execution_router", payload)
+
+
+def _create_stock_execution_intent(
+    service_container,
+    account_number: str,
+    symbol: str,
+    side: str,
+    order_type: str,
+    quantity: str,
+    dollar_amount: str,
+    limit_price: str,
+    time_in_force: str,
+    market_hours: str,
+    account_value: float,
+    max_daily_loss: float,
+) -> dict:
+    account = str(account_number or "").strip()
+    ticker = str(symbol or "").strip().upper()
+    side_norm = str(side or "").strip().lower()
+    type_norm = str(order_type or "limit").strip().lower()
+    qty = str(quantity or "").strip()
+    notional = str(dollar_amount or "").strip()
+    limit = str(limit_price or "").strip()
+    tif = str(time_in_force or "gfd").strip().lower()
+    hours = str(market_hours or "regular_hours").strip().lower()
+    router = _get_broker_execution_router(
+        service_container,
+        "equity",
+        account,
+        ticker,
+        side_norm,
+        type_norm,
+        qty,
+        notional,
+        limit,
+        tif,
+        max_daily_loss,
+    )
+    proposed_risk = 0.0
+    if notional:
+        proposed_risk = _float_or_zero(notional)
+    elif qty and limit:
+        proposed_risk = round(_float_or_zero(qty) * _float_or_zero(limit), 2)
+    session_risk = _get_session_risk_guard(service_container, account_value, proposed_risk if proposed_risk > 0 else None, 5, max_daily_loss)
+    blocking_reasons: list[str] = []
+    warnings: list[str] = []
+    if router.get("status") != "ROBINHOOD_EQUITY_MCP_ROUTE_READY":
+        blocking_reasons.extend(router.get("blockers") or ["Broker execution router is not ready for this equity ticket."])
+    if session_risk.get("status") == "SESSION_RISK_BLOCKED":
+        blocking_reasons.extend(session_risk.get("blocking_reasons") or ["Session risk blocks new equity exposure."])
+    if type_norm == "market":
+        warnings.append("Market orders are allowed by the broker tool but discouraged here; prefer a limit or marketable limit.")
+    if not account:
+        blocking_reasons.append("Missing Robinhood agentic account number.")
+    if side_norm not in {"buy", "sell"}:
+        blocking_reasons.append("Side must be buy or sell.")
+    if type_norm not in {"market", "limit", "stop_market", "stop_limit"}:
+        blocking_reasons.append("Order type must be market, limit, stop_market, or stop_limit.")
+    if type_norm in {"limit", "stop_limit"} and not limit:
+        blocking_reasons.append("Limit price is required for limit or stop_limit orders.")
+    if bool(qty) == bool(notional):
+        blocking_reasons.append("Provide exactly one of quantity or dollar_amount.")
+
+    ticket = {
+        "account_number": account,
+        "symbol": ticker,
+        "side": side_norm,
+        "type": type_norm,
+        "quantity": qty,
+        "dollar_amount": notional,
+        "limit_price": limit,
+        "time_in_force": tif,
+        "market_hours": hours,
+        "asset_class": "equity",
+    }
+    canonical = json.dumps(ticket, sort_keys=True, separators=(",", ":"))
+    intent_hash = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    status = "STOCK_EXECUTION_INTENT_READY" if not blocking_reasons else "STOCK_EXECUTION_INTENT_BLOCKED"
+    payload = {
+        "status": status,
+        "schema_version": "stock_execution_intent_v1",
+        "generated_at": utc_now(),
+        "intent_hash": intent_hash,
+        "ticket": ticket,
+        "canonical_ticket_json": canonical,
+        "router_status": router.get("status"),
+        "session_risk_status": session_risk.get("status"),
+        "estimated_max_risk_dollars": round(proposed_risk, 2),
+        "blocking_reasons": blocking_reasons,
+        "warnings": warnings,
+        "host_execution_plan": [
+            "Call Robinhood Trading MCP get_equity_tradability with account_number and symbol.",
+            "Call Robinhood Trading MCP review_equity_order with this exact ticket.",
+            "Compare review response against this intent_hash/canonical ticket.",
+            "If review and policy pass, call Robinhood Trading MCP place_equity_order with a fresh UUID ref_id.",
+            "Log the broker review/place/fill/cancel/rejection back to Living Screener with intent_hash.",
+        ],
+        "robinhood_review_equity_order_args": {
+            key: value
+            for key, value in {
+                "account_number": account,
+                "symbol": ticker,
+                "side": side_norm,
+                "type": type_norm,
+                "quantity": qty or None,
+                "dollar_amount": notional or None,
+                "limit_price": limit or None,
+                "time_in_force": tif,
+                "market_hours": hours,
+            }.items()
+            if value is not None
+        },
+        "execution_policy": {
+            "daily_loss_new_entry_lockout": round(abs(float(max_daily_loss)), 2),
+            "resume_new_entries_when_threshold_cleared": True,
+            "risk_reducing_position_management_allowed_after_lockout": True,
+            "exact_ticket_hash_required": True,
+            "idempotency_ref_id_required_for_place": True,
+            "log_every_review_and_broker_result": True,
+        },
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+    return service_container.events.log("stock_execution_intent", payload)
 
 
 def _get_event_volatility_war_room(service_container, event_name: str, account_value: float, max_daily_loss: float) -> dict:
