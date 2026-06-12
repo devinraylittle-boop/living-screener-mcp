@@ -2,7 +2,7 @@
     "service":  "Living Screener MCP",
     "release_folder":  "living-screener-mcp-full-crypto-universe-20260612-000000",
     "target_build_version":  "2026.06.12-full-crypto-universe",
-    "expected_live_tool_count":  100,
+    "expected_live_tool_count":  102,
     "safety_invariants":  {
                               "review_only":  true,
                               "place_orders":  false,
@@ -66,6 +66,8 @@
                                       "/ops/broker-execution-router?asset_class=equity\u0026account_number=628006199\u0026symbol=SPY\u0026side=buy\u0026order_type=limit\u0026quantity=1\u0026limit_price=1\u0026max_daily_loss=20",
                                       "/ops/broker-execution-router?asset_class=options\u0026account_number=628006199\u0026symbol=SPY\u0026side=buy\u0026max_daily_loss=20",
                                       "/trade/stock-intent?account_number=628006199\u0026symbol=SPY\u0026side=buy\u0026order_type=limit\u0026quantity=1\u0026limit_price=1\u0026max_daily_loss=20",
+                                      "/trade/live-execution-control?account_number=628006199\u0026account_value=100\u0026buying_power=100\u0026max_daily_loss=20\u0026broker_account_confirmed=true\u0026buying_power_confirmed=true\u0026open_positions_checked=true\u0026open_orders_checked=true\u0026no_duplicate_order_confirmed=true\u0026broker_review_enabled=true\u0026broker_place_enabled=true\u0026broker_cancel_enabled=true\u0026kill_switch_enabled=true\u0026market_data_healthy=true\u0026market_condition_clear=true\u0026spread_liquidity_clear=true\u0026slippage_clear=true\u0026catalyst_clear=true",
+                                      "/trade/autonomous-execution-ticket?account_number=628006199\u0026symbol=SPY\u0026side=buy\u0026order_type=limit\u0026quantity=1\u0026limit_price=1\u0026stop_price=0.98\u0026take_profit_price=1.04\u0026confidence_score=92\u0026setup_quality=VALID_CANDIDATE\u0026risk_reward=2\u0026account_value=100\u0026buying_power=100\u0026proposed_risk_dollars=1\u0026max_daily_loss=20\u0026broker_account_confirmed=true\u0026buying_power_confirmed=true\u0026open_positions_checked=true\u0026open_orders_checked=true\u0026no_duplicate_order_confirmed=true\u0026broker_review_enabled=true\u0026broker_place_enabled=true\u0026broker_cancel_enabled=true\u0026kill_switch_enabled=true\u0026market_data_healthy=true\u0026market_condition_clear=true\u0026setup_quality_clear=true\u0026liquidity_clear=true\u0026spread_clear=true\u0026slippage_clear=true\u0026catalyst_clear=true\u0026execution_confidence_clear=true",
                                       "/ops/event-war-room?event_name=spacex_ipo\u0026format=html",
                                       "/risk/capital-plan?account_value=100\u0026buying_power=100\u0026max_daily_loss=20",
                                       "/risk/loss-reassessment?max_daily_loss=20",
@@ -88,7 +90,8 @@
     "post_deploy_pass_signal":  "LIVE_VALIDATION_PASS",
     "tomorrow_start_signal":  "START_TOMORROW_READY",
     "notes":  [
-                  "This MCP remains review-only and cannot place or cancel brokerage orders.",
+                  "This build adds a master-risk-governed LIVE_EXECUTION_ENABLED control plane and autonomous execution tickets for broker-adapter routing.",
+                  "This MCP still does not store broker API secrets; live orders route only through a proven host Robinhood MCP or separate executor adapter.",
                   "A live build mismatch means Render has not received the correct root-level files yet.",
                   "Run tools/watch_deploy.ps1 after redeploy, then tools/start_tomorrow.ps1 after validation passes."
               ]
