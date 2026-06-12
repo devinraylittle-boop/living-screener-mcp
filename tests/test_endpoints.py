@@ -1234,6 +1234,11 @@ class EndpointTests(unittest.TestCase):
         bridge = client.get("/ops/broker-executor-bridge?max_daily_loss=20")
         war_room = client.get("/ops/event-war-room?event_name=spacex_ipo&format=html")
         loss = client.get("/risk/loss-reassessment?max_daily_loss=20&realized_pnl=-20")
+        showtime_control = client.get(
+            "/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=false&paper_trading_enabled=false&live_handoff_enabled=false&max_daily_loss=20&max_crypto_cash=0"
+        )
+        showtime_dashboard = client.get("/ops/trading-monster-dashboard?account_value=100&buying_power=100&max_daily_loss=20")
+        showtime_risk = client.get("/risk/session?account_value=100&max_daily_loss=20&max_open_positions=5")
 
         self.assertEqual(control.status_code, 200)
         self.assertTrue(control.json()["result"]["controls"]["autonomous_enabled"])
@@ -1253,6 +1258,20 @@ class EndpointTests(unittest.TestCase):
         self.assertEqual(war_room.status_code, 200)
         self.assertIn("Event Volatility War Room", war_room.text)
         self.assertEqual(loss.json()["result"]["status"], "LOSS_REASSESSMENT_HALTED")
+        self.assertFalse(loss.json()["result"]["new_entries_allowed"])
+        self.assertTrue(loss.json()["result"]["position_management_allowed"])
+        self.assertEqual(showtime_control.status_code, 200)
+        self.assertEqual(showtime_control.json()["result"]["controls"]["max_daily_loss"], 20.0)
+        self.assertFalse(showtime_control.json()["result"]["controls"]["paper_trading_enabled"])
+        self.assertFalse(showtime_control.json()["result"]["controls"]["live_handoff_enabled"])
+        self.assertEqual(showtime_control.json()["result"]["controls"]["max_crypto_cash"], 0.0)
+        self.assertIn("max_daily_loss=20", showtime_dashboard.json()["result"]["one_click_controls"]["enable_full_autonomy"])
+        self.assertEqual(showtime_dashboard.json()["result"]["loss_reassessment"]["max_daily_loss"], 20.0)
+        self.assertTrue(showtime_dashboard.json()["result"]["loss_reassessment"]["new_entries_allowed"])
+        self.assertTrue(showtime_dashboard.json()["result"]["loss_reassessment"]["position_management_allowed"])
+        self.assertEqual(showtime_risk.json()["result"]["daily_loss_limit_dollars"], 20.0)
+        self.assertEqual(showtime_risk.json()["result"]["hard_lockout_dollars"], 20.0)
+        self.assertEqual(showtime_risk.json()["result"]["max_open_positions"], 5)
 
     def test_premove_research_endpoints_are_review_only(self) -> None:
         client = TestClient(create_app())
