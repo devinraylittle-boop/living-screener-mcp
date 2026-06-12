@@ -24,6 +24,7 @@ from app.fallback_endpoints import (
     fallback_real_cash_proof_gate,
     fallback_broker_proof_bridge,
     fallback_broker_executor_bridge,
+    fallback_broker_execution_router,
     fallback_cross_asset_capital_plan,
     fallback_evidence_summary,
     fallback_event_radar,
@@ -136,6 +137,7 @@ def create_app():
     app.add_route("/ops/real-cash-proof-gate", fallback_real_cash_proof_gate, methods=["GET"])
     app.add_route("/ops/broker-proof-bridge", fallback_broker_proof_bridge, methods=["GET"])
     app.add_route("/ops/broker-executor-bridge", fallback_broker_executor_bridge, methods=["GET"])
+    app.add_route("/ops/broker-execution-router", fallback_broker_execution_router, methods=["GET"])
     app.add_route("/risk/capital-plan", fallback_cross_asset_capital_plan, methods=["GET"])
     app.add_route("/risk/loss-reassessment", fallback_loss_reassessment, methods=["GET"])
     app.add_route("/ops/full-market-visibility", fallback_full_market_visibility, methods=["GET"])

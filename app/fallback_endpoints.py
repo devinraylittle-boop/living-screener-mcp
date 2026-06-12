@@ -33,6 +33,7 @@ from app.mcp_server import (
     _get_listed_equity_master_universe,
     _get_loss_review_reassessment,
     _get_broker_executor_bridge,
+    _get_broker_execution_router,
     _get_tomorrow_operator_brief,
     _get_trading_day_launch_checklist,
     _get_trading_monster_dashboard,
@@ -4066,6 +4067,25 @@ async def fallback_broker_executor_bridge(request: Request) -> JSONResponse:
         _truthy(params.get("cancel_order_enabled")),
         _truthy(params.get("kill_switch_enabled")),
         not (params.get("paper_mode_default") is not None and not _truthy(params.get("paper_mode_default"))),
+        max_daily_loss if max_daily_loss is not None else 20.0,
+    )
+    return JSONResponse(_review_only_envelope({"result": result}))
+
+
+async def fallback_broker_execution_router(request: Request) -> JSONResponse:
+    params = request.query_params
+    max_daily_loss = _float_or_none(params.get("max_daily_loss"))
+    result = _get_broker_execution_router(
+        container,
+        params.get("asset_class") or "equity",
+        params.get("account_number") or "",
+        params.get("symbol") or "",
+        params.get("side") or "",
+        params.get("order_type") or params.get("type") or "limit",
+        params.get("quantity") or "",
+        params.get("dollar_amount") or "",
+        params.get("limit_price") or "",
+        params.get("time_in_force") or "gfd",
         max_daily_loss if max_daily_loss is not None else 20.0,
     )
     return JSONResponse(_review_only_envelope({"result": result}))

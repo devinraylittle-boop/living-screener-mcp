@@ -325,6 +325,34 @@ def get_broker_executor_bridge(
 
 
 @mcp.tool
+def get_broker_execution_router(
+    asset_class: str = "equity",
+    account_number: str = "",
+    symbol: str = "",
+    side: str = "",
+    order_type: str = "limit",
+    quantity: str = "",
+    dollar_amount: str = "",
+    limit_price: str = "",
+    time_in_force: str = "gfd",
+    max_daily_loss: float = 20.0,
+) -> dict:
+    return _get_broker_execution_router(
+        container,
+        asset_class,
+        account_number,
+        symbol,
+        side,
+        order_type,
+        quantity,
+        dollar_amount,
+        limit_price,
+        time_in_force,
+        max_daily_loss,
+    )
+
+
+@mcp.tool
 def market_readiness_check(tickers: list[str] | None = None, max_candidates: int = 25) -> dict:
     return _market_readiness_check(container, tickers, max_candidates)
 
@@ -2256,6 +2284,124 @@ def _get_broker_executor_bridge(
         "can_cancel_order_from_this_mcp": False,
     }
     return service_container.events.log("broker_executor_bridge", payload)
+
+
+def _get_broker_execution_router(
+    service_container,
+    asset_class: str,
+    account_number: str,
+    symbol: str,
+    side: str,
+    order_type: str,
+    quantity: str,
+    dollar_amount: str,
+    limit_price: str,
+    time_in_force: str,
+    max_daily_loss: float,
+) -> dict:
+    asset = (asset_class or "equity").strip().lower()
+    ticker = (symbol or "").strip().upper()
+    side_norm = (side or "").strip().lower()
+    type_norm = (order_type or "limit").strip().lower()
+    account = (account_number or "").strip()
+    daily_loss = abs(float(max_daily_loss))
+    requested_ticket = {
+        "asset_class": asset,
+        "account_number_present": bool(account),
+        "symbol": ticker,
+        "side": side_norm,
+        "type": type_norm,
+        "quantity": str(quantity or "").strip(),
+        "dollar_amount": str(dollar_amount or "").strip(),
+        "limit_price": str(limit_price or "").strip(),
+        "time_in_force": (time_in_force or "gfd").strip().lower(),
+    }
+    equity_ready = all([account, ticker, side_norm in {"buy", "sell"}, type_norm in {"market", "limit", "stop_market", "stop_limit"}])
+    if type_norm in {"limit", "stop_limit"} and not requested_ticket["limit_price"]:
+        equity_ready = False
+    if not requested_ticket["quantity"] and not requested_ticket["dollar_amount"]:
+        equity_ready = False
+
+    options_tool_names = [
+        "get_option_chains",
+        "get_option_quotes",
+        "review_option_order",
+        "place_option_order",
+        "cancel_option_order",
+    ]
+    equity_tool_names = [
+        "get_equity_tradability",
+        "get_equity_positions",
+        "review_equity_order",
+        "place_equity_order",
+        "cancel_equity_order",
+    ]
+    if asset in {"equity", "stock", "stocks"}:
+        status = "ROBINHOOD_EQUITY_MCP_ROUTE_READY" if equity_ready else "ROBINHOOD_EQUITY_MCP_ROUTE_NEEDS_TICKET"
+        route = "host_orchestrated_robinhood_trading_mcp_equity"
+        blockers = [] if equity_ready else [
+            "account_number, symbol, side, order type, size, and required limit/stop fields must be present before order review.",
+        ]
+        host_steps = [
+            "Living Screener emits an eligible exact equity ticket after scan/risk gates pass.",
+            "Host calls Robinhood Trading MCP get_equity_tradability for the symbol/account.",
+            "Host calls Robinhood Trading MCP review_equity_order with the exact ticket.",
+            "If review alerts are acceptable and the operator/session policy allows it, host calls place_equity_order with the same ticket and a fresh idempotency ref_id.",
+            "Host logs the broker review, placement, fill, cancellation, or rejection back to Living Screener via /trade/manual-action or journal endpoints.",
+        ]
+    elif asset in {"option", "options"}:
+        status = "ROBINHOOD_OPTIONS_MCP_ROUTE_BLOCKED"
+        route = "awaiting_robinhood_options_order_tools_or_external_executor"
+        blockers = [
+            "Options order placement tools are not exposed to this Codex session.",
+            "An options-capable route needs option chain/quote, option order review, place, cancel, positions, and open order tools.",
+        ]
+        host_steps = [
+            "Use Living Screener for options scans, contract quality, small-account gates, and broker-visible snapshot validation.",
+            "If Robinhood exposes options tools in another session, prove get_option_chains/get_option_quotes/review_option_order/place_option_order/cancel_option_order before live use.",
+            "If no Robinhood options tools are exposed, connect a separate executor that supports option preview/place/cancel and kill-switch endpoints.",
+            "Until then, options execution remains review/paper/manual logging only.",
+        ]
+    else:
+        status = "BROKER_EXECUTION_ROUTE_UNSUPPORTED_ASSET_CLASS"
+        route = "blocked"
+        blockers = [f"Unsupported asset_class={asset!r}; use equity or options."]
+        host_steps = ["Choose a supported asset class and rerun the router."]
+
+    payload = {
+        "status": status,
+        "schema_version": "broker_execution_router_v1",
+        "generated_at": utc_now(),
+        "asset_class": asset,
+        "route": route,
+        "requested_ticket": requested_ticket,
+        "blockers": blockers,
+        "scanner_mcp_can_place_orders": False,
+        "scanner_mcp_role": "scan_score_gate_journal",
+        "robinhood_mcp_role": "broker_account_order_review_place_cancel_when_tools_are_exposed",
+        "separate_executor_role": "required_for_options_or_assets_not_exposed_by_robinhood_mcp",
+        "available_in_current_codex_session": {
+            "equity_tools": equity_tool_names,
+            "options_order_tools": [],
+            "options_watchlist_tool_seen_but_not_callable": True,
+        },
+        "required_options_tools": options_tool_names,
+        "host_orchestration_steps": host_steps,
+        "execution_policy": {
+            "daily_loss_new_entry_lockout": round(daily_loss, 2),
+            "resume_new_entries_when_threshold_cleared": True,
+            "risk_reducing_position_management_allowed_after_lockout": True,
+            "prefer_limit_or_marketable_limit": True,
+            "market_orders_discouraged": True,
+            "exact_ticket_hash_required": True,
+            "idempotency_ref_id_required_for_place": True,
+            "log_every_review_and_broker_result": True,
+        },
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+    return service_container.events.log("broker_execution_router", payload)
 
 
 def _get_event_volatility_war_room(service_container, event_name: str, account_value: float, max_daily_loss: float) -> dict:
