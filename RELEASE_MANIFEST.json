@@ -2,7 +2,7 @@
     "service":  "Living Screener MCP",
     "release_folder":  "living-screener-mcp-full-crypto-universe-20260612-000000",
     "target_build_version":  "2026.06.12-full-crypto-universe",
-    "expected_live_tool_count":  98,
+    "expected_live_tool_count":  99,
     "safety_invariants":  {
                               "review_only":  true,
                               "place_orders":  false,
@@ -63,6 +63,8 @@
                                       "/ops/full-market-visibility",
                                       "/ops/listed-equity-universe?max_symbols=20",
                                       "/ops/broker-executor-bridge?max_daily_loss=20",
+                                      "/ops/broker-execution-router?asset_class=equity\u0026account_number=628006199\u0026symbol=SPY\u0026side=buy\u0026order_type=limit\u0026quantity=1\u0026limit_price=1\u0026max_daily_loss=20",
+                                      "/ops/broker-execution-router?asset_class=options\u0026account_number=628006199\u0026symbol=SPY\u0026side=buy\u0026max_daily_loss=20",
                                       "/ops/event-war-room?event_name=spacex_ipo\u0026format=html",
                                       "/risk/capital-plan?account_value=100\u0026buying_power=100\u0026max_daily_loss=20",
                                       "/risk/loss-reassessment?max_daily_loss=20",
