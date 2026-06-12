@@ -26,9 +26,14 @@ from app.mcp_server import (
     _get_autonomous_launch_decision,
     _get_real_cash_proof_gate,
     _get_broker_proof_bridge,
+    _get_cross_asset_capital_plan,
     _get_failure_mode_audit,
+    _get_full_market_visibility_map,
+    _get_event_volatility_war_room,
+    _get_loss_review_reassessment,
     _get_tomorrow_operator_brief,
     _get_trading_day_launch_checklist,
+    _get_trading_monster_dashboard,
     _log_manual_option_paper_entry,
     _log_manual_broker_action,
     _market_readiness_check,
@@ -51,6 +56,7 @@ from app.mcp_server import (
     _summarize_trading_day_alerts,
     _summarize_manual_option_paper_trades,
     _watch_manual_option_position,
+    _set_autonomous_trading_controls,
     container,
 )
 from app.version import BUILD_VERSION
@@ -704,6 +710,44 @@ def _crypto_autonomous_cycle_html(payload: dict[str, Any]) -> HTMLResponse:
 <p>{escape(str(gate.get("final_decision") or "PASS"))}</p>
 """
     return _html_page("Autonomous Crypto Cycle", body, payload)
+
+
+def _monster_dashboard_html(payload: dict[str, Any]) -> HTMLResponse:
+    result = payload.get("result") or {}
+    controls = result.get("controls") or {}
+    capital = result.get("capital_plan") or {}
+    visibility = result.get("visibility_map") or {}
+    one_click = result.get("one_click_controls") or {}
+    body = f"""
+<div class="topbar">
+  <div>
+    <h1>Trading Monster Dashboard</h1>
+    <p>Central command for autonomy state, capital, visibility, risk, and learning.</p>
+  </div>
+  <div><span class="badge warn">{escape(str(result.get('status') or 'READY'))}</span></div>
+</div>
+<p>
+  <a class="btn" href="{escape(str(one_click.get('enable_all_paper') or '#'))}">Enable All Paper</a>
+  <a class="btn" href="{escape(str(one_click.get('enable_crypto_paper') or '#'))}">Enable Crypto Paper</a>
+  <a class="btn" href="{escape(str(one_click.get('disable_all') or '#'))}">Disable All</a>
+</p>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Autonomous", controls.get("autonomous_enabled")),
+    ("Stocks", controls.get("stocks_enabled")),
+    ("Options", controls.get("options_enabled")),
+    ("Crypto", controls.get("crypto_enabled")),
+    ("Max Daily Loss", controls.get("max_daily_loss")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Capital</h2>
+{_field_grid(list((capital.get("lane_budgets") or {}).items()))}
+<h2>Market Visibility</h2>
+{_field_grid(list((visibility.get("coverage") or {}).items()))}
+<h2>Dashboard Sections</h2>
+{_list(result.get("dashboard_sections") or [])}
+"""
+    return _html_page("Trading Monster Dashboard", body, payload)
 
 
 def _review_harvest_html(payload: dict[str, Any]) -> HTMLResponse:
@@ -3937,6 +3981,95 @@ async def fallback_broker_proof_bridge(request: Request) -> JSONResponse | HTMLR
     if _wants_html(request):
         return _broker_proof_bridge_html(payload)
     return JSONResponse(payload)
+
+
+async def fallback_autonomy_control(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _set_autonomous_trading_controls(
+        container,
+        _truthy(params.get("autonomous_enabled")),
+        _truthy(params.get("stocks_enabled")),
+        _truthy(params.get("options_enabled")),
+        _truthy(params.get("crypto_enabled")),
+        not (params.get("paper_trading_enabled") is not None and not _truthy(params.get("paper_trading_enabled"))),
+        _truthy(params.get("live_handoff_enabled")),
+        _float_or_none(params.get("max_daily_loss")) or 20.0,
+        _float_or_none(params.get("max_crypto_cash")) or 5.0,
+        params.get("notes") or "",
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        dashboard = _get_trading_monster_dashboard(container, 50.0, 5.0, result["controls"]["max_daily_loss"])
+        return _monster_dashboard_html(_review_only_envelope({"result": dashboard}))
+    return JSONResponse(payload)
+
+
+async def fallback_trading_monster_dashboard(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _get_trading_monster_dashboard(
+        container,
+        _float_or_none(params.get("account_value")) or 50.0,
+        _float_or_none(params.get("buying_power")) or 5.0,
+        _float_or_none(params.get("max_daily_loss")) or 20.0,
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        return _monster_dashboard_html(payload)
+    return JSONResponse(payload)
+
+
+async def fallback_cross_asset_capital_plan(request: Request) -> JSONResponse:
+    params = request.query_params
+    result = _get_cross_asset_capital_plan(
+        container,
+        _float_or_none(params.get("account_value")) or 50.0,
+        _float_or_none(params.get("buying_power")) or 5.0,
+        _float_or_none(params.get("max_daily_loss")) or 20.0,
+    )
+    return JSONResponse(_review_only_envelope({"result": result}))
+
+
+async def fallback_full_market_visibility(request: Request) -> JSONResponse:
+    return JSONResponse(_review_only_envelope({"result": _get_full_market_visibility_map(container)}))
+
+
+async def fallback_event_war_room(request: Request) -> JSONResponse | HTMLResponse:
+    params = request.query_params
+    result = _get_event_volatility_war_room(
+        container,
+        params.get("event_name") or "spacex_ipo",
+        _float_or_none(params.get("account_value")) or 50.0,
+        _float_or_none(params.get("max_daily_loss")) or 20.0,
+    )
+    payload = _review_only_envelope({"result": result})
+    if _wants_html(request):
+        body = f"""
+<div class="topbar"><div><h1>Event Volatility War Room</h1><p>{escape(str(result.get('event_date_context') or ''))}</p></div><div><span class="badge warn">{escape(str(result.get('primary_symbol') or 'EVENT'))}</span></div></div>
+{_field_grid([
+    ("Build", payload.get("build_version")),
+    ("Event", result.get("event_name")),
+    ("Primary Symbol", result.get("primary_symbol")),
+    ("Halt Loss", result.get("halt_and_reassess_loss")),
+    ("Can Place Orders", payload.get("can_place_order_from_this_mcp")),
+])}
+<h2>Lanes</h2>
+<pre>{escape(json.dumps(result.get("lanes"), indent=2, sort_keys=True, default=str))}</pre>
+<h2>Opening Rules</h2>
+{_list(result.get("opening_rules") or [])}
+"""
+        return _html_page("Event Volatility War Room", body, payload)
+    return JSONResponse(payload)
+
+
+async def fallback_loss_reassessment(request: Request) -> JSONResponse:
+    params = request.query_params
+    result = _get_loss_review_reassessment(
+        container,
+        _float_or_none(params.get("max_daily_loss")) or 20.0,
+        _float_or_none(params.get("realized_pnl")) or 0.0,
+        _float_or_none(params.get("unrealized_pnl")) or 0.0,
+    )
+    return JSONResponse(_review_only_envelope({"result": result}))
 
 
 async def fallback_paper_option_close(request: Request) -> JSONResponse:

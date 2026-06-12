@@ -236,6 +236,57 @@ def get_broker_proof_bridge(
 
 
 @mcp.tool
+def set_autonomous_trading_controls(
+    autonomous_enabled: bool = False,
+    stocks_enabled: bool = False,
+    options_enabled: bool = False,
+    crypto_enabled: bool = False,
+    paper_trading_enabled: bool = True,
+    live_handoff_enabled: bool = False,
+    max_daily_loss: float = 20.0,
+    max_crypto_cash: float = 5.0,
+    notes: str = "",
+) -> dict:
+    return _set_autonomous_trading_controls(
+        container,
+        autonomous_enabled,
+        stocks_enabled,
+        options_enabled,
+        crypto_enabled,
+        paper_trading_enabled,
+        live_handoff_enabled,
+        max_daily_loss,
+        max_crypto_cash,
+        notes,
+    )
+
+
+@mcp.tool
+def get_trading_monster_dashboard(account_value: float = 50.0, buying_power: float = 5.0, max_daily_loss: float = 20.0) -> dict:
+    return _get_trading_monster_dashboard(container, account_value, buying_power, max_daily_loss)
+
+
+@mcp.tool
+def get_cross_asset_capital_plan(account_value: float = 50.0, buying_power: float = 5.0, max_daily_loss: float = 20.0) -> dict:
+    return _get_cross_asset_capital_plan(container, account_value, buying_power, max_daily_loss)
+
+
+@mcp.tool
+def get_full_market_visibility_map() -> dict:
+    return _get_full_market_visibility_map(container)
+
+
+@mcp.tool
+def get_event_volatility_war_room(event_name: str = "spacex_ipo", account_value: float = 50.0, max_daily_loss: float = 20.0) -> dict:
+    return _get_event_volatility_war_room(container, event_name, account_value, max_daily_loss)
+
+
+@mcp.tool
+def get_loss_review_reassessment(max_daily_loss: float = 20.0, realized_pnl: float = 0.0, unrealized_pnl: float = 0.0) -> dict:
+    return _get_loss_review_reassessment(container, max_daily_loss, realized_pnl, unrealized_pnl)
+
+
+@mcp.tool
 def market_readiness_check(tickers: list[str] | None = None, max_candidates: int = 25) -> dict:
     return _market_readiness_check(container, tickers, max_candidates)
 
@@ -1833,6 +1884,260 @@ def _get_broker_proof_bridge(
         "broker_action": False,
     }
     return service_container.events.log("broker_proof_bridge", payload)
+
+
+def _set_autonomous_trading_controls(
+    service_container,
+    autonomous_enabled: bool,
+    stocks_enabled: bool,
+    options_enabled: bool,
+    crypto_enabled: bool,
+    paper_trading_enabled: bool,
+    live_handoff_enabled: bool,
+    max_daily_loss: float,
+    max_crypto_cash: float,
+    notes: str,
+) -> dict:
+    payload = {
+        "status": "AUTONOMOUS_CONTROLS_UPDATED",
+        "schema_version": "autonomous_control_state_v1",
+        "build_version": BUILD_VERSION,
+        "generated_at": utc_now(),
+        "controls": {
+            "autonomous_enabled": bool(autonomous_enabled),
+            "stocks_enabled": bool(stocks_enabled),
+            "options_enabled": bool(options_enabled),
+            "crypto_enabled": bool(crypto_enabled),
+            "paper_trading_enabled": bool(paper_trading_enabled),
+            "live_handoff_enabled": bool(live_handoff_enabled),
+            "max_daily_loss": round(float(max_daily_loss), 2),
+            "max_crypto_cash": round(float(max_crypto_cash), 2),
+        },
+        "one_click_buttons": {
+            "arm_all_paper": "/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss=20",
+            "arm_crypto_paper": "/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=false&options_enabled=false&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss=20",
+            "disable_all": "/ops/autonomy-control?autonomous_enabled=false&stocks_enabled=false&options_enabled=false&crypto_enabled=false&paper_trading_enabled=false&live_handoff_enabled=false",
+        },
+        "notes": notes,
+        "safety": {
+            "live_order_execution_from_this_mcp": False,
+            "proof_gates_still_required": True,
+            "market_orders_blocked": True,
+            "halt_and_reassess_loss": round(float(max_daily_loss), 2),
+        },
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+        "can_cancel_order_from_this_mcp": False,
+    }
+    return service_container.events.log("autonomous_control_state", payload)
+
+
+def _latest_autonomous_controls(service_container) -> dict[str, Any]:
+    recent = service_container.events.recent("autonomous_control_state", 1)
+    if recent:
+        return recent[0]["payload"].get("controls") or {}
+    return {
+        "autonomous_enabled": False,
+        "stocks_enabled": False,
+        "options_enabled": False,
+        "crypto_enabled": False,
+        "paper_trading_enabled": True,
+        "live_handoff_enabled": False,
+        "max_daily_loss": 20.0,
+        "max_crypto_cash": 5.0,
+    }
+
+
+def _get_cross_asset_capital_plan(service_container, account_value: float, buying_power: float, max_daily_loss: float) -> dict:
+    controls = _latest_autonomous_controls(service_container)
+    active_lanes = [name for name, enabled in {
+        "stocks": controls.get("stocks_enabled"),
+        "options": controls.get("options_enabled"),
+        "crypto": controls.get("crypto_enabled"),
+    }.items() if enabled]
+    lane_count = max(1, len(active_lanes))
+    cash = max(0.0, float(buying_power))
+    max_loss = max(0.0, float(max_daily_loss))
+    crypto_cap = min(float(controls.get("max_crypto_cash", 5.0) or 5.0), cash)
+    remaining_after_crypto = max(0.0, cash - (crypto_cap if "crypto" in active_lanes else 0.0))
+    stock_cap = round(remaining_after_crypto * 0.60, 2) if "stocks" in active_lanes else 0.0
+    options_cap = round(remaining_after_crypto * 0.40, 2) if "options" in active_lanes else 0.0
+    if "stocks" in active_lanes and "options" not in active_lanes:
+        stock_cap = round(remaining_after_crypto, 2)
+    if "options" in active_lanes and "stocks" not in active_lanes:
+        options_cap = round(remaining_after_crypto, 2)
+    payload = {
+        "status": "CAPITAL_PLAN_READY",
+        "schema_version": "cross_asset_capital_plan_v1",
+        "generated_at": utc_now(),
+        "account_value": round(float(account_value), 2),
+        "buying_power": round(cash, 2),
+        "max_daily_loss": round(max_loss, 2),
+        "controls": controls,
+        "active_lanes": active_lanes,
+        "lane_budgets": {
+            "stocks": stock_cap,
+            "options": options_cap,
+            "crypto": round(crypto_cap, 2) if "crypto" in active_lanes else 0.0,
+        },
+        "loss_budgets": {
+            "per_trade_soft_loss": round(min(max_loss / max(4, lane_count * 3), cash * 0.02), 2),
+            "halt_and_reassess": round(max_loss, 2),
+            "loss_review_required_after_every_loss": True,
+        },
+        "buying_power_reallocation": [
+            "Closed or disabled lanes release unused buying power back to the allocator on the next cycle.",
+            "Market-closed equity/options lanes should not consume new-entry budget; crypto may continue only if crypto controls are enabled.",
+            "Open positions reserve their max-loss estimate until closed or explicitly released.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+    }
+    return service_container.events.log("cross_asset_capital_plan", payload)
+
+
+def _get_full_market_visibility_map(service_container) -> dict:
+    settings = service_container.settings
+    crypto_universe = service_container.crypto_paper.universe()
+    payload = {
+        "status": "FULL_MARKET_VISIBILITY_READY",
+        "schema_version": "full_market_visibility_v1",
+        "generated_at": utc_now(),
+        "coverage": {
+            "crypto_robinhood_assets": crypto_universe["general_consideration_count"],
+            "scalp_equity_watchlist": len(settings.scalp_watchlist),
+            "broad_equity_watchlist": len(settings.broad_opportunity_watchlist),
+            "event_volatility_watchlist": len(settings.event_volatility_watchlist),
+            "microcap_research_watchlist": len(settings.microcap_research_watchlist),
+        },
+        "universes": {
+            "crypto": crypto_universe["symbols"],
+            "scalp_equities": list(settings.scalp_watchlist),
+            "broad_equities": list(settings.broad_opportunity_watchlist),
+            "event_volatility": list(settings.event_volatility_watchlist),
+            "microcap_research": list(settings.microcap_research_watchlist),
+        },
+        "visibility_gaps": [
+            "Full listed-equity market is not yet ingested from a broker/exchange master symbol file.",
+            "Options chains are still manual/broker-snapshot or provider-limited.",
+            "News/catalyst feed is not a true low-latency paid event feed.",
+            "Robinhood order/position truth is not machine-verified in this MCP.",
+        ],
+        "next_upgrades": [
+            "Add broker read-only account/order/position reconciliation.",
+            "Add master equity symbol universe with tradability/shortability/options flags.",
+            "Add OPRA-grade options chain provider or broker snapshot automation.",
+            "Add real-time news/catalyst feed and halt/IPO status feed.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+    }
+    return service_container.events.log("full_market_visibility", payload)
+
+
+def _get_event_volatility_war_room(service_container, event_name: str, account_value: float, max_daily_loss: float) -> dict:
+    controls = _latest_autonomous_controls(service_container)
+    payload = {
+        "status": "EVENT_VOLATILITY_WAR_ROOM_READY",
+        "schema_version": "event_volatility_war_room_v1",
+        "generated_at": utc_now(),
+        "event_name": event_name,
+        "primary_symbol": "SPCX" if event_name.lower() in {"spacex_ipo", "spacex"} else service_container.settings.event_direct_symbol,
+        "event_date_context": "SpaceX priced June 11, 2026; first trading expected Friday, June 12, 2026 under SPCX based on current reporting.",
+        "controls": controls,
+        "account_value": round(float(account_value), 2),
+        "halt_and_reassess_loss": round(float(max_daily_loss), 2),
+        "lanes": {
+            "direct_ipo_stock": ["SPCX"],
+            "sympathy_space": ["RKLB", "LUNR", "ASTS", "PL", "SPCE", "BA", "LMT", "NOC", "AVAV", "GSAT", "IRDM", "VSAT"],
+            "etf_context": ["ARKX", "ITA", "UFO", "QQQ", "SPY", "IWM"],
+            "crypto_risk_proxy": ["BTC-USD", "ETH-USD", "SOL-USD", "DOGE-USD"],
+        },
+        "opening_rules": [
+            "Observe first print/spread stabilization before ranking.",
+            "Separate direct IPO stock review from sympathy options review.",
+            "Do not options-rank a sympathy name unless stock setup, options truth, friction, and session risk all pass.",
+            "Treat opening halts, crossed spreads, stale quotes, and no borrow/unknown options as PASS.",
+        ],
+        "scans_to_run": [
+            "/ops/event-volatility-playbook?event_name=spacex_ipo&format=html",
+            "/ops/event-volatility-scan?event_name=spacex_ipo&format=html",
+            "/ops/broad-opportunity-scan?format=html",
+            "/ops/market-open-observer?format=html",
+        ],
+        "missing_keys_addressed": [
+            "One-click autonomy controls.",
+            "Cross-asset capital allocator.",
+            "Full-market visibility map.",
+            "Event volatility war room.",
+            "Loss review halt-and-reassess loop.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+    }
+    return service_container.events.log("event_volatility_war_room", payload)
+
+
+def _get_loss_review_reassessment(service_container, max_daily_loss: float, realized_pnl: float, unrealized_pnl: float) -> dict:
+    total = float(realized_pnl) + float(unrealized_pnl)
+    limit = abs(float(max_daily_loss))
+    halted = total <= -limit
+    payload = {
+        "status": "LOSS_REASSESSMENT_HALTED" if halted else "LOSS_REASSESSMENT_READY",
+        "schema_version": "loss_review_reassessment_v1",
+        "generated_at": utc_now(),
+        "realized_pnl": round(float(realized_pnl), 2),
+        "unrealized_pnl": round(float(unrealized_pnl), 2),
+        "total_pnl": round(total, 2),
+        "max_daily_loss": round(limit, 2),
+        "halt_triggered": halted,
+        "loss_review_loop": [
+            "After every loss: capture entry proof, exit proof, spread, fee, slippage, setup state, and invalidation.",
+            "Classify loss as bad entry, late entry, bad exit, data issue, fee/slippage issue, regime flip, or acceptable planned loss.",
+            "Disable or down-rank the responsible strategy if repeated loss causes recur.",
+            "At -$20 total daily P/L: halt new entries, analyze errors, apply stricter rules only, then require explicit re-arm.",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+    }
+    return service_container.events.log("loss_review_reassessment", payload)
+
+
+def _get_trading_monster_dashboard(service_container, account_value: float, buying_power: float, max_daily_loss: float) -> dict:
+    controls = _latest_autonomous_controls(service_container)
+    capital = _get_cross_asset_capital_plan(service_container, account_value, buying_power, max_daily_loss)
+    visibility = _get_full_market_visibility_map(service_container)
+    loss = _get_loss_review_reassessment(service_container, max_daily_loss, 0.0, 0.0)
+    recent_crypto = service_container.events.recent("crypto_autonomous_cycle", 5)
+    payload = {
+        "status": "TRADING_MONSTER_DASHBOARD_READY",
+        "schema_version": "trading_monster_dashboard_v1",
+        "build_version": BUILD_VERSION,
+        "generated_at": utc_now(),
+        "controls": controls,
+        "one_click_controls": {
+            "enable_all_paper": "/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=true&options_enabled=true&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss=20&format=html",
+            "enable_crypto_paper": "/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=false&options_enabled=false&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss=20&format=html",
+            "disable_all": "/ops/autonomy-control?autonomous_enabled=false&stocks_enabled=false&options_enabled=false&crypto_enabled=false&paper_trading_enabled=false&live_handoff_enabled=false&format=html",
+        },
+        "capital_plan": capital,
+        "visibility_map": visibility,
+        "loss_reassessment": loss,
+        "recent_crypto_cycles": recent_crypto,
+        "dashboard_sections": [
+            "Master Controls",
+            "Risk And Capital",
+            "Full Market Visibility",
+            "SpaceX IPO War Room",
+            "Crypto Autonomous Cycle",
+            "Paper/Live Handoff Tickets",
+            "Loss Review And Learning",
+            "Journal Vault",
+        ],
+        "review_only": True,
+        "can_place_order_from_this_mcp": False,
+    }
+    return service_container.events.log("trading_monster_dashboard", payload)
 
 
 def _intelligence_signals_from_event(event: dict[str, Any], payload: dict[str, Any], universe_filter: set[str]) -> list[dict[str, Any]]:
