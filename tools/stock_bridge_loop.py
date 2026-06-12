@@ -41,6 +41,7 @@ class BridgeConfig:
     max_daily_loss: float
     stop_loss_pct: float
     take_profit_pct: float
+    allowed_broker_alert_types: tuple[str, ...]
     account_value: float
     scan_max_candidates: int
     scan_review_top_n: int
@@ -107,6 +108,40 @@ def as_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def alert_types(order_checks: Any) -> list[str]:
+    if not order_checks:
+        return []
+    if isinstance(order_checks, dict):
+        alert_type = order_checks.get("alertType") or order_checks.get("alert_type")
+        if alert_type:
+            return [str(alert_type).upper()]
+        return [str(key).upper() for key in order_checks.keys()]
+    if isinstance(order_checks, list):
+        found: list[str] = []
+        for item in order_checks:
+            found.extend(alert_types(item))
+        return found
+    return [str(order_checks).upper()]
+
+
+def blocking_broker_alerts(order_checks: Any, allowed_alert_types: tuple[str, ...]) -> list[str]:
+    allowed = {item.strip().upper() for item in allowed_alert_types if item.strip()}
+    return [item for item in alert_types(order_checks) if item not in allowed]
+
+
+def stock_intent_stop_risk_override_allowed(intent: dict[str, Any], notional: float, config: BridgeConfig) -> bool:
+    reasons = [str(reason) for reason in (intent.get("blocking_reasons") or [])]
+    if reasons != ["Proposed risk exceeds per-trade journal risk cap."]:
+        return False
+    stop_risk = round(notional * config.stop_loss_pct, 4)
+    return 0 < stop_risk <= config.max_daily_loss and notional <= config.max_order_notional
+
+
+def broker_setup_blocker(error_text: str) -> bool:
+    lowered = error_text.lower()
+    return "investment_profile" in lowered or "investing goals" in lowered or "second trade" in lowered
 
 
 def tool_payload(result: Any) -> Any:
@@ -402,13 +437,25 @@ async def run_cycle(broker: RobinhoodBroker, config: BridgeConfig, state: dict[s
             "account_value": config.account_value,
             "buying_power": buying_power,
             "max_daily_loss": config.max_daily_loss,
+            "stop_loss_pct": config.stop_loss_pct,
         }
     )
     intent = read_json_url(f"{config.base_url.rstrip('/')}/trade/stock-intent?{ticket_query}", timeout=30).get("result") or {}
     if intent.get("status") != "STOCK_EXECUTION_INTENT_READY":
-        append_log({"event": "intent_blocked", "symbol": symbol, "intent": intent})
-        save_state(state)
-        return
+        if stock_intent_stop_risk_override_allowed(intent, notional, config):
+            append_log(
+                {
+                    "event": "intent_notional_risk_override",
+                    "symbol": symbol,
+                    "notional": notional,
+                    "estimated_stop_risk": round(notional * config.stop_loss_pct, 4),
+                    "intent": intent,
+                }
+            )
+        else:
+            append_log({"event": "intent_blocked", "symbol": symbol, "intent": intent})
+            save_state(state)
+            return
     order_args = intent.get("robinhood_review_equity_order_args") or {
         "account_number": config.account_number,
         "symbol": symbol,
@@ -422,9 +469,12 @@ async def run_cycle(broker: RobinhoodBroker, config: BridgeConfig, state: dict[s
     append_log({"event": "entry_review", "symbol": symbol, "notional": notional, "intent_hash": intent.get("intent_hash"), "review": review})
     checks = review.get("order_checks") if isinstance(review, dict) else None
     if checks:
-        append_log({"event": "entry_rejected_broker_checks", "symbol": symbol, "order_checks": checks})
-        save_state(state)
-        return
+        blocking = blocking_broker_alerts(checks, config.allowed_broker_alert_types)
+        if blocking:
+            append_log({"event": "entry_rejected_broker_checks", "symbol": symbol, "blocking_alerts": blocking, "order_checks": checks})
+            save_state(state)
+            return
+        append_log({"event": "entry_allowed_broker_checks", "symbol": symbol, "allowed_alerts": alert_types(checks), "order_checks": checks})
     if not config.live:
         append_log({"event": "entry_dry_run_ready", "symbol": symbol, "order_args": order_args})
         save_state(state)
@@ -461,24 +511,31 @@ def parse_args(argv: list[str]) -> BridgeConfig:
     parser.add_argument("--mcp-url", default=os.getenv("ROBINHOOD_MCP_URL", "https://agent.robinhood.com/mcp/trading"))
     parser.add_argument("--account-number", default=os.getenv("ROBINHOOD_ACCOUNT_NUMBER", "628006199"))
     parser.add_argument("--live", action="store_true", default=as_bool(os.getenv("STOCK_BRIDGE_LIVE", "false")))
-    parser.add_argument("--interval-seconds", type=int, default=int(os.getenv("STOCK_BRIDGE_INTERVAL_SECONDS", "90")))
+    parser.add_argument("--interval-seconds", type=int, default=int(os.getenv("STOCK_BRIDGE_INTERVAL_SECONDS", "60")))
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--min-score", type=float, default=float(os.getenv("STOCK_BRIDGE_MIN_SCORE", "76")))
     parser.add_argument("--min-relative-volume", type=float, default=float(os.getenv("STOCK_BRIDGE_MIN_RELATIVE_VOLUME", "0.45")))
     parser.add_argument("--max-spread-bps", type=float, default=float(os.getenv("STOCK_BRIDGE_MAX_SPREAD_BPS", "35")))
-    parser.add_argument("--max-order-notional", type=float, default=float(os.getenv("STOCK_BRIDGE_MAX_ORDER_NOTIONAL", "5")))
+    parser.add_argument("--max-order-notional", type=float, default=float(os.getenv("STOCK_BRIDGE_MAX_ORDER_NOTIONAL", "10")))
     parser.add_argument("--min-order-notional", type=float, default=float(os.getenv("STOCK_BRIDGE_MIN_ORDER_NOTIONAL", "1")))
     parser.add_argument("--max-open-positions", type=int, default=int(os.getenv("STOCK_BRIDGE_MAX_OPEN_POSITIONS", "2")))
     parser.add_argument("--max-trades-per-day", type=int, default=int(os.getenv("STOCK_BRIDGE_MAX_TRADES_PER_DAY", "10")))
     parser.add_argument("--max-daily-loss", type=float, default=float(os.getenv("STOCK_BRIDGE_MAX_DAILY_LOSS", "20")))
     parser.add_argument("--stop-loss-pct", type=float, default=float(os.getenv("STOCK_BRIDGE_STOP_LOSS_PCT", "0.0035")))
     parser.add_argument("--take-profit-pct", type=float, default=float(os.getenv("STOCK_BRIDGE_TAKE_PROFIT_PCT", "0.0045")))
+    parser.add_argument("--allowed-broker-alert-types", default=os.getenv("STOCK_BRIDGE_ALLOWED_BROKER_ALERT_TYPES", "EQUITY_SUITABILITY"))
     parser.add_argument("--account-value", type=float, default=float(os.getenv("STOCK_BRIDGE_ACCOUNT_VALUE", "100")))
     parser.add_argument("--scan-max-candidates", type=int, default=int(os.getenv("STOCK_BRIDGE_SCAN_MAX_CANDIDATES", "60")))
     parser.add_argument("--scan-review-top-n", type=int, default=int(os.getenv("STOCK_BRIDGE_SCAN_REVIEW_TOP_N", "20")))
     parser.add_argument("--auth-timeout-seconds", type=int, default=int(os.getenv("STOCK_BRIDGE_AUTH_TIMEOUT_SECONDS", "300")))
     args = parser.parse_args(argv)
-    config = BridgeConfig(**vars(args))
+    raw = vars(args)
+    raw["allowed_broker_alert_types"] = tuple(
+        item.strip().upper()
+        for item in str(raw["allowed_broker_alert_types"]).split(",")
+        if item.strip()
+    )
+    config = BridgeConfig(**raw)
     if config.live and os.getenv("STOCK_BRIDGE_LIVE_AUTH") != LIVE_AUTH_VALUE:
         raise SystemExit(
             "Live mode refused. Set STOCK_BRIDGE_LIVE_AUTH=ENABLE_AGENTIC_STOCK_BRIDGE "
@@ -500,7 +557,20 @@ async def async_main(argv: list[str]) -> int:
             try:
                 await run_cycle(broker, config, state)
             except Exception as exc:  # noqa: BLE001 - fail one cycle, not the process
-                append_log({"event": "cycle_error", "error": repr(exc)})
+                error_text = repr(exc)
+                append_log({"event": "cycle_error", "error": error_text})
+                if broker_setup_blocker(error_text):
+                    state["halted"] = True
+                    state["halt_reason"] = "broker_investment_profile_required"
+                    state["halted_at"] = utc_now()
+                    save_state(state)
+                    append_log({
+                        "event": "bridge_halted_broker_profile_required",
+                        "account_number": config.account_number,
+                        "next_action": "Complete the Robinhood investment profile for the agentic account before restarting live bridge.",
+                    })
+                    print("Bridge halted: Robinhood requires the investment profile before additional trades.", file=sys.stderr)
+                    break
                 print(f"[{utc_now()}] cycle_error: {exc}", file=sys.stderr)
             if config.once:
                 break

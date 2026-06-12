@@ -1,12 +1,13 @@
 param(
     [string]$BaseUrl = "https://living-screener-mcp.onrender.com",
     [string]$AccountNumber = "628006199",
-    [decimal]$MaxOrderNotional = 5,
+    [decimal]$MaxOrderNotional = 10,
     [decimal]$MaxDailyLoss = 20,
     [decimal]$MinScore = 76,
     [decimal]$MinRelativeVolume = 0.45,
     [decimal]$MaxSpreadBps = 35,
-    [int]$IntervalSeconds = 90,
+    [string]$AllowedBrokerAlertTypes = "EQUITY_SUITABILITY",
+    [int]$IntervalSeconds = 60,
     [switch]$Live,
     [switch]$Once
 )
@@ -23,6 +24,7 @@ $env:STOCK_BRIDGE_MAX_DAILY_LOSS = [string]$MaxDailyLoss
 $env:STOCK_BRIDGE_MIN_SCORE = [string]$MinScore
 $env:STOCK_BRIDGE_MIN_RELATIVE_VOLUME = [string]$MinRelativeVolume
 $env:STOCK_BRIDGE_MAX_SPREAD_BPS = [string]$MaxSpreadBps
+$env:STOCK_BRIDGE_ALLOWED_BROKER_ALERT_TYPES = $AllowedBrokerAlertTypes
 $env:STOCK_BRIDGE_INTERVAL_SECONDS = [string]$IntervalSeconds
 
 $argsList = @("tools\stock_bridge_loop.py")
@@ -53,6 +55,7 @@ Write-Host "Max daily loss: $MaxDailyLoss"
 Write-Host "Min score: $MinScore"
 Write-Host "Min relative volume: $MinRelativeVolume"
 Write-Host "Max spread bps: $MaxSpreadBps"
+Write-Host "Allowed broker alerts: $AllowedBrokerAlertTypes"
 Write-Host ""
 
 python @argsList

@@ -29,7 +29,7 @@ Render remains the scan/risk/journal brain. The local bridge is the execution ha
 - Long equities only.
 - Options disabled until Robinhood exposes option chain/quote/review/place/cancel tools.
 - Crypto disabled.
-- Default max order notional: `$5`.
+- Default max order notional: `$10`.
 - Default max daily loss: `$20`.
 - Default max open positions: `2`.
 - Default max trades per day: `10`.
@@ -38,6 +38,7 @@ Render remains the scan/risk/journal brain. The local bridge is the execution ha
 - Default max spread: `35 bps`.
 - Default stop-loss: `0.35%`.
 - Default take-profit: `0.45%`.
+- Allowed non-blocking broker alert: `EQUITY_SUITABILITY`.
 
 ## Dry Run
 
