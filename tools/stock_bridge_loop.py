@@ -8,11 +8,12 @@ import sys
 import time
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time as day_time, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo
 
 from fastmcp import Client
 
@@ -46,6 +47,9 @@ class BridgeConfig:
     scan_max_candidates: int
     scan_review_top_n: int
     auth_timeout_seconds: int
+    max_consecutive_errors: int
+    error_cooldown_seconds: int
+    market_hours: str
 
 
 def utc_now() -> str:
@@ -108,6 +112,67 @@ def as_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def parse_timestamp(value: Any) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def current_equity_session() -> str:
+    now = datetime.now(ZoneInfo("America/New_York"))
+    if now.weekday() >= 5:
+        return "closed"
+    current = now.time()
+    if day_time(9, 30) <= current < day_time(16, 0):
+        return "regular_hours"
+    if day_time(4, 0) <= current < day_time(20, 0):
+        return "extended_hours"
+    return "closed"
+
+
+def resolve_market_hours(config: BridgeConfig) -> str:
+    configured = str(config.market_hours or "auto").strip().lower()
+    if configured in {"regular_hours", "extended_hours", "all_day_hours"}:
+        return configured
+    session = current_equity_session()
+    return "regular_hours" if session == "regular_hours" else "extended_hours"
+
+
+def marketable_limit_price(side: str, quote: dict[str, Any], cushion_pct: float = 0.0015) -> float:
+    bid = as_float(quote.get("bid_price"))
+    ask = as_float(quote.get("ask_price"))
+    last = as_float(quote.get("last_trade_price"))
+    if side == "buy":
+        ref = ask or last
+        return round(ref * (1 + cushion_pct), 2) if ref > 0 else 0.0
+    ref = bid or last
+    return round(ref * (1 - cushion_pct), 2) if ref > 0 else 0.0
+
+
+def whole_share_quantity(notional: float, limit_price: float) -> int:
+    if notional <= 0 or limit_price <= 0:
+        return 0
+    return int(notional // limit_price)
+
+
+def new_entries_paused(state: dict[str, Any]) -> bool:
+    paused_until = parse_timestamp(state.get("new_entries_paused_until"))
+    if not paused_until:
+        return False
+    if paused_until.tzinfo is None:
+        paused_until = paused_until.replace(tzinfo=UTC)
+    if datetime.now(UTC) < paused_until.astimezone(UTC):
+        return True
+    state.pop("new_entries_paused_until", None)
+    state.pop("pause_reason", None)
+    state.pop("consecutive_errors", None)
+    append_log({"event": "entry_pause_expired", "resumed_at": utc_now()})
+    return False
 
 
 def alert_types(order_checks: Any) -> list[str]:
@@ -328,15 +393,44 @@ async def manage_positions(broker: RobinhoodBroker, config: BridgeConfig, state:
             exit_reason = "take_profit"
         if not exit_reason:
             continue
-        args = {
-            "account_number": config.account_number,
-            "symbol": symbol,
-            "side": "sell",
-            "type": "market",
-            "quantity": f"{qty:.6f}",
-            "time_in_force": "gfd",
-            "market_hours": "regular_hours",
-        }
+        market_hours = resolve_market_hours(config)
+        if market_hours == "regular_hours":
+            args = {
+                "account_number": config.account_number,
+                "symbol": symbol,
+                "side": "sell",
+                "type": "market",
+                "quantity": f"{qty:.6f}",
+                "time_in_force": "gfd",
+                "market_hours": "regular_hours",
+            }
+        else:
+            if abs(qty - round(qty)) > 0.000001:
+                append_log(
+                    {
+                        "event": "exit_skipped_extended_fractional_not_supported",
+                        "symbol": symbol,
+                        "quantity": qty,
+                        "reason": exit_reason,
+                        "market_hours": market_hours,
+                        "note": "Robinhood equity tool supports fractional market orders in regular hours; extended-hours fractional exits may be rejected.",
+                    }
+                )
+                continue
+            limit_price = marketable_limit_price("sell", quotes.get(symbol) or {})
+            if limit_price <= 0:
+                append_log({"event": "exit_skipped_no_extended_limit_price", "symbol": symbol, "reason": exit_reason})
+                continue
+            args = {
+                "account_number": config.account_number,
+                "symbol": symbol,
+                "side": "sell",
+                "type": "limit",
+                "quantity": str(int(round(qty))),
+                "limit_price": f"{limit_price:.2f}",
+                "time_in_force": "gfd",
+                "market_hours": market_hours,
+            }
         review = await broker.review_order(args)
         append_log({"event": "exit_review", "symbol": symbol, "reason": exit_reason, "pnl_pct": pnl_pct, "review": review})
         if not config.live:
@@ -359,6 +453,46 @@ async def manage_positions(broker: RobinhoodBroker, config: BridgeConfig, state:
                 "notes": f"exit_reason={exit_reason}; pnl_pct={pnl_pct:.6f}",
             },
         )
+
+
+def build_entry_order_args(config: BridgeConfig, selected: dict[str, Any], notional: float, buying_power: float) -> tuple[dict[str, str] | None, str | None]:
+    symbol = selected["scan"]["ticker"].upper()
+    market_hours = resolve_market_hours(config)
+    if current_equity_session() == "closed" and market_hours == "extended_hours":
+        return None, "equity_market_closed"
+    if market_hours == "regular_hours":
+        return (
+            {
+                "account_number": config.account_number,
+                "symbol": symbol,
+                "side": "buy",
+                "type": "market",
+                "dollar_amount": f"{notional:.2f}",
+                "time_in_force": "gfd",
+                "market_hours": "regular_hours",
+            },
+            None,
+        )
+    quote = selected.get("quote") or {}
+    limit_price = marketable_limit_price("buy", quote)
+    quantity = whole_share_quantity(min(notional, buying_power), limit_price)
+    if limit_price <= 0:
+        return None, "no_valid_extended_limit_price"
+    if quantity < 1:
+        return None, f"extended_hours_requires_whole_share_limit_order_but_budget_{notional:.2f}_is_below_limit_{limit_price:.2f}"
+    return (
+        {
+            "account_number": config.account_number,
+            "symbol": symbol,
+            "side": "buy",
+            "type": "limit",
+            "quantity": str(quantity),
+            "limit_price": f"{limit_price:.2f}",
+            "time_in_force": "gfd",
+            "market_hours": market_hours,
+        },
+        None,
+    )
 
 
 def log_broker_action(config: BridgeConfig, payload: dict[str, Any]) -> None:
@@ -400,6 +534,16 @@ async def run_cycle(broker: RobinhoodBroker, config: BridgeConfig, state: dict[s
         return
     state["halted"] = False
     await manage_positions(broker, config, state)
+    if new_entries_paused(state):
+        append_log(
+            {
+                "event": "entry_paused_cooldown",
+                "pause_reason": state.get("pause_reason"),
+                "new_entries_paused_until": state.get("new_entries_paused_until"),
+            }
+        )
+        save_state(state)
+        return
     positions = await broker.positions()
     open_symbols = {str(pos.get("symbol") or "").upper() for pos in positions if as_float(pos.get("quantity")) > 0}
     open_orders = [order for order in await broker.orders_today() if str(order.get("state") or "").lower() in {"new", "queued", "confirmed", "unconfirmed", "partially_filled"}]
@@ -426,14 +570,22 @@ async def run_cycle(broker: RobinhoodBroker, config: BridgeConfig, state: dict[s
         save_state(state)
         return
     symbol = selected["scan"]["ticker"].upper()
+    order_args, skip_reason = build_entry_order_args(config, selected, notional, buying_power)
+    if not order_args:
+        append_log({"event": "entry_skipped_order_shape", "symbol": symbol, "reason": skip_reason})
+        save_state(state)
+        return
     ticket_query = urlencode(
         {
             "account_number": config.account_number,
             "symbol": symbol,
-            "side": "buy",
-            "order_type": "market",
-            "dollar_amount": f"{notional:.2f}",
-            "time_in_force": "gfd",
+            "side": order_args["side"],
+            "order_type": order_args["type"],
+            "quantity": order_args.get("quantity", ""),
+            "dollar_amount": order_args.get("dollar_amount", ""),
+            "limit_price": order_args.get("limit_price", ""),
+            "time_in_force": order_args.get("time_in_force", "gfd"),
+            "market_hours": order_args.get("market_hours", "regular_hours"),
             "account_value": config.account_value,
             "buying_power": buying_power,
             "max_daily_loss": config.max_daily_loss,
@@ -456,15 +608,7 @@ async def run_cycle(broker: RobinhoodBroker, config: BridgeConfig, state: dict[s
             append_log({"event": "intent_blocked", "symbol": symbol, "intent": intent})
             save_state(state)
             return
-    order_args = intent.get("robinhood_review_equity_order_args") or {
-        "account_number": config.account_number,
-        "symbol": symbol,
-        "side": "buy",
-        "type": "market",
-        "dollar_amount": f"{notional:.2f}",
-        "time_in_force": "gfd",
-        "market_hours": "regular_hours",
-    }
+    order_args = intent.get("robinhood_review_equity_order_args") or order_args
     review = await broker.review_order(order_args)
     append_log({"event": "entry_review", "symbol": symbol, "notional": notional, "intent_hash": intent.get("intent_hash"), "review": review})
     checks = review.get("order_checks") if isinstance(review, dict) else None
@@ -528,6 +672,9 @@ def parse_args(argv: list[str]) -> BridgeConfig:
     parser.add_argument("--scan-max-candidates", type=int, default=int(os.getenv("STOCK_BRIDGE_SCAN_MAX_CANDIDATES", "60")))
     parser.add_argument("--scan-review-top-n", type=int, default=int(os.getenv("STOCK_BRIDGE_SCAN_REVIEW_TOP_N", "20")))
     parser.add_argument("--auth-timeout-seconds", type=int, default=int(os.getenv("STOCK_BRIDGE_AUTH_TIMEOUT_SECONDS", "300")))
+    parser.add_argument("--max-consecutive-errors", type=int, default=int(os.getenv("STOCK_BRIDGE_MAX_CONSECUTIVE_ERRORS", "2")))
+    parser.add_argument("--error-cooldown-seconds", type=int, default=int(os.getenv("STOCK_BRIDGE_ERROR_COOLDOWN_SECONDS", "300")))
+    parser.add_argument("--market-hours", default=os.getenv("STOCK_BRIDGE_MARKET_HOURS", "auto"))
     args = parser.parse_args(argv)
     raw = vars(args)
     raw["allowed_broker_alert_types"] = tuple(
@@ -552,13 +699,16 @@ async def async_main(argv: list[str]) -> int:
     print(f"State: {STATE_PATH}")
     print("If OAuth opens a Robinhood URL, approve it in the browser to connect the local executor.")
     state = load_state()
+    consecutive_errors = 0
     async with RobinhoodBroker(config) as broker:
         while True:
             try:
                 await run_cycle(broker, config, state)
+                consecutive_errors = 0
             except Exception as exc:  # noqa: BLE001 - fail one cycle, not the process
                 error_text = repr(exc)
-                append_log({"event": "cycle_error", "error": error_text})
+                consecutive_errors += 1
+                append_log({"event": "cycle_error", "error": error_text, "consecutive_errors": consecutive_errors})
                 if broker_setup_blocker(error_text):
                     state["halted"] = True
                     state["halt_reason"] = "broker_investment_profile_required"
@@ -571,6 +721,25 @@ async def async_main(argv: list[str]) -> int:
                     })
                     print("Bridge halted: Robinhood requires the investment profile before additional trades.", file=sys.stderr)
                     break
+                if consecutive_errors >= config.max_consecutive_errors:
+                    pause_until = datetime.now(UTC) + timedelta(seconds=max(1, config.error_cooldown_seconds))
+                    state["halted"] = False
+                    state["pause_reason"] = "consecutive_data_or_broker_errors"
+                    state["new_entries_paused_until"] = pause_until.isoformat()
+                    state["consecutive_errors"] = consecutive_errors
+                    save_state(state)
+                    append_log(
+                        {
+                            "event": "bridge_entry_pause_consecutive_errors",
+                            "consecutive_errors": consecutive_errors,
+                            "max_consecutive_errors": config.max_consecutive_errors,
+                            "cooldown_seconds": config.error_cooldown_seconds,
+                            "new_entries_paused_until": pause_until.isoformat(),
+                            "next_action": "Bridge remains alive, manages positions, and resumes new-entry scanning after cooldown if health recovers.",
+                        }
+                    )
+                    print("Bridge paused new entries: consecutive data or broker errors reached the configured limit.", file=sys.stderr)
+                    consecutive_errors = 0
                 print(f"[{utc_now()}] cycle_error: {exc}", file=sys.stderr)
             if config.once:
                 break

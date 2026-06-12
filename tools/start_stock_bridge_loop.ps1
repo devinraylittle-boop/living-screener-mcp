@@ -8,6 +8,9 @@ param(
     [decimal]$MaxSpreadBps = 35,
     [string]$AllowedBrokerAlertTypes = "EQUITY_SUITABILITY",
     [int]$IntervalSeconds = 60,
+    [int]$MaxConsecutiveErrors = 2,
+    [int]$ErrorCooldownSeconds = 300,
+    [string]$MarketHours = "auto",
     [switch]$Live,
     [switch]$Once
 )
@@ -26,6 +29,9 @@ $env:STOCK_BRIDGE_MIN_RELATIVE_VOLUME = [string]$MinRelativeVolume
 $env:STOCK_BRIDGE_MAX_SPREAD_BPS = [string]$MaxSpreadBps
 $env:STOCK_BRIDGE_ALLOWED_BROKER_ALERT_TYPES = $AllowedBrokerAlertTypes
 $env:STOCK_BRIDGE_INTERVAL_SECONDS = [string]$IntervalSeconds
+$env:STOCK_BRIDGE_MAX_CONSECUTIVE_ERRORS = [string]$MaxConsecutiveErrors
+$env:STOCK_BRIDGE_ERROR_COOLDOWN_SECONDS = [string]$ErrorCooldownSeconds
+$env:STOCK_BRIDGE_MARKET_HOURS = $MarketHours
 
 $argsList = @("tools\stock_bridge_loop.py")
 if ($Live) {
@@ -56,6 +62,9 @@ Write-Host "Min score: $MinScore"
 Write-Host "Min relative volume: $MinRelativeVolume"
 Write-Host "Max spread bps: $MaxSpreadBps"
 Write-Host "Allowed broker alerts: $AllowedBrokerAlertTypes"
+Write-Host "Max consecutive errors: $MaxConsecutiveErrors"
+Write-Host "Error cooldown seconds: $ErrorCooldownSeconds"
+Write-Host "Market hours mode: $MarketHours"
 Write-Host ""
 
 python @argsList

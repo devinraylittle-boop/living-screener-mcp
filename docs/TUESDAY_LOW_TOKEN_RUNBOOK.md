@@ -20,6 +20,9 @@ Purpose: keep Living Screener operating through Tuesday with minimum Codex usage
 - Max spread: 45 bps
 - Scan interval: 45 seconds
 - Stock risk model: planned stop distance, not full stock notional
+- Error circuit breaker: pause new entries after 2 consecutive data or broker errors
+- Recoverable bridge errors: pause new entries for 300 seconds, then auto-resume if the process is still alive
+- Market hours mode: auto
 
 ## Check Status Without Codex
 
@@ -81,7 +84,7 @@ Use this current wider operating profile:
 ```powershell
 cd "C:\Users\devin\OneDrive\Documents\Screener\living-screener-mcp-full-crypto-universe-20260612-000000"
 $env:STOCK_BRIDGE_LIVE_AUTH="ENABLE_AGENTIC_STOCK_BRIDGE"
-.\tools\start_stock_bridge_loop.ps1 -Live -MaxOrderNotional 15 -MaxDailyLoss 20 -MinScore 70 -MinRelativeVolume 0.35 -MaxSpreadBps 45 -AllowedBrokerAlertTypes "EQUITY_SUITABILITY" -IntervalSeconds 45
+.\tools\start_stock_bridge_loop.ps1 -Live -MaxOrderNotional 15 -MaxDailyLoss 20 -MinScore 70 -MinRelativeVolume 0.35 -MaxSpreadBps 45 -AllowedBrokerAlertTypes "EQUITY_SUITABILITY" -IntervalSeconds 45 -MaxConsecutiveErrors 2 -ErrorCooldownSeconds 300 -MarketHours auto
 ```
 
 Re-arm scanner-side stock autonomy:
@@ -107,10 +110,23 @@ Balanced:
 More aggressive, still capped:
 
 ```powershell
-.\tools\start_stock_bridge_loop.ps1 -Live -MaxOrderNotional 15 -MaxDailyLoss 20 -MinScore 70 -MinRelativeVolume 0.35 -MaxSpreadBps 45 -AllowedBrokerAlertTypes "EQUITY_SUITABILITY" -IntervalSeconds 45
+.\tools\start_stock_bridge_loop.ps1 -Live -MaxOrderNotional 15 -MaxDailyLoss 20 -MinScore 70 -MinRelativeVolume 0.35 -MaxSpreadBps 45 -AllowedBrokerAlertTypes "EQUITY_SUITABILITY" -IntervalSeconds 45 -MaxConsecutiveErrors 2 -ErrorCooldownSeconds 300 -MarketHours auto
 ```
 
 Before switching presets, stop the current bridge process first.
+
+## Volatility And Weekend Swing Mode
+
+Use [VOLATILITY_AND_WEEKEND_SWING_PLAYBOOK.md](./VOLATILITY_AND_WEEKEND_SWING_PLAYBOOK.md) before enabling aggressive volatile or weekend-hold behavior.
+
+Key points:
+
+- Volatile names are allowed, but they need their own lane.
+- After-hours is primarily review and position management.
+- Dollar-based market orders are regular-hours only.
+- After-hours entries use limit orders with whole-share quantity, so high-priced names may be skipped on a small account.
+- Weekend swings are gap-risk trades and should start at reduced size.
+- New entries must halt during repeated broker/data errors.
 
 ## Options Watch
 
