@@ -62,6 +62,7 @@ $checks = @(
     Invoke-Check -Name "Listed equity universe" -Path "/ops/listed-equity-universe?max_symbols=20" -MustContain "LISTED_EQUITY_MASTER_UNIVERSE"
     Invoke-Check -Name "Broker executor bridge" -Path "/ops/broker-executor-bridge?max_daily_loss=20" -MustContain "BROKER_EXECUTOR_BRIDGE"
     Invoke-Check -Name "Broker execution router" -Path "/ops/broker-execution-router?asset_class=equity&account_number=628006199&symbol=SPY&side=buy&order_type=limit&quantity=1&limit_price=1&max_daily_loss=20" -MustContain "ROBINHOOD_EQUITY_MCP_ROUTE_READY"
+    Invoke-Check -Name "Stock execution intent" -Path "/trade/stock-intent?account_number=628006199&symbol=SPY&side=buy&order_type=limit&quantity=1&limit_price=1&max_daily_loss=20" -MustContain "STOCK_EXECUTION_INTENT_READY"
     Invoke-Check -Name "Robinhood crypto universe" -Path "/crypto/universe?format=html" -MustContain "Robinhood Crypto Universe"
     Invoke-Check -Name "Autonomous crypto cycle" -Path "/crypto/autonomous-cycle?format=html" -MustContain "Autonomous Crypto Cycle"
     Invoke-Check -Name "Crypto live test gate" -Path "/crypto/live-test?format=html" -MustContain "Crypto Live Test Gate"
