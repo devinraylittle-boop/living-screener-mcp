@@ -2240,7 +2240,7 @@ def _get_broker_executor_bridge(
             "Executor must default to paper mode.",
             "Live place requires preview id, exact ticket hash, limit order, max loss, and active kill switch.",
             "Market orders remain blocked.",
-            f"At -${daily_loss:.2f} daily loss, executor must halt new entries, continue allowing risk-reducing position management, and require re-arm before any new entry.",
+            f"At -${daily_loss:.2f} daily loss, executor must halt new entries and continue allowing risk-reducing position management. If total P/L recovers above the threshold, new entries may resume unless the operator manually disables autonomy.",
         ],
         "what_i_need_from_user": [
             "Robinhood Agentic account number for the dedicated agentic account; do not use the individual account by accident.",
@@ -2317,11 +2317,12 @@ def _get_loss_review_reassessment(service_container, max_daily_loss: float, real
         "new_entries_allowed": not halted,
         "new_entry_lockout_only": True,
         "position_management_allowed": True,
+        "resume_new_entries_when_threshold_cleared": True,
         "loss_review_loop": [
             "After every loss: capture entry proof, exit proof, spread, fee, slippage, setup state, and invalidation.",
             "Classify loss as bad entry, late entry, bad exit, data issue, fee/slippage issue, regime flip, or acceptable planned loss.",
             "Disable or down-rank the responsible strategy if repeated loss causes recur.",
-            f"At -${limit:.2f} total daily P/L: disable opening new positions, continue managing current open positions, analyze errors, then require explicit re-arm for new entries.",
+            f"At -${limit:.2f} total daily P/L: disable opening new positions and continue managing current open positions. If open positions pull total P/L back above -${limit:.2f}, new entries resume unless autonomy was manually disabled.",
         ],
         "review_only": True,
         "can_place_order_from_this_mcp": False,
