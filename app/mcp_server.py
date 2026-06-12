@@ -2648,7 +2648,8 @@ def _create_stock_execution_intent(
         max_daily_loss,
     )
     proposed_risk = 0.0
-    stop_risk_pct = max(0.0, _float_or_zero(stop_loss_pct, 0.0035))
+    stop_risk_pct = _float_or_zero(stop_loss_pct) or 0.0035
+    stop_risk_pct = max(0.0, stop_risk_pct)
     if side_norm == "buy" and notional:
         proposed_risk = round(_float_or_zero(notional) * stop_risk_pct, 4)
     elif side_norm == "buy" and qty and limit:
