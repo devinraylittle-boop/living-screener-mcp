@@ -1,16 +1,10 @@
 {
-  "date": "2026-06-12",
-  "day_start_value": 100.00861409,
+  "consecutive_errors": 2,
+  "date": "2026-06-13",
+  "day_start_value": 99.62,
   "halted": false,
-  "last_order_ids": [
-    "6a2c214b-ca62-47d5-8c25-a37dbdd9a0be",
-    "6a2c2298-3495-41dd-ad74-9d2b07356960",
-    "6a2c2302-473b-49e3-83a9-47bcac4cf001",
-    "6a2c24db-c9a3-4f38-8f5e-b6b47cc58364",
-    "6a2c286b-ea0e-48c0-b508-69739905f97c",
-    "6a2c2922-0aa4-4625-a2a3-390796b58939",
-    "6a2c4513-30c9-48af-9c70-980e952482f0",
-    "6a2c455f-332a-4d59-9e0b-62c5b50f5a73"
-  ],
-  "trade_count": 8
+  "last_order_ids": [],
+  "new_entries_paused_until": "2026-06-14T02:55:27.846654+00:00",
+  "pause_reason": "consecutive_data_or_broker_errors",
+  "trade_count": 0
 }

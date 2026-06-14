@@ -628,6 +628,11 @@ async def run_cycle(broker: RobinhoodBroker, config: BridgeConfig, state: dict[s
         return
     state["halted"] = False
     await manage_positions(broker, config, state)
+    session = current_equity_session()
+    if session == "closed":
+        append_log({"event": "entry_skipped_market_closed", "session": session, "next_action": "Position management checked; new entries wait for the next equity session."})
+        save_state(state)
+        return
     if new_entries_paused(state):
         append_log(
             {
