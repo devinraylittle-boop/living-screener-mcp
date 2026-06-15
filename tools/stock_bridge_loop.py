@@ -27,9 +27,14 @@ LIVE_AUTH_VALUE = "ENABLE_AGENTIC_STOCK_BRIDGE"
 
 @dataclass(frozen=True)
 class BridgeConfig:
+    broker: str
     base_url: str
     mcp_url: str
     account_number: str
+    alpaca_base_url: str
+    alpaca_data_url: str
+    alpaca_api_key_id: str
+    alpaca_api_secret_key: str
     live: bool
     interval_seconds: int
     once: bool
@@ -73,6 +78,24 @@ def post_json_url(url: str, payload: dict[str, Any], timeout: int = 30) -> dict[
     )
     with urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
+
+
+def request_json_url(
+    url: str,
+    method: str = "GET",
+    payload: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: int = 30,
+) -> dict[str, Any]:
+    body = json.dumps(payload).encode("utf-8") if payload is not None else None
+    request_headers = {"accept": "application/json", "user-agent": "living-screener-stock-bridge/1.0"}
+    if payload is not None:
+        request_headers["content-type"] = "application/json"
+    request_headers.update(headers or {})
+    request = Request(url, data=body, headers=request_headers, method=method)
+    with urlopen(request, timeout=timeout) as response:
+        raw = response.read().decode("utf-8")
+        return json.loads(raw) if raw else {}
 
 
 def append_log(event: dict[str, Any]) -> None:
@@ -376,6 +399,117 @@ class RobinhoodBroker:
         return await self.call("place_equity_order", args)
 
 
+class AlpacaBroker:
+    def __init__(self, config: BridgeConfig):
+        self.config = config
+        self.base_url = config.alpaca_base_url.rstrip("/")
+        self.data_url = config.alpaca_data_url.rstrip("/")
+        self.headers = {
+            "APCA-API-KEY-ID": config.alpaca_api_key_id,
+            "APCA-API-SECRET-KEY": config.alpaca_api_secret_key,
+        }
+
+    async def __aenter__(self) -> "AlpacaBroker":
+        if not self.config.alpaca_api_key_id or not self.config.alpaca_api_secret_key:
+            raise RuntimeError("Alpaca credentials missing. Set ALPACA_API_KEY_ID and ALPACA_API_SECRET_KEY.")
+        account = await self.portfolio()
+        if account.get("trading_blocked"):
+            raise RuntimeError("Alpaca account is trading_blocked.")
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def _trading(self, path: str, method: str = "GET", payload: dict[str, Any] | None = None, timeout: int = 30) -> dict[str, Any] | list[Any]:
+        return request_json_url(f"{self.base_url}{path}", method=method, payload=payload, headers=self.headers, timeout=timeout)
+
+    def _data(self, path: str, timeout: int = 30) -> dict[str, Any]:
+        return request_json_url(f"{self.data_url}{path}", headers=self.headers, timeout=timeout)
+
+    async def portfolio(self) -> dict[str, Any]:
+        account = self._trading("/v2/account")
+        return {
+            **account,
+            "total_value": account.get("portfolio_value") or account.get("equity") or "0",
+            "buying_power": {"buying_power": account.get("buying_power") or "0"},
+        }
+
+    async def positions(self) -> list[dict[str, Any]]:
+        rows = self._trading("/v2/positions")
+        return [
+            {
+                **row,
+                "symbol": row.get("symbol"),
+                "quantity": row.get("qty") or row.get("quantity") or "0",
+                "average_buy_price": row.get("avg_entry_price"),
+            }
+            for row in (rows if isinstance(rows, list) else [])
+        ]
+
+    async def orders_today(self) -> list[dict[str, Any]]:
+        start_utc = datetime.now(UTC).strftime("%Y-%m-%dT05:00:00Z")
+        query = urlencode({"status": "all", "after": start_utc, "limit": 100, "nested": "false"})
+        rows = self._trading(f"/v2/orders?{query}")
+        return rows if isinstance(rows, list) else []
+
+    async def quotes(self, symbols: list[str]) -> dict[str, dict[str, Any]]:
+        clean_symbols = [symbol.upper() for symbol in symbols[:50] if symbol]
+        if not clean_symbols:
+            return {}
+        query = urlencode({"symbols": ",".join(clean_symbols), "feed": "iex"})
+        payload = self._data(f"/v2/stocks/quotes/latest?{query}", timeout=30)
+        quotes = payload.get("quotes") or {}
+        normalized: dict[str, dict[str, Any]] = {}
+        for symbol, quote in quotes.items():
+            bid = as_float(quote.get("bp"))
+            ask = as_float(quote.get("ap"))
+            last = round((bid + ask) / 2, 4) if bid > 0 and ask > 0 else ask or bid
+            normalized[str(symbol).upper()] = {
+                "symbol": str(symbol).upper(),
+                "bid_price": bid,
+                "ask_price": ask,
+                "last_trade_price": last,
+                "venue_bid_time": quote.get("t"),
+                "venue_ask_time": quote.get("t"),
+            }
+        return normalized
+
+    async def tradability(self, symbols: list[str]) -> dict[str, dict[str, Any]]:
+        rows: dict[str, dict[str, Any]] = {}
+        for symbol in [symbol.upper() for symbol in symbols[:10] if symbol]:
+            asset = self._trading(f"/v2/assets/{symbol}")
+            fractionable = bool(asset.get("fractionable"))
+            rows[symbol] = {
+                **asset,
+                "symbol": symbol,
+                "tradeable": bool(asset.get("tradable")),
+                "state": "active" if asset.get("status") == "active" else asset.get("status"),
+                "fractional_tradability": "tradable" if fractionable else "not_tradable",
+            }
+        return rows
+
+    async def review_order(self, args: dict[str, Any]) -> dict[str, Any]:
+        return {"broker": "alpaca", "order_checks": {}, "symbol": args.get("symbol"), "side": args.get("side"), "type": args.get("type")}
+
+    async def place_order(self, args: dict[str, Any]) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "symbol": args["symbol"],
+            "side": args["side"],
+            "type": args["type"],
+            "time_in_force": args.get("time_in_force", "day"),
+        }
+        if args.get("dollar_amount"):
+            payload["notional"] = str(args["dollar_amount"])
+        if args.get("quantity"):
+            payload["qty"] = str(args["quantity"])
+        if args.get("limit_price"):
+            payload["limit_price"] = str(args["limit_price"])
+        if args.get("market_hours") in {"extended_hours", "all_day_hours"}:
+            payload["extended_hours"] = True
+        order = self._trading("/v2/orders", method="POST", payload=payload, timeout=30)
+        return {"broker": "alpaca", "order": order}
+
+
 def scan_candidates(config: BridgeConfig) -> list[dict[str, Any]]:
     query = urlencode(
         {
@@ -597,13 +731,24 @@ def log_broker_action(config: BridgeConfig, payload: dict[str, Any]) -> None:
         append_log({"event": "journal_log_failed", "error": repr(exc), "payload": payload})
 
 
-def state_for_today(state: dict[str, Any], portfolio: dict[str, Any]) -> dict[str, Any]:
+def state_scope(config: BridgeConfig) -> str:
+    if config.broker == "alpaca":
+        raw = f"{config.broker}:{config.alpaca_base_url}:{config.alpaca_api_key_id}"
+    else:
+        raw = f"{config.broker}:{config.account_number}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def state_for_today(state: dict[str, Any], portfolio: dict[str, Any], config: BridgeConfig) -> dict[str, Any]:
     key = today_key()
-    if state.get("date") != key:
+    scope = state_scope(config)
+    if state.get("date") != key or state.get("broker") != config.broker or state.get("scope") != scope:
         state.clear()
         state.update(
             {
                 "date": key,
+                "broker": config.broker,
+                "scope": scope,
                 "day_start_value": as_float(portfolio.get("total_value")),
                 "trade_count": 0,
                 "halted": False,
@@ -615,7 +760,7 @@ def state_for_today(state: dict[str, Any], portfolio: dict[str, Any]) -> dict[st
 
 async def run_cycle(broker: RobinhoodBroker, config: BridgeConfig, state: dict[str, Any]) -> None:
     portfolio = await broker.portfolio()
-    state_for_today(state, portfolio)
+    state_for_today(state, portfolio, config)
     total_value = as_float(portfolio.get("total_value"))
     buying_power = as_float(((portfolio.get("buying_power") or {}).get("buying_power")))
     day_start = as_float(state.get("day_start_value"), total_value)
@@ -753,9 +898,14 @@ async def run_cycle(broker: RobinhoodBroker, config: BridgeConfig, state: dict[s
 
 def parse_args(argv: list[str]) -> BridgeConfig:
     parser = argparse.ArgumentParser(description="Living Screener local Robinhood stock bridge loop")
+    parser.add_argument("--broker", choices=["robinhood", "alpaca"], default=os.getenv("STOCK_BRIDGE_BROKER", "robinhood").strip().lower())
     parser.add_argument("--base-url", default=os.getenv("SCREENER_BASE_URL", "https://living-screener-mcp.onrender.com"))
     parser.add_argument("--mcp-url", default=os.getenv("ROBINHOOD_MCP_URL", "https://agent.robinhood.com/mcp/trading"))
     parser.add_argument("--account-number", default=os.getenv("ROBINHOOD_ACCOUNT_NUMBER", "628006199"))
+    parser.add_argument("--alpaca-base-url", default=os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets"))
+    parser.add_argument("--alpaca-data-url", default=os.getenv("ALPACA_DATA_URL", "https://data.alpaca.markets"))
+    parser.add_argument("--alpaca-api-key-id", default=os.getenv("ALPACA_API_KEY_ID", ""))
+    parser.add_argument("--alpaca-api-secret-key", default=os.getenv("ALPACA_API_SECRET_KEY", ""))
     parser.add_argument("--live", action="store_true", default=as_bool(os.getenv("STOCK_BRIDGE_LIVE", "false")))
     parser.add_argument("--interval-seconds", type=int, default=int(os.getenv("STOCK_BRIDGE_INTERVAL_SECONDS", "60")))
     parser.add_argument("--once", action="store_true")
@@ -795,14 +945,22 @@ def parse_args(argv: list[str]) -> BridgeConfig:
 
 async def async_main(argv: list[str]) -> int:
     config = parse_args(argv)
-    append_log({"event": "bridge_start", "config": {**asdict(config), "account_number": "***"}})
-    print(f"Living Screener stock bridge loop | live={config.live} | account={config.account_number} | base={config.base_url}")
+    safe_config = {
+        **asdict(config),
+        "account_number": "***",
+        "alpaca_api_key_id": "***" if config.alpaca_api_key_id else "",
+        "alpaca_api_secret_key": "***" if config.alpaca_api_secret_key else "",
+    }
+    append_log({"event": "bridge_start", "config": safe_config})
+    print(f"Living Screener stock bridge loop | broker={config.broker} | live={config.live} | account={config.account_number} | base={config.base_url}")
     print(f"Logs: {LOG_PATH}")
     print(f"State: {STATE_PATH}")
-    print("If OAuth opens a Robinhood URL, approve it in the browser to connect the local executor.")
+    if config.broker == "robinhood":
+        print("If OAuth opens a Robinhood URL, approve it in the browser to connect the local executor.")
     state = load_state()
     consecutive_errors = 0
-    async with RobinhoodBroker(config) as broker:
+    broker_cls = AlpacaBroker if config.broker == "alpaca" else RobinhoodBroker
+    async with broker_cls(config) as broker:
         while True:
             try:
                 await run_cycle(broker, config, state)
