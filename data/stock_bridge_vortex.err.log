@@ -1,0 +1,76 @@
+C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastmcp\client\auth\oauth.py:243: UserWarning: Using in-memory token storage -- tokens will be lost when the client restarts. For persistent storage across multiple MCP servers, provide an encrypted AsyncKeyValue backend. See https://gofastmcp.com/clients/auth/oauth#token-storage for details.
+  self._bind(mcp_url)
+[06/13/26 21:51:12] INFO     OAuth authorization URL:              oauth.py:360
+                             https://robinhood.com/oauth?response_             
+                             type=code&client_id=LtLiNmbs9owbYfWgB             
+                             lC68Z2VujIPuvGoAiSYr8xW&redirect_uri=             
+                             http%3A%2F%2Flocalhost%3A51644%2Fcall             
+                             back&state=5z0-Ep275YWZvsKEGZVStqqOMF             
+                             fO1qoanrzpe8AB4s0&code_challenge=vEFp             
+                             fUnlxwDnOnQxiGLPGq2KpUsJnmQUyREY8gPM0             
+                             Ig&code_challenge_method=S256&resourc             
+                             e=https%3A%2F%2Fagent.robinhood.com%2             
+                             Fmcp%2Ftrading&scope=internal                     
+                    INFO     \U0001f3a7 OAuth callback server started on   oauth.py:381
+                             http://localhost:51644                            
+Traceback (most recent call last):
+  File "C:\Users\devin\OneDrive\Documents\Screener\living-screener-mcp-full-crypto-universe-20260612-000000\tools\stock_bridge_loop.py", line 852, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\devin\OneDrive\Documents\Screener\living-screener-mcp-full-crypto-universe-20260612-000000\tools\stock_bridge_loop.py", line 848, in main
+    raise SystemExit(asyncio.run(async_main(sys.argv[1:])))
+                     ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\runners.py", line 204, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\runners.py", line 127, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\asyncio\base_events.py", line 719, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Users\devin\OneDrive\Documents\Screener\living-screener-mcp-full-crypto-universe-20260612-000000\tools\stock_bridge_loop.py", line 800, in async_main
+    async with RobinhoodBroker(config) as broker:
+               ~~~~~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\devin\OneDrive\Documents\Screener\living-screener-mcp-full-crypto-universe-20260612-000000\tools\stock_bridge_loop.py", line 334, in __aenter__
+    await self.client.__aenter__()
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastmcp\client\client.py", line 535, in __aenter__
+    return await self._connect()
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastmcp\client\client.py", line 621, in _connect
+    raise exception
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastmcp\client\client.py", line 702, in _session_runner
+    await stack.enter_async_context(self._context_manager())
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\contextlib.py", line 668, in enter_async_context
+    result = await _enter(cm)
+             ^^^^^^^^^^^^^^^^
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\contextlib.py", line 214, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastmcp\client\client.py", line 468, in _context_manager
+    with catch(get_catch_handlers()):
+         ~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\exceptiongroup\_catch.py", line 39, in __exit__
+    raise unhandled from exc.__cause__
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\exceptiongroup\_catch.py", line 65, in handle_exception
+    result = handler(matched)
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastmcp\utilities\exceptions.py", line 29, in _exception_handler
+    raise leaf
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastmcp\client\transports\http.py", line 205, in connect_session
+    yield session
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastmcp\client\client.py", line 476, in _context_manager
+    await self.initialize()
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastmcp\client\client.py", line 529, in initialize
+    self._session_state.initialize_result = await self.session.initialize()
+                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\mcp\client\session.py", line 171, in initialize
+    result = await self.send_request(
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<16 lines>...
+    )
+    ^
+  File "C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\mcp\shared\session.py", line 294, in send_request
+    raise McpError(
+    ...<8 lines>...
+    )
+mcp.shared.exceptions.McpError: Timed out while waiting for response to ClientRequest. Waited 300.0 seconds.

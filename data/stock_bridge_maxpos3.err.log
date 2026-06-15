@@ -1,0 +1,535 @@
+C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastmcp\client\auth\oauth.py:243: UserWarning: Using in-memory token storage -- tokens will be lost when the client restarts. For persistent storage across multiple MCP servers, provide an encrypted AsyncKeyValue backend. See https://gofastmcp.com/clients/auth/oauth#token-storage for details.
+  self._bind(mcp_url)
+[06/12/26 12:55:01] INFO     OAuth authorization URL:              oauth.py:360
+                             https://robinhood.com/oauth?response_             
+                             type=code&client_id=LtLiNmbs9owbYfWgB             
+                             lC68Z2VujIPuvGoAiSYr8xW&redirect_uri=             
+                             http%3A%2F%2Flocalhost%3A54062%2Fcall             
+                             back&state=hoQxbvcNA_AMPMb_hGviU9WQPt             
+                             IRwEkDcIhn5vYvrNg&code_challenge=d9qd             
+                             0fldhJJgvE6qU0Do5G0xoH9aLM5Rf9MvedO9l             
+                             Kw&code_challenge_method=S256&resourc             
+                             e=https%3A%2F%2Fagent.robinhood.com%2             
+                             Fmcp%2Ftrading&scope=internal                     
+                    INFO     \U0001f3a7 OAuth callback server started on   oauth.py:381
+                             http://localhost:54062                            
+[2026-06-12T18:16:12.294088+00:00] cycle_error: market value fetch: API error 500: {"code":13,"message":"failed to get market value where assetClassSpec=cash_equity_forex_option,rhsAccountNumber=628006199 because\n\u003e failed to get portfolio balances from brokeback where rhsAccou
+[2026-06-13T21:48:02.685931+00:00] cycle_error: Timed out while waiting for response to ClientRequest. Waited 300.0 seconds.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T21:48:47.705256+00:00] cycle_error: 
+[2026-06-13T21:49:32.709340+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T21:50:17.716327+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T21:51:02.719358+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T21:51:47.728030+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T21:52:32.731141+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T21:53:17.737040+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T21:54:02.739369+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T21:54:47.745286+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T21:55:32.747615+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T21:56:17.754763+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T21:57:02.757567+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T21:57:47.768160+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T21:58:32.771324+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T21:59:17.785269+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:00:02.792002+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:00:47.801648+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:01:32.805600+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:02:17.818698+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:03:02.825046+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:03:47.836060+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:04:32.838852+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:05:17.847731+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:06:02.849994+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:06:47.852286+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:07:32.849113+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:08:17.849901+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:09:02.846254+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:09:47.848464+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:10:32.846522+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:11:17.847287+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:12:02.845839+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:12:47.849838+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:13:32.848109+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:14:17.857811+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:15:02.854958+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:15:47.855433+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:16:32.854983+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:17:17.859126+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:18:02.856686+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:18:47.858496+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:19:32.855196+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:20:17.854667+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:21:02.851459+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:21:47.854077+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:22:32.851344+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:23:17.853120+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:24:02.851527+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:24:47.853619+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:25:32.851676+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:26:17.855560+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:27:02.856653+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:27:47.865869+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:28:32.864835+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:29:17.869879+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:30:02.870782+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:30:47.873930+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:31:32.872114+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:32:17.876834+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:33:02.875775+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:33:47.880558+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:34:32.879992+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:35:17.886151+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:36:02.886335+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:36:47.891284+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:37:32.891668+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:38:17.897110+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:39:02.895874+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:39:47.901615+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:40:32.902448+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:41:17.913289+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:42:02.913983+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:42:47.921261+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:43:32.922140+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:44:17.930863+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:45:02.931804+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:45:47.939009+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:46:32.939463+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:47:17.944164+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:48:02.943759+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:48:47.950627+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:49:32.949919+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:50:17.952989+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:51:02.952916+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:51:47.959022+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:52:32.959251+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:53:17.965361+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:54:02.965617+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:54:47.971279+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:55:32.970321+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:56:17.973422+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:57:02.976146+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:57:47.983903+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T22:58:32.986015+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T22:59:17.991381+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:00:02.992007+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:00:47.997839+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:01:32.998002+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:02:18.002242+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:03:03.002198+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:03:48.006459+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:04:33.010593+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:05:18.017250+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:06:03.017882+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:06:48.023026+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:07:33.023198+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:08:18.028646+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:09:03.029954+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:09:48.040860+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:10:33.042871+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:11:18.049947+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:12:03.051210+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:12:48.055885+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:13:33.057209+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:14:18.065452+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:15:03.068793+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:15:48.075758+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:16:33.079110+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:17:18.089261+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:18:03.091224+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:18:48.099937+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:19:33.101371+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:20:18.113124+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:21:03.115606+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:21:48.125554+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:22:33.127330+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:23:18.135122+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:24:03.137214+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:24:48.144021+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:25:33.146088+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:26:18.150719+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:27:03.151492+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:27:48.158397+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:28:33.159686+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:29:18.165323+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:30:03.167727+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:30:48.176910+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:31:33.179159+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:32:18.189695+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:33:03.192145+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:33:48.201638+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:34:33.204093+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:35:18.212478+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:36:03.219784+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:36:48.228277+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:37:33.230216+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:38:18.239617+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:39:03.241889+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:39:48.254404+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:40:33.257040+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:41:18.269273+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:42:03.271938+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:42:48.280157+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:43:33.282564+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:44:18.294230+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:45:03.297257+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:45:48.302275+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:46:33.303897+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:47:18.308564+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:48:03.310924+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:48:48.332834+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:49:33.334934+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:50:18.341542+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:51:03.343147+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:51:48.352483+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:52:33.356036+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:53:18.363602+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:54:03.365570+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:54:48.373181+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:55:33.375502+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:56:18.380468+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:57:03.382769+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:57:48.389368+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-13T23:58:33.392285+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-13T23:59:18.399366+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:00:03.402288+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:00:48.408733+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:01:33.411374+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:02:18.424279+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:03:03.427976+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:03:48.438205+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:04:33.441483+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:05:18.450775+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:06:03.453524+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:06:48.460835+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:07:33.463125+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:08:18.474069+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:09:03.476773+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:09:48.485043+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:10:33.488217+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:11:18.498171+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:12:03.502562+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:12:48.511027+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:13:33.514052+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:14:18.529642+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:15:03.532543+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:15:48.542395+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:16:33.544963+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:17:18.553826+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:18:03.558163+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:18:48.567103+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:19:33.569643+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:20:18.581148+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:21:03.584910+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:21:48.592754+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:22:33.595836+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:23:18.609595+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:24:03.612773+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:24:48.622399+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:25:33.626108+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:26:18.636037+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:27:03.639788+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:27:48.647942+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:28:33.651202+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:29:18.658370+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:30:03.662660+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:30:48.674195+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:31:33.676603+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:32:18.685323+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:33:03.688619+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:33:48.698724+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:34:33.703356+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:35:18.717151+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:36:03.721639+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:36:48.730583+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:37:33.734091+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:38:18.744744+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:39:03.748228+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:39:48.759224+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:40:33.763446+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:41:18.776658+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:42:03.781222+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:42:48.790239+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:43:33.793077+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:44:18.807574+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:45:03.811483+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:45:48.825307+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:46:33.828735+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:47:18.843220+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:48:03.850207+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:48:48.862986+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:49:33.867452+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:50:18.879516+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:51:03.883581+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:51:48.895667+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:52:33.900140+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:53:18.911322+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:54:03.915538+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:54:48.927718+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:55:33.931438+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:56:18.947855+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:57:03.953174+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:57:48.963664+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T00:58:33.967662+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T00:59:18.981045+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:00:03.984641+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:00:48.994614+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:01:33.998726+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:02:19.010310+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:03:04.014976+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:03:49.029526+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:04:34.038015+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:05:19.053248+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:06:04.059537+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:06:49.069847+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:07:34.073697+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:08:19.084569+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:09:04.088428+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:09:49.099899+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:10:34.107424+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:11:19.117674+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:12:04.121209+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:12:49.133097+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:13:34.137518+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:14:19.150070+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:15:04.154008+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:15:49.165765+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:16:34.172109+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:17:19.185192+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:18:04.189190+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:18:49.201100+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:19:34.205349+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:20:19.215463+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:21:04.220129+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:21:49.234856+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:22:34.239601+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:23:19.252935+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:24:04.257615+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:24:49.269093+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:25:34.274614+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:26:19.285257+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:27:04.289781+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:27:49.299995+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:28:34.303527+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:29:19.313654+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:30:04.318702+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:30:49.329985+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:31:34.333415+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:32:19.344049+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:33:04.349260+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:33:49.362384+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:34:34.367827+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:35:19.382444+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:36:04.387460+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:36:49.401727+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:37:34.405187+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:38:19.414922+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:39:04.417943+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:39:49.435800+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:40:34.442832+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:41:19.461034+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:42:04.465028+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:42:49.477472+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:43:34.482327+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:44:19.493630+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:45:04.497014+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:45:49.505875+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:46:34.509845+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:47:19.519631+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:48:04.522724+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:48:49.531086+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:49:34.534509+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:50:19.543416+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:51:04.546600+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:51:49.558522+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:52:34.563983+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:53:19.573121+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:54:04.576735+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:54:49.585737+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:55:34.588609+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:56:19.599089+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:57:04.601669+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:57:49.609699+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T01:58:34.612433+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T01:59:19.631091+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T02:00:04.634183+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T02:00:49.643680+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T02:45:12.777845+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T02:45:57.793084+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T02:46:42.796693+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T02:47:27.813736+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T02:48:12.819068+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T02:48:57.830421+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+[2026-06-14T02:49:42.838510+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-14T02:50:27.853735+00:00] cycle_error: Client is not connected. Use the 'async with client:' context manager first.

@@ -1,0 +1,19 @@
+Starting Living Screener stock bridge loop
+Repo: C:\Users\devin\OneDrive\Documents\Screener\living-screener-mcp-full-crypto-universe-20260612-000000
+Base: https://living-screener-mcp.onrender.com
+Account: 628006199
+Live: True
+Max order notional: 15
+Max daily loss: 20
+Min score: 70
+Min relative volume: 0.35
+Max spread bps: 45
+Allowed broker alerts: EQUITY_SUITABILITY
+Max consecutive errors: 2
+Error cooldown seconds: 300
+Market hours mode: auto
+
+Living Screener stock bridge loop | live=True | account=628006199 | base=https://living-screener-mcp.onrender.com
+Logs: C:\Users\devin\OneDrive\Documents\Screener\living-screener-mcp-full-crypto-universe-20260612-000000\data\stock_bridge_loop.jsonl
+State: C:\Users\devin\OneDrive\Documents\Screener\living-screener-mcp-full-crypto-universe-20260612-000000\data\stock_bridge_state.json
+If OAuth opens a Robinhood URL, approve it in the browser to connect the local executor.

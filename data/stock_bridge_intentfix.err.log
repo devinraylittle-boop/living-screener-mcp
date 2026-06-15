@@ -1,0 +1,28 @@
+C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastmcp\client\auth\oauth.py:243: UserWarning: Using in-memory token storage -- tokens will be lost when the client restarts. For persistent storage across multiple MCP servers, provide an encrypted AsyncKeyValue backend. See https://gofastmcp.com/clients/auth/oauth#token-storage for details.
+  self._bind(mcp_url)
+[06/12/26 12:37:42] INFO     OAuth authorization URL:              oauth.py:360
+                             https://robinhood.com/oauth?response_             
+                             type=code&client_id=LtLiNmbs9owbYfWgB             
+                             lC68Z2VujIPuvGoAiSYr8xW&redirect_uri=             
+                             http%3A%2F%2Flocalhost%3A56756%2Fcall             
+                             back&state=DBTmnSOcQzy0n-KnL6dbXmsCaJ             
+                             7J_BSHVgO4XXzLEzM&code_challenge=XWm5             
+                             VsYQ_KDzBZqpkwTZtlC_IUGEaLKNT0MGa-XrO             
+                             9c&code_challenge_method=S256&resourc             
+                             e=https%3A%2F%2Fagent.robinhood.com%2             
+                             Fmcp%2Ftrading&scope=internal                     
+                    INFO     \U0001f3a7 OAuth callback server started on   oauth.py:381
+                             http://localhost:56756                            
+[06/12/26 12:48:35] INFO     OAuth authorization URL:              oauth.py:360
+                             https://robinhood.com/oauth?response_             
+                             type=code&client_id=LtLiNmbs9owbYfWgB             
+                             lC68Z2VujIPuvGoAiSYr8xW&redirect_uri=             
+                             http%3A%2F%2Flocalhost%3A56756%2Fcall             
+                             back&state=3KpXasru6tDtYY6GdOGdxKmxTm             
+                             UpZCGduAFC_0VyEKY&code_challenge=XRjX             
+                             lEeCyqdm8u2nB3w3Ur3TBgr8xP2mUJISen_B-             
+                             9M&code_challenge_method=S256&resourc             
+                             e=https%3A%2F%2Fagent.robinhood.com%2             
+                             Fmcp%2Ftrading&scope=internal                     
+                    INFO     \U0001f3a7 OAuth callback server started on   oauth.py:381
+                             http://localhost:56756                            

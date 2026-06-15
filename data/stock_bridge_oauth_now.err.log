@@ -1,0 +1,24 @@
+C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastmcp\client\auth\oauth.py:243: UserWarning: Using in-memory token storage -- tokens will be lost when the client restarts. For persistent storage across multiple MCP servers, provide an encrypted AsyncKeyValue backend. See https://gofastmcp.com/clients/auth/oauth#token-storage for details.
+  self._bind(mcp_url)
+[06/12/26 12:14:50] INFO     OAuth authorization URL:              oauth.py:360
+                             https://robinhood.com/oauth?response_             
+                             type=code&client_id=LtLiNmbs9owbYfWgB             
+                             lC68Z2VujIPuvGoAiSYr8xW&redirect_uri=             
+                             http%3A%2F%2Flocalhost%3A55847%2Fcall             
+                             back&state=jp-e-niINvxVFkrIkAZuRqBw_H             
+                             y2nhCeNcaf8rDshl8&code_challenge=wOQO             
+                             aezLExLdErPYeEPgg8kKsVsUpzga2yQ9PaKLg             
+                             Qw&code_challenge_method=S256&resourc             
+                             e=https%3A%2F%2Fagent.robinhood.com%2             
+                             Fmcp%2Ftrading&scope=internal                     
+[06/12/26 12:14:51] INFO     \U0001f3a7 OAuth callback server started on   oauth.py:381
+                             http://localhost:55847                            
+[2026-06-12T17:16:42.851569+00:00] cycle_error: HTTP Error 500: Internal Server Error
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-12T17:18:00.040376+00:00] cycle_error: HTTP Error 500: Internal Server Error
+[2026-06-12T17:23:45.118038+00:00] cycle_error: HTTP Error 500: Internal Server Error
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-12T17:25:00.820778+00:00] cycle_error: HTTP Error 500: Internal Server Error
+[2026-06-12T17:33:23.538775+00:00] cycle_error: HTTP Error 500: Internal Server Error
+Bridge paused new entries: consecutive data or broker errors reached the configured limit.
+[2026-06-12T17:34:52.915120+00:00] cycle_error: HTTP Error 500: Internal Server Error

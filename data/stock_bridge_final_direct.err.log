@@ -1,0 +1,15 @@
+C:\Users\devin\AppData\Local\Python\pythoncore-3.14-64\Lib\site-packages\fastmcp\client\auth\oauth.py:243: UserWarning: Using in-memory token storage -- tokens will be lost when the client restarts. For persistent storage across multiple MCP servers, provide an encrypted AsyncKeyValue backend. See https://gofastmcp.com/clients/auth/oauth#token-storage for details.
+  self._bind(mcp_url)
+[06/12/26 12:03:16] INFO     OAuth authorization URL:              oauth.py:360
+                             https://robinhood.com/oauth?response_             
+                             type=code&client_id=LtLiNmbs9owbYfWgB             
+                             lC68Z2VujIPuvGoAiSYr8xW&redirect_uri=             
+                             http%3A%2F%2Flocalhost%3A60374%2Fcall             
+                             back&state=NpeOpvx6BNVHy8HakbaAAYKif4             
+                             97uGSxC9Jl0FuXNdg&code_challenge=7dAL             
+                             OrloZa0WPUEzmpa0O8uQm72WP_kSDe2ruCr4k             
+                             5s&code_challenge_method=S256&resourc             
+                             e=https%3A%2F%2Fagent.robinhood.com%2             
+                             Fmcp%2Ftrading&scope=internal                     
+[06/12/26 12:03:17] INFO     \U0001f3a7 OAuth callback server started on   oauth.py:381
+                             http://localhost:60374                            
