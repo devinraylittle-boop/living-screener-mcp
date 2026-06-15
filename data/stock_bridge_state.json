@@ -1,10 +1,7 @@
 {
-  "consecutive_errors": 2,
-  "date": "2026-06-13",
+  "date": "2026-06-14",
   "day_start_value": 99.62,
   "halted": false,
   "last_order_ids": [],
-  "new_entries_paused_until": "2026-06-14T02:55:27.846654+00:00",
-  "pause_reason": "consecutive_data_or_broker_errors",
   "trade_count": 0
 }
