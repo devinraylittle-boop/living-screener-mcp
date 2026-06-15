@@ -10,6 +10,7 @@ import time
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, time as day_time, timedelta
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
@@ -56,6 +57,10 @@ class BridgeConfig:
     max_consecutive_errors: int
     error_cooldown_seconds: int
     market_hours: str
+    enable_crypto_execution: bool
+    allow_market_options: bool
+    max_option_contract_cost: float
+    max_option_account_risk: float
 
 
 def utc_now() -> str:
@@ -136,6 +141,31 @@ def as_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+class ExecutionRejected(ValueError):
+    pass
+
+
+def normalize_asset_class(value: Any) -> str:
+    normalized = str(value or "stock").strip().lower()
+    if normalized in {"stock", "stocks", "equity", "equities"}:
+        return "stock"
+    if normalized in {"option", "options"}:
+        return "option"
+    if normalized in {"crypto", "cryptocurrency"}:
+        return "crypto"
+    raise ExecutionRejected(f"Unsupported asset_class: {value}")
+
+
+def require_whole_contract_qty(value: Any) -> str:
+    try:
+        qty = Decimal(str(value))
+    except (InvalidOperation, ValueError) as exc:
+        raise ExecutionRejected("Options qty must be a whole positive number.") from exc
+    if qty <= 0 or qty != qty.to_integral_value():
+        raise ExecutionRejected("Options qty must be a whole positive number; fractional contracts are rejected.")
+    return str(int(qty))
 
 
 def parse_timestamp(value: Any) -> datetime | None:
@@ -434,6 +464,10 @@ class AlpacaBroker:
             "buying_power": {"buying_power": account.get("buying_power") or "0"},
         }
 
+    async def account(self) -> dict[str, Any]:
+        account = self._trading("/v2/account")
+        return account if isinstance(account, dict) else {}
+
     async def positions(self) -> list[dict[str, Any]]:
         rows = self._trading("/v2/positions")
         return [
@@ -489,9 +523,20 @@ class AlpacaBroker:
         return rows
 
     async def review_order(self, args: dict[str, Any]) -> dict[str, Any]:
-        return {"broker": "alpaca", "order_checks": {}, "symbol": args.get("symbol"), "side": args.get("side"), "type": args.get("type")}
+        return await self.route_order(args, submit=False)
 
     async def place_order(self, args: dict[str, Any]) -> dict[str, Any]:
+        return await self.route_order(args, submit=True)
+
+    async def route_order(self, args: dict[str, Any], submit: bool) -> dict[str, Any]:
+        asset_class = normalize_asset_class(args.get("asset_class"))
+        if asset_class == "option":
+            return await self.options_executor(args, submit=submit)
+        if asset_class == "crypto":
+            return await self.crypto_executor(args, submit=submit)
+        return await self.stock_executor(args, submit=submit)
+
+    async def stock_executor(self, args: dict[str, Any], submit: bool) -> dict[str, Any]:
         payload: dict[str, Any] = {
             "symbol": args["symbol"],
             "side": args["side"],
@@ -506,8 +551,159 @@ class AlpacaBroker:
             payload["limit_price"] = str(args["limit_price"])
         if args.get("market_hours") in {"extended_hours", "all_day_hours"}:
             payload["extended_hours"] = True
+        if not submit:
+            return {"broker": "alpaca", "asset_class": "stock", "order_checks": {}, "normalized_intent": payload}
         order = self._trading("/v2/orders", method="POST", payload=payload, timeout=30)
-        return {"broker": "alpaca", "order": order}
+        return {"broker": "alpaca", "asset_class": "stock", "order": order, "normalized_intent": payload}
+
+    async def crypto_executor(self, args: dict[str, Any], submit: bool) -> dict[str, Any]:
+        account = await self.account()
+        crypto_status = str(account.get("crypto_status") or "").upper()
+        if not self.config.enable_crypto_execution:
+            raise ExecutionRejected("Crypto execution is disabled. Set ENABLE_CRYPTO_EXECUTION=true to allow crypto routing.")
+        if crypto_status != "ACTIVE":
+            raise ExecutionRejected(f"Crypto execution rejected because Alpaca crypto_status is {crypto_status or 'UNKNOWN'}.")
+        payload: dict[str, Any] = {
+            "symbol": args["symbol"],
+            "side": args["side"],
+            "type": args.get("type", "market"),
+            "time_in_force": args.get("time_in_force", "gtc"),
+        }
+        if args.get("dollar_amount") or args.get("notional"):
+            payload["notional"] = str(args.get("dollar_amount") or args.get("notional"))
+        if args.get("quantity") or args.get("qty"):
+            payload["qty"] = str(args.get("quantity") or args.get("qty"))
+        if args.get("limit_price"):
+            payload["limit_price"] = str(args["limit_price"])
+        if not submit:
+            return {"broker": "alpaca", "asset_class": "crypto", "order_checks": {}, "normalized_intent": payload}
+        order = self._trading("/v2/orders", method="POST", payload=payload, timeout=30)
+        return {"broker": "alpaca", "asset_class": "crypto", "order": order, "normalized_intent": payload}
+
+    async def ensure_options_capable(self, position_intent: str | None) -> dict[str, Any]:
+        account = await self.account()
+        level = max(int(as_float(account.get("options_trading_level"))), int(as_float(account.get("options_approved_level"))))
+        if level < 1:
+            raise ExecutionRejected("Options execution rejected: Alpaca options trading is not enabled.")
+        if position_intent == "buy_to_open" and level < 2:
+            raise ExecutionRejected("Options execution rejected: buying calls/puts requires Alpaca options level 2 or higher.")
+        return {"options_level": level, "account_status": account.get("status"), "trading_blocked": account.get("trading_blocked")}
+
+    async def option_contracts(
+        self,
+        underlying: str,
+        expiration: str | None = None,
+        option_type: str | None = None,
+        strike: str | float | None = None,
+    ) -> list[dict[str, Any]]:
+        query_values: dict[str, Any] = {"underlying_symbols": underlying.upper(), "status": "active", "limit": 10000}
+        if expiration:
+            query_values["expiration_date"] = expiration
+        if option_type:
+            query_values["type"] = str(option_type).lower()
+        if strike is not None:
+            query_values["strike_price_gte"] = str(strike)
+            query_values["strike_price_lte"] = str(strike)
+        contracts: list[dict[str, Any]] = []
+        page_token: str | None = None
+        while True:
+            values = dict(query_values)
+            if page_token:
+                values["page_token"] = page_token
+            payload = self._trading(f"/v2/options/contracts?{urlencode(values)}")
+            if not isinstance(payload, dict):
+                break
+            contracts.extend(list(payload.get("option_contracts") or []))
+            page_token = payload.get("next_page_token")
+            if not page_token:
+                break
+        return [
+            row
+            for row in contracts
+            if str(row.get("status") or "").lower() == "active" and bool(row.get("tradable"))
+        ]
+
+    async def lookup_option_contract(self, underlying: str, expiration: str, option_type: str, strike: str | float) -> str:
+        target_strike = Decimal(str(strike))
+        contracts = await self.option_contracts(underlying, expiration=expiration, option_type=option_type, strike=strike)
+        for contract in contracts:
+            try:
+                contract_strike = Decimal(str(contract.get("strike_price")))
+            except (InvalidOperation, ValueError):
+                continue
+            if (
+                str(contract.get("underlying_symbol") or "").upper() == underlying.upper()
+                and str(contract.get("expiration_date") or "") == expiration
+                and str(contract.get("type") or "").lower() == option_type.lower()
+                and contract_strike == target_strike
+            ):
+                symbol = str(contract.get("symbol") or "")
+                if symbol:
+                    return symbol
+        raise ExecutionRejected(f"No active tradable {underlying.upper()} {expiration} {option_type.lower()} {strike} option contract found.")
+
+    async def normalize_option_order(self, args: dict[str, Any]) -> dict[str, Any]:
+        if args.get("dollar_amount") or args.get("notional"):
+            raise ExecutionRejected("Options orders reject notional/dollar_amount; use whole-number qty.")
+        symbol = str(args.get("symbol") or args.get("contract_symbol") or "").upper()
+        if not symbol and args.get("underlying") and args.get("expiration") and args.get("option_type") and args.get("strike"):
+            symbol = await self.lookup_option_contract(
+                str(args["underlying"]),
+                str(args["expiration"]),
+                str(args["option_type"]),
+                str(args["strike"]),
+            )
+        if not symbol:
+            raise ExecutionRejected("Options executor requires an OCC option contract symbol.")
+        qty = require_whole_contract_qty(args.get("quantity") or args.get("qty"))
+        position_intent = str(args.get("position_intent") or "").lower() or None
+        if position_intent and position_intent not in {"buy_to_open", "sell_to_close"}:
+            raise ExecutionRejected("Options executor initially allows only buy_to_open and sell_to_close intents.")
+        side = str(args.get("side") or "").lower()
+        if not side and position_intent:
+            side = "buy" if position_intent == "buy_to_open" else "sell"
+        if side not in {"buy", "sell"}:
+            raise ExecutionRejected("Options executor requires side=buy or side=sell.")
+        order_type = str(args.get("type") or "limit").lower()
+        if order_type not in {"market", "limit"}:
+            raise ExecutionRejected("Options executor initially allows only market and limit orders.")
+        if order_type == "market" and not self.config.allow_market_options:
+            raise ExecutionRejected("Market options orders are disabled. Set ALLOW_MARKET_OPTIONS=true to allow them.")
+        limit_price = args.get("limit_price")
+        if order_type == "limit" and not limit_price:
+            raise ExecutionRejected("Options limit orders require limit_price.")
+        payload: dict[str, Any] = {
+            "symbol": symbol,
+            "qty": qty,
+            "side": side,
+            "type": order_type,
+            "time_in_force": "day",
+            "extended_hours": False,
+            "order_class": "simple",
+        }
+        if position_intent:
+            payload["position_intent"] = position_intent
+        if limit_price:
+            price = Decimal(str(limit_price))
+            if price <= 0:
+                raise ExecutionRejected("Options limit_price must be positive.")
+            payload["limit_price"] = str(limit_price)
+            estimated_cost = float(price * Decimal(qty) * Decimal("100"))
+            if self.config.max_option_contract_cost > 0 and estimated_cost > self.config.max_option_contract_cost:
+                raise ExecutionRejected(f"Options order estimated cost ${estimated_cost:.2f} exceeds max contract cost ${self.config.max_option_contract_cost:.2f}.")
+            if self.config.max_option_account_risk > 0 and estimated_cost > self.config.max_option_account_risk:
+                raise ExecutionRejected(f"Options order estimated risk ${estimated_cost:.2f} exceeds max account-risk cap ${self.config.max_option_account_risk:.2f}.")
+        return payload
+
+    async def options_executor(self, args: dict[str, Any], submit: bool) -> dict[str, Any]:
+        payload = await self.normalize_option_order(args)
+        capability = await self.ensure_options_capable(payload.get("position_intent"))
+        append_log({"event": "alpaca_option_intent_normalized", "normalized_intent": payload, "capability": capability, "submit": submit})
+        if not submit:
+            return {"broker": "alpaca", "asset_class": "option", "order_checks": {}, "normalized_intent": payload, "capability": capability}
+        order = self._trading("/v2/orders", method="POST", payload=payload, timeout=30)
+        append_log({"event": "alpaca_option_order_response", "normalized_intent": payload, "response": order})
+        return {"broker": "alpaca", "asset_class": "option", "order": order, "normalized_intent": payload, "capability": capability}
 
 
 def scan_candidates(config: BridgeConfig) -> list[dict[str, Any]]:
@@ -755,6 +951,9 @@ def state_for_today(state: dict[str, Any], portfolio: dict[str, Any], config: Br
                 "last_order_ids": [],
             }
         )
+    elif as_float(state.get("day_start_value")) <= 0 and as_float(portfolio.get("total_value")) > 0:
+        state["day_start_value"] = as_float(portfolio.get("total_value"))
+        state["halted"] = False
     return state
 
 
@@ -927,6 +1126,10 @@ def parse_args(argv: list[str]) -> BridgeConfig:
     parser.add_argument("--max-consecutive-errors", type=int, default=int(os.getenv("STOCK_BRIDGE_MAX_CONSECUTIVE_ERRORS", "2")))
     parser.add_argument("--error-cooldown-seconds", type=int, default=int(os.getenv("STOCK_BRIDGE_ERROR_COOLDOWN_SECONDS", "300")))
     parser.add_argument("--market-hours", default=os.getenv("STOCK_BRIDGE_MARKET_HOURS", "auto"))
+    parser.add_argument("--enable-crypto-execution", action="store_true", default=as_bool(os.getenv("ENABLE_CRYPTO_EXECUTION", "false")))
+    parser.add_argument("--allow-market-options", action="store_true", default=as_bool(os.getenv("ALLOW_MARKET_OPTIONS", "false")))
+    parser.add_argument("--max-option-contract-cost", type=float, default=float(os.getenv("MAX_OPTION_CONTRACT_COST", os.getenv("STOCK_BRIDGE_MAX_ORDER_NOTIONAL", "10"))))
+    parser.add_argument("--max-option-account-risk", type=float, default=float(os.getenv("MAX_OPTION_ACCOUNT_RISK", os.getenv("STOCK_BRIDGE_MAX_DAILY_LOSS", "20"))))
     args = parser.parse_args(argv)
     raw = vars(args)
     raw["allowed_broker_alert_types"] = tuple(

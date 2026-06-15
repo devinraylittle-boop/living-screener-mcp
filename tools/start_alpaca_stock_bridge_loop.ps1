@@ -12,6 +12,10 @@ param(
     [string]$MarketHours = "auto",
     [string]$AlpacaBaseUrl = "https://api.alpaca.markets",
     [string]$AlpacaDataUrl = "https://data.alpaca.markets",
+    [decimal]$MaxOptionContractCost = 15,
+    [decimal]$MaxOptionAccountRisk = 20,
+    [switch]$EnableCryptoExecution,
+    [switch]$AllowMarketOptions,
     [switch]$Live,
     [switch]$Once
 )
@@ -41,6 +45,10 @@ $env:STOCK_BRIDGE_INTERVAL_SECONDS = [string]$IntervalSeconds
 $env:STOCK_BRIDGE_MAX_CONSECUTIVE_ERRORS = [string]$MaxConsecutiveErrors
 $env:STOCK_BRIDGE_ERROR_COOLDOWN_SECONDS = [string]$ErrorCooldownSeconds
 $env:STOCK_BRIDGE_MARKET_HOURS = $MarketHours
+$env:MAX_OPTION_CONTRACT_COST = [string]$MaxOptionContractCost
+$env:MAX_OPTION_ACCOUNT_RISK = [string]$MaxOptionAccountRisk
+$env:ENABLE_CRYPTO_EXECUTION = if ($EnableCryptoExecution) { "true" } else { "false" }
+$env:ALLOW_MARKET_OPTIONS = if ($AllowMarketOptions) { "true" } else { "false" }
 
 $argsList = @("tools\stock_bridge_loop.py", "--broker", "alpaca")
 if ($Live) {
@@ -71,6 +79,10 @@ Write-Host "Max daily loss: $MaxDailyLoss"
 Write-Host "Min score: $MinScore"
 Write-Host "Min relative volume: $MinRelativeVolume"
 Write-Host "Max spread bps: $MaxSpreadBps"
+Write-Host "Max option contract cost: $MaxOptionContractCost"
+Write-Host "Max option account risk: $MaxOptionAccountRisk"
+Write-Host "Crypto execution enabled: $EnableCryptoExecution"
+Write-Host "Market options allowed: $AllowMarketOptions"
 Write-Host "Allowed broker alerts: $AllowedBrokerAlertTypes"
 Write-Host "Max consecutive errors: $MaxConsecutiveErrors"
 Write-Host "Error cooldown seconds: $ErrorCooldownSeconds"
