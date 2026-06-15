@@ -991,8 +991,18 @@ def _get_event_radar(service_container) -> dict:
             },
             {
                 "lane": "live_market_discovery",
-                "examples": ["relative volume spikes", "VWAP breaks", "sector sympathy", "index volatility"],
-                "current_status": "Handled by run_broad_opportunity_scan and normal scalp scans.",
+                "examples": [
+                    "top gainers",
+                    "top losers",
+                    "unusual volume",
+                    "parabolic continuation",
+                    "blow-off reversals",
+                    "failed breakouts",
+                    "VWAP reclaim/rejection",
+                    "short squeezes",
+                    "liquidity traps",
+                ],
+                "current_status": "Handled by broad scans today; needs a real top-mover feed for full continuous market sweep.",
             },
             {
                 "lane": "microcap_research",
@@ -1011,7 +1021,24 @@ def _get_event_radar(service_container) -> dict:
             "Prefer an unrelated clean setup over an event-adjacent messy setup.",
             "Report event-related and non-event candidate counts separately.",
             "Treat event watchlists as context, not prediction.",
+            "Always scan top movers for both continuation and reversal; a strong move can become a better opposite-side setup after exhaustion.",
         ],
+        "top_mover_radar": {
+            "status": "CORE_OPERATING_REQUIREMENT",
+            "patterns_to_track": [
+                "continuation after high-volume breakout",
+                "failed breakout into VWAP loss",
+                "volume climax reversal",
+                "short squeeze continuation",
+                "call opportunity after VWAP reclaim",
+                "put opportunity after exhaustion",
+                "gap-and-go",
+                "gap-fade",
+                "halt/spread/slippage danger",
+            ],
+            "paper_learning_rule": "Paper trade continuation, reversal, failed, ugly, and average setups so the system learns what to avoid, reverse, hedge, or convert.",
+        },
+        "deep_research_reminder": "How can a trading system identify, paper trade, and learn from bad setups until it understands how to either avoid them, reverse them, hedge them, or convert them into profitable opportunities?",
         "broad_market_universe_preview": broad_watchlist[:75],
         "links": {
             "broad_opportunity_scan": "/ops/broad-opportunity-scan?format=html",
@@ -1398,6 +1425,34 @@ def _run_broad_opportunity_scan(
             "non_event_candidates": [item.get("ticker") for item in non_event_candidates],
             "rule": "Do not prefer event-adjacent names over cleaner non-event setups.",
         },
+        "top_mover_radar": {
+            "status": "ALWAYS_MONITOR",
+            "continuation_patterns": ["gap-and-go", "VWAP hold after breakout", "opening-range continuation", "short squeeze continuation"],
+            "reversal_patterns": ["failed breakout", "VWAP loss after parabolic move", "volume climax", "blow-off top", "failed reclaim"],
+            "paper_trade_requirement": "Paper trade continuation, reversal, failed, and ugly setups even when they are not live-trade candidates.",
+            "learning_questions": [
+                "Did the mover continue, fail, or reverse?",
+                "Was the best opportunity calls, puts, stock long, stock short, or no trade?",
+                "What warned before failure: spread, volume climax, VWAP loss, lower high, relative weakness, or news fade?",
+            ],
+        },
+        "order_execution_policy": {
+            "prefer_limit_when": [
+                "spread is wide",
+                "liquidity is thin",
+                "entry precision matters",
+                "option contract is illiquid",
+                "slippage risk is high",
+                "setup is not moving urgently",
+            ],
+            "market_order_allowed_only_when": [
+                "liquidity is strong",
+                "spread is tight",
+                "speed matters more than price precision",
+                "confirmed breakout or reversal is happening in real time",
+                "trade size is small enough that execution risk is acceptable",
+            ],
+        },
         "real_cash_test_guard": {
             "starting_cash_reference": _float_or_zero(account_value) or 50.0,
             "daily_closed_loss_lockout_count": service_container.settings.max_daily_real_cash_closed_losses,
@@ -1433,6 +1488,7 @@ def _run_broad_opportunity_scan(
         "notes": [
             "Broad scan is the default opportunity engine. Event radar adds context but cannot narrow the machine by itself.",
             "Microcap and crypto lanes are separated to prevent contaminated learning.",
+            "Aggressive paper trading is a permanent data mine, including bad setups and failed setups.",
             "This MCP cannot place, simulate, modify, or cancel broker orders.",
         ],
     }
@@ -2212,21 +2268,42 @@ def _get_cross_asset_capital_plan(service_container, account_value: float, buyin
     controls = _latest_autonomous_controls(service_container)
     max_loss = max(0.0, float(max_daily_loss))
     controls = {**controls, "max_daily_loss": round(max_loss, 2)}
+    market_phase = _market_phase()
     active_lanes = [name for name, enabled in {
         "stocks": controls.get("stocks_enabled"),
         "options": controls.get("options_enabled"),
         "crypto": controls.get("crypto_enabled"),
     }.items() if enabled]
-    lane_count = max(1, len(active_lanes))
     cash = max(0.0, float(buying_power))
-    crypto_cap = min(float(controls.get("max_crypto_cash", 0.0) or 0.0), cash)
-    remaining_after_crypto = max(0.0, cash - (crypto_cap if "crypto" in active_lanes else 0.0))
-    stock_cap = round(remaining_after_crypto * 0.60, 2) if "stocks" in active_lanes else 0.0
-    options_cap = round(remaining_after_crypto * 0.40, 2) if "options" in active_lanes else 0.0
-    if "stocks" in active_lanes and "options" not in active_lanes:
+    target_allocations = {"options": 0.40, "stocks": 0.30, "crypto": 0.30}
+    equity_options_closed = market_phase["phase"] in {"offhours", "afterhours"}
+    premarket_taper = market_phase["phase"] == "premarket"
+    crypto_cap = 0.0
+    if "crypto" in active_lanes:
+        configured_crypto_cap = float(controls.get("max_crypto_cash", 0.0) or 0.0)
+        normal_crypto_cap = cash * target_allocations["crypto"]
+        if equity_options_closed:
+            crypto_cap = cash if configured_crypto_cap <= 0 else min(cash, max(configured_crypto_cap, normal_crypto_cap))
+        elif premarket_taper:
+            crypto_cap = min(cash, max(normal_crypto_cap, configured_crypto_cap))
+        else:
+            crypto_cap = min(cash, normal_crypto_cap if configured_crypto_cap <= 0 else min(configured_crypto_cap, normal_crypto_cap))
+    remaining_after_crypto = max(0.0, cash - crypto_cap)
+    stock_cap = round(cash * target_allocations["stocks"], 2) if "stocks" in active_lanes else 0.0
+    options_cap = round(cash * target_allocations["options"], 2) if "options" in active_lanes else 0.0
+    if equity_options_closed:
+        stock_cap = 0.0
+        options_cap = 0.0
+    elif "stocks" in active_lanes and "options" not in active_lanes:
         stock_cap = round(remaining_after_crypto, 2)
-    if "options" in active_lanes and "stocks" not in active_lanes:
+    elif "options" in active_lanes and "stocks" not in active_lanes:
         options_cap = round(remaining_after_crypto, 2)
+    elif stock_cap + options_cap > remaining_after_crypto and remaining_after_crypto > 0:
+        stock_weight = target_allocations["stocks"]
+        options_weight = target_allocations["options"]
+        total_weight = stock_weight + options_weight
+        stock_cap = round(remaining_after_crypto * stock_weight / total_weight, 2) if "stocks" in active_lanes else 0.0
+        options_cap = round(remaining_after_crypto * options_weight / total_weight, 2) if "options" in active_lanes else 0.0
     payload = {
         "status": "CAPITAL_PLAN_READY",
         "schema_version": "cross_asset_capital_plan_v1",
@@ -2234,15 +2311,26 @@ def _get_cross_asset_capital_plan(service_container, account_value: float, buyin
         "account_value": round(float(account_value), 2),
         "buying_power": round(cash, 2),
         "max_daily_loss": round(max_loss, 2),
+        "market_phase": market_phase,
         "controls": controls,
         "active_lanes": active_lanes,
+        "target_allocation_framework": {
+            "options": "40% normal priority allocation; can exceed with documented high-quality expected-value exception.",
+            "stocks": "30% normal allocation for intraday and short-swing equity setups.",
+            "crypto": "30% normal allocation; may expand up to 100% of available cash while stock/options markets are closed, then taper toward target before open.",
+        },
         "lane_budgets": {
             "stocks": stock_cap,
             "options": options_cap,
             "crypto": round(crypto_cap, 2) if "crypto" in active_lanes else 0.0,
         },
+        "allocation_exception_policy": [
+            "Options are the priority engine; exceed 40% only when setup quality, liquidity, spread, risk/reward, and broker/account gates justify it.",
+            "When equity/options are closed, crypto may use idle cash only if setup quality is strong and the capital can be released before equity/options opportunity windows.",
+            "Do not hard-code broker restrictions; account type, buying power, PDT, margin, options level, settlement, shorting, and crypto access must be rechecked dynamically.",
+        ],
         "loss_budgets": {
-            "per_trade_soft_loss": round(min(max_loss / max(4, lane_count * 3), cash * 0.02), 2),
+            "per_trade_soft_loss": round(min(max_loss / 5 if max_loss else 0.0, max(cash * 0.05, cash * 0.02)), 2),
             "halt_and_reassess": round(max_loss, 2),
             "new_entry_lockout_only": True,
             "position_management_allowed_after_halt": True,
@@ -2253,6 +2341,11 @@ def _get_cross_asset_capital_plan(service_container, account_value: float, buyin
             "Market-closed equity/options lanes should not consume new-entry budget; crypto may continue only if crypto controls are enabled.",
             "Open positions reserve their max-loss estimate until closed or explicitly released.",
         ],
+        "paper_lab": {
+            "status": "ALWAYS_ON_DATA_MINE",
+            "scope": ["beautiful setups", "average setups", "bad setups", "ugly setups", "failed breakouts", "reversal attempts", "continuations", "short squeezes", "crypto", "stocks", "options"],
+            "purpose": "Learn which setups work, fail, reverse, hedge, or can be converted through timing, scaling, and exit discipline.",
+        },
         "review_only": True,
         "can_place_order_from_this_mcp": False,
     }
@@ -3179,6 +3272,20 @@ def _get_trading_monster_dashboard(service_container, account_value: float, buyi
             "enable_crypto_paper": f"/ops/autonomy-control?autonomous_enabled=true&stocks_enabled=false&options_enabled=false&crypto_enabled=true&paper_trading_enabled=true&live_handoff_enabled=false&max_daily_loss={active_daily_loss_param}&format=html",
             "disable_all": "/ops/autonomy-control?autonomous_enabled=false&stocks_enabled=false&options_enabled=false&crypto_enabled=false&paper_trading_enabled=false&live_handoff_enabled=false&format=html",
         },
+        "operating_doctrine": {
+            "role": "decision_engine_not_passive_screener",
+            "target_allocation": {"options": 0.40, "stocks": 0.30, "crypto": 0.30},
+            "options_priority": "Options are the primary growth engine, but every live options ticket still needs fresh chain truth, liquidity, spread, risk, and broker execution gates.",
+            "crypto_closed_market_rule": "When stock/options markets are closed, crypto may use up to 100% of available trading cash if setup quality justifies it; taper back toward 30% before equity/options opportunity windows.",
+            "paper_lab": "Aggressive paper trading remains always on for good, average, bad, ugly, failed, reversal, breakout, scalp, swing, options, stocks, shorts, and crypto setups.",
+            "top_mover_mandate": "Continuously monitor top gainers, losers, unusual volume, parabolic moves, failed breakouts, squeeze setups, VWAP reclaims/rejections, and exhaustion reversals.",
+            "dynamic_broker_assumptions": "Verify account type, buying power, margin, PDT, settlement, shorting, options level, crypto access, and tool availability dynamically.",
+        },
+        "research_backlog": [
+            "How can a trading system identify, paper trade, and learn from bad setups until it understands how to either avoid them, reverse them, hedge them, or convert them into profitable opportunities?",
+            "Build ATR/swing-stop models for volatile equity scalps so fixed micro-stops do not get shaken out by normal noise.",
+            "Add a real top-movers/unusual-volume feed and rank continuation versus reversal setups separately.",
+        ],
         "execution_status": execution_status,
         "capital_plan": capital,
         "visibility_map": visibility,

@@ -4042,10 +4042,12 @@ async def fallback_trading_monster_dashboard(request: Request) -> JSONResponse |
 async def fallback_cross_asset_capital_plan(request: Request) -> JSONResponse:
     params = request.query_params
     max_daily_loss = _float_or_none(params.get("max_daily_loss"))
+    account_value = _float_or_none(params.get("account_value"))
+    buying_power = _float_or_none(params.get("buying_power"))
     result = _get_cross_asset_capital_plan(
         container,
-        _float_or_none(params.get("account_value")) or 100.0,
-        _float_or_none(params.get("buying_power")) or 100.0,
+        account_value if account_value is not None else 100.0,
+        buying_power if buying_power is not None else 100.0,
         max_daily_loss if max_daily_loss is not None else 20.0,
     )
     return JSONResponse(_review_only_envelope({"result": result}))
