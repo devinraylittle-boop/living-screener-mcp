@@ -14,12 +14,14 @@ class Stage5ReadinessReportTests(unittest.TestCase):
         self.assertFalse(report["can_place_order_from_this_report"])
         self.assertTrue(report["critical_checks"]["stage5_startup_refused_until_all_gates_pass"])
         self.assertTrue(report["critical_checks"]["app_layer_fail_closed"])
+        self.assertTrue(report["critical_checks"]["live_cash_authority_validated"])
         self.assertEqual(report["risk_limits_chosen"]["live_max_daily_loss_usd"], 0.0)
         self.assertEqual(report["risk_limits_chosen"]["live_max_open_positions"], 0)
         self.assertTrue(report["critical_checks"]["execution_order_validated"])
         self.assertEqual(report["paper_autonomy_blockers"], [])
         self.assertIn("stage5_90_day_clean_record_not_available", report["live_cash_promotion_blockers"])
         self.assertNotIn("execution_order_has_unresolved_authority_or_risk_fields", report["live_cash_promotion_blockers"])
+        self.assertNotIn("live_cash_authority_package_not_validated", report["live_cash_promotion_blockers"])
 
 
 if __name__ == "__main__":

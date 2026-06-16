@@ -9,8 +9,13 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_ORDER_PATH = ROOT / "config" / "full_autonomy_execution_order.txt"
+DEFAULT_LIVE_CASH_ORDER_PATH = ROOT / "config" / "live_cash_authority_order.txt"
 
 BRACKETED_FIELD_RE = re.compile(r"\[[^\]]+\]")
+FINAL_COMMANDS = (
+    "Begin autonomous monitoring and trading only after all bracketed fields above are completed and validated.",
+    "Begin limited live-cash autonomous monitoring and trading only after this live-cash authority package validates and every Stage 5 live-cash promotion gate passes.",
+)
 
 
 def read_text(path: Path) -> str:
@@ -26,7 +31,7 @@ def bracketed_fields(text: str) -> list[str]:
 
 def validate_execution_order_text(text: str, *, source: str = "inline") -> dict[str, Any]:
     fields = bracketed_fields(text)
-    has_final_command = "Begin autonomous monitoring and trading only after all bracketed fields above are completed and validated." in text
+    has_final_command = any(command in text for command in FINAL_COMMANDS)
     required_sections = [
         "ACCOUNT AND MARKET AUTHORITY",
         "PRIMARY OBJECTIVE",

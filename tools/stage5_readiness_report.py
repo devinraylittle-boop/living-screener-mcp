@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.config import get_settings
-from tools.execution_order_validator import validate_execution_order_file
+from tools.execution_order_validator import DEFAULT_LIVE_CASH_ORDER_PATH, validate_execution_order_file
 from tools.stage4_readiness_report import build_report as build_stage4_report
 from tools.stock_bridge_loop import parse_args
 
@@ -120,6 +120,7 @@ def build_report() -> dict[str, Any]:
     stage5 = (gates.get("stage_limits") or {}).get("stage_5_full_autonomous_with_strict_caps") or {}
     stage4 = build_stage4_report()
     execution_order = validate_execution_order_file()
+    live_cash_authority = validate_execution_order_file(DEFAULT_LIVE_CASH_ORDER_PATH)
     local = _local_health()
     stage5_refused, stage5_refusal_note = _check_stage5_parser_refusal()
 
@@ -129,6 +130,7 @@ def build_report() -> dict[str, Any]:
         "stage5_requires_external_monitoring": stage5.get("requires_external_monitoring") is True,
         "stage5_requires_monthly_model_review": stage5.get("requires_monthly_model_review") is True,
         "execution_order_validated": execution_order.get("status") == "EXECUTION_ORDER_VALIDATED",
+        "live_cash_authority_validated": live_cash_authority.get("status") == "EXECUTION_ORDER_VALIDATED",
         "stage4_not_ready_for_live_autonomy": stage4.get("runtime_status") != "READY_TO_ENABLE_LIMITED_AUTONOMOUS_LIVE",
         "app_layer_fail_closed": local["app_review_only"] is True and local["app_place_orders"] is False and local["app_market_orders_allowed"] is False,
         "alpaca_paper_configured": local["alpaca_base_url_is_paper"] is True and local["alpaca_credentials_present"] is True,
@@ -151,6 +153,8 @@ def build_report() -> dict[str, Any]:
     )
     if execution_order.get("status") != "EXECUTION_ORDER_VALIDATED":
         live_cash_promotion_blockers.append("execution_order_has_unresolved_authority_or_risk_fields")
+    if live_cash_authority.get("status") != "EXECUTION_ORDER_VALIDATED":
+        live_cash_promotion_blockers.append("live_cash_authority_package_not_validated")
 
     known_weaknesses = [
         "external alerting/monitoring is not connected",
@@ -162,6 +166,8 @@ def build_report() -> dict[str, Any]:
     ]
     if execution_order.get("status") != "EXECUTION_ORDER_VALIDATED":
         known_weaknesses.append("full-autonomy execution order still contains unresolved bracketed authority/risk fields")
+    if live_cash_authority.get("status") != "EXECUTION_ORDER_VALIDATED":
+        known_weaknesses.append("live-cash authority package is missing or invalid")
 
     final_decision = "GO_ALPACA_PAPER_AUTONOMY_NO_GO_LIVE_CASH"
     enabled_mode = "STAGE_2_ALPACA_PAPER_ONLY"
@@ -189,6 +195,12 @@ def build_report() -> dict[str, Any]:
             "decision": execution_order.get("decision"),
             "blockers": execution_order.get("blockers"),
             "unresolved_bracketed_fields": execution_order.get("unresolved_bracketed_fields"),
+        },
+        "live_cash_authority_summary": {
+            "status": live_cash_authority.get("status"),
+            "decision": live_cash_authority.get("decision"),
+            "blockers": live_cash_authority.get("blockers"),
+            "unresolved_bracketed_fields": live_cash_authority.get("unresolved_bracketed_fields"),
         },
         "broker_connection_status": {
             "alpaca_paper": "configured_and_running"
