@@ -151,11 +151,11 @@ powershell -ExecutionPolicy Bypass -File tools\status_execution_order.ps1
 
 Expected current status is `STAGE5_LOCKED_PAPER_ONLY`.
 
-Expected final decision is `NO_GO_LIVE_AUTONOMY`.
+Expected final decision is `GO_ALPACA_PAPER_AUTONOMY_NO_GO_LIVE_CASH`.
 
-This is intentional. If you are away from the computer, the system should protect the account by allowing Alpaca paper research only and refusing unsupervised live cash trading.
+This is intentional. If you are away from the computer, the system should protect the account by allowing Alpaca paper autonomy and refusing unsupervised live cash trading.
 
-The current full-autonomy execution order is a template and still contains unresolved bracketed fields. Until every authority and risk field is completed and validated, the execution order itself requires live autonomy to remain blocked.
+The current full-autonomy execution order has been completed for Alpaca paper autonomy. The remaining sample-size, market-day, reconciliation, alerting, secrets, and 90-day items are live-cash promotion gates, not blockers to the current paper-only package.
 
 Stage 5 live autonomy requires all Stage 4 gates plus:
 
