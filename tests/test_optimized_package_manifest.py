@@ -26,6 +26,8 @@ class OptimizedPackageManifestTests(unittest.TestCase):
             "__pycache__",
             ".pytest_cache",
             "*.pyc",
+            "data/stock_bridge_loop.jsonl",
+            "data/stock_bridge_state.json",
             "data/stock_bridge_*.out.log",
             "data/stock_bridge_*.err.log",
             "sqlite_runtime_databases",

@@ -1,6 +1,7 @@
 import asyncio
 import unittest
 from typing import Any
+from unittest.mock import patch
 
 from tools.stock_bridge_loop import AlpacaBroker, BridgeConfig, ExecutionRejected, RobinhoodBroker, is_real_cash_execution, state_scope
 
@@ -95,6 +96,11 @@ class FakeAlpacaBroker(AlpacaBroker):
 
 
 class AlpacaExecutionRouterTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.log_patcher = patch("tools.stock_bridge_loop.append_log")
+        self.log_patcher.start()
+        self.addCleanup(self.log_patcher.stop)
+
     def test_alpaca_base_url_accepts_optional_v2_suffix(self) -> None:
         cfg_without_suffix = config(alpaca_base_url="https://paper-api.alpaca.markets")
         cfg_with_suffix = config(alpaca_base_url="https://paper-api.alpaca.markets/v2")
@@ -142,6 +148,20 @@ class AlpacaExecutionRouterTests(unittest.TestCase):
 
         self.assertEqual(result["asset_class"], "stock")
         self.assertEqual(broker.calls[-1]["payload"]["time_in_force"], "day")
+
+    def test_positions_prefer_available_sell_quantity_for_exits(self) -> None:
+        broker = FakeAlpacaBroker(config())
+
+        def fake_trading(path: str, method: str = "GET", payload: dict[str, Any] | None = None, timeout: int = 30):
+            if path == "/v2/positions":
+                return [{"symbol": "CELH", "qty": "8.523355", "qty_available": "8.000000", "avg_entry_price": "43.21"}]
+            return {}
+
+        broker._trading = fake_trading  # type: ignore[method-assign]
+        positions = run(broker.positions())
+
+        self.assertEqual(positions[0]["quantity"], "8.523355")
+        self.assertEqual(positions[0]["shares_available_for_sells"], "8.000000")
 
     def test_option_buy_to_open_limit_order_routes_to_options_executor(self) -> None:
         broker = FakeAlpacaBroker(config())

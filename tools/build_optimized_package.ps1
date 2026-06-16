@@ -46,6 +46,8 @@ $excludeFilePatterns = @(
     "living-screener-mcp-*.zip",
     "data\*.sqlite3",
     "data\*.sqlite3-*",
+    "data\stock_bridge_loop.jsonl",
+    "data\stock_bridge_state.json",
     "data\stock_bridge_*.out.log",
     "data\stock_bridge_*.err.log",
     "data\alpaca_paper_*.out.log",

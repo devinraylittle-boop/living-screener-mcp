@@ -618,6 +618,7 @@ class AlpacaBroker:
                 **row,
                 "symbol": row.get("symbol"),
                 "quantity": row.get("qty") or row.get("quantity") or "0",
+                "shares_available_for_sells": row.get("qty_available") or row.get("shares_available_for_sells") or row.get("qty") or row.get("quantity") or "0",
                 "average_buy_price": row.get("avg_entry_price"),
             }
             for row in (rows if isinstance(rows, list) else [])
@@ -887,6 +888,194 @@ def scan_candidates(config: BridgeConfig) -> list[dict[str, Any]]:
     return list(result.get("stock_review_candidates") or [])
 
 
+def strings(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item).strip()]
+
+
+def optional_float(value: Any) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def candidate_evidence_profile(row: dict[str, Any]) -> dict[str, Any]:
+    signals = row.get("key_signals") if isinstance(row.get("key_signals"), dict) else {}
+    scorecard = signals.get("evidence_scorecard") if isinstance(signals.get("evidence_scorecard"), dict) else {}
+    relative_strength = signals.get("relative_strength") if isinstance(signals.get("relative_strength"), dict) else {}
+    packet = row.get("evidence_packet") if isinstance(row.get("evidence_packet"), dict) else {}
+    confidence = packet.get("data_confidence") if isinstance(packet.get("data_confidence"), dict) else {}
+    return {
+        "evidence_score": optional_float(scorecard.get("preview_final_score")),
+        "data_confidence_score": optional_float(confidence.get("score")),
+        "data_confidence_status": str(confidence.get("status") or "UNKNOWN"),
+        "data_flags": strings(packet.get("data_flags")),
+        "relative_strength_label": str(relative_strength.get("label") or "unknown"),
+        "relative_strength_excess_trend_pct": optional_float(relative_strength.get("excess_trend_pct")),
+        "relative_strength_excess_recent_trend_pct": optional_float(relative_strength.get("excess_recent_trend_pct")),
+    }
+
+
+def candidate_bridge_rank_score(row: dict[str, Any], profile: dict[str, Any]) -> float:
+    stock_score = as_float(row.get("stock_score"))
+    relative_volume = as_float(row.get("relative_volume"))
+    score = stock_score + min(6.0, relative_volume * 1.5)
+
+    evidence_score = profile.get("evidence_score")
+    if evidence_score is not None:
+        score += max(-6.0, min(6.0, (float(evidence_score) - 50.0) * 0.12))
+
+    confidence_score = profile.get("data_confidence_score")
+    if confidence_score is not None:
+        score += max(-8.0, min(4.0, (float(confidence_score) - 70.0) * 0.08))
+
+    label = str(profile.get("relative_strength_label") or "").lower()
+    if "leading" in label:
+        score += 3.0
+    elif "lagging" in label:
+        score -= 4.0
+    elif "mixed" in label:
+        score -= 1.0
+
+    flags = set(profile.get("data_flags") or [])
+    if "quote_derived_from_candles" in flags:
+        score -= 1.5
+    if "relative_volume_below_preferred_floor" in flags:
+        score -= 2.0
+    if "relative_volume_unavailable" in flags:
+        score -= 3.0
+    if "catalyst_context_missing" in flags:
+        score -= 0.5
+    if "sector_relative_strength_missing" in flags:
+        score -= 0.5
+    if "l2_order_flow_missing" in flags:
+        score -= 0.5
+    return round(score, 4)
+
+
+def evaluate_long_candidate(
+    row: dict[str, Any],
+    quotes: dict[str, dict[str, Any]],
+    tradability: dict[str, dict[str, Any]],
+    held_symbols: set[str],
+    config: BridgeConfig,
+) -> dict[str, Any]:
+    symbol = str(row.get("ticker") or "").upper()
+    profile = candidate_evidence_profile(row)
+    rejection_reasons: list[str] = []
+    spread_bps: float | None = None
+
+    if not symbol:
+        rejection_reasons.append("missing_symbol")
+    if symbol in held_symbols:
+        rejection_reasons.append("already_held")
+    if str(row.get("stock_direction") or "").lower() != "long":
+        rejection_reasons.append("not_long")
+    if str(row.get("stock_setup_quality") or "") != "VALID_CANDIDATE":
+        rejection_reasons.append("not_valid_candidate")
+    if as_float(row.get("stock_score")) < config.min_score:
+        rejection_reasons.append("score_below_min")
+    if as_float(row.get("relative_volume")) < config.min_relative_volume:
+        rejection_reasons.append("relative_volume_below_min")
+    if str(row.get("vwap_state") or "").lower() != "above":
+        rejection_reasons.append("not_above_vwap")
+
+    flags = set(profile.get("data_flags") or [])
+    if {"quote_stale", "candles_stale"}.intersection(flags):
+        rejection_reasons.append("stale_market_data")
+    confidence_status = str(profile.get("data_confidence_status") or "").upper()
+    confidence_score = profile.get("data_confidence_score")
+    if confidence_status == "LOW" or (confidence_score is not None and float(confidence_score) < 55.0):
+        rejection_reasons.append("low_data_confidence")
+
+    trade = tradability.get(symbol) or {}
+    if not trade.get("tradeable") or trade.get("state") != "active":
+        rejection_reasons.append("not_tradeable")
+
+    quote = quotes.get(symbol) or {}
+    bid = as_float(quote.get("bid_price"))
+    ask = as_float(quote.get("ask_price"))
+    last = as_float(quote.get("last_trade_price"))
+    ref = ask or last
+    if ref <= 0 or bid <= 0 or ask <= 0:
+        rejection_reasons.append("invalid_quote")
+    else:
+        spread_bps = ((ask - bid) / ref) * 10000
+        if spread_bps > config.max_spread_bps:
+            rejection_reasons.append("spread_too_wide")
+
+    rank_score = candidate_bridge_rank_score(row, profile)
+    return {
+        "symbol": symbol,
+        "passed": not rejection_reasons,
+        "rejection_reasons": rejection_reasons,
+        "rank_score": rank_score,
+        "stock_score": as_float(row.get("stock_score")),
+        "relative_volume": as_float(row.get("relative_volume")),
+        "spread_bps": round(spread_bps, 2) if spread_bps is not None else None,
+        "evidence_profile": profile,
+        "scan": row,
+        "quote": quote,
+        "tradability": trade,
+    }
+
+
+def rank_long_candidates(
+    candidates: list[dict[str, Any]],
+    quotes: dict[str, dict[str, Any]],
+    tradability: dict[str, dict[str, Any]],
+    held_symbols: set[str],
+    config: BridgeConfig,
+) -> list[dict[str, Any]]:
+    diagnostics = [
+        evaluate_long_candidate(row, quotes, tradability, held_symbols, config)
+        for row in candidates
+    ]
+    return sorted(
+        diagnostics,
+        key=lambda item: (
+            item["passed"],
+            item["rank_score"],
+            item["stock_score"],
+            item["relative_volume"],
+            item["symbol"],
+        ),
+        reverse=True,
+    )
+
+
+def candidate_ranking_log_payload(ranked: list[dict[str, Any]], limit: int = 8) -> dict[str, Any]:
+    rows = []
+    for item in ranked[: max(1, limit)]:
+        profile = item.get("evidence_profile") or {}
+        rows.append(
+            {
+                "symbol": item.get("symbol"),
+                "passed": item.get("passed"),
+                "rejection_reasons": item.get("rejection_reasons"),
+                "rank_score": item.get("rank_score"),
+                "stock_score": item.get("stock_score"),
+                "relative_volume": item.get("relative_volume"),
+                "spread_bps": item.get("spread_bps"),
+                "evidence_score": profile.get("evidence_score"),
+                "data_confidence_score": profile.get("data_confidence_score"),
+                "data_confidence_status": profile.get("data_confidence_status"),
+                "relative_strength_label": profile.get("relative_strength_label"),
+                "data_flags": profile.get("data_flags"),
+            }
+        )
+    return {
+        "event": "candidate_ranking_summary",
+        "candidate_count": len(ranked),
+        "passed_count": sum(1 for item in ranked if item.get("passed")),
+        "top_candidates": rows,
+    }
+
+
 def select_long_candidate(
     candidates: list[dict[str, Any]],
     quotes: dict[str, dict[str, Any]],
@@ -894,36 +1083,19 @@ def select_long_candidate(
     held_symbols: set[str],
     config: BridgeConfig,
 ) -> dict[str, Any] | None:
-    ranked = sorted(candidates, key=lambda row: (as_float(row.get("stock_score")), as_float(row.get("relative_volume"))), reverse=True)
-    for row in ranked:
-        symbol = str(row.get("ticker") or "").upper()
-        if not symbol or symbol in held_symbols:
+    ranked = rank_long_candidates(candidates, quotes, tradability, held_symbols, config)
+    append_log(candidate_ranking_log_payload(ranked))
+    for item in ranked:
+        if not item.get("passed"):
             continue
-        if str(row.get("stock_direction") or "").lower() != "long":
-            continue
-        if str(row.get("stock_setup_quality") or "") != "VALID_CANDIDATE":
-            continue
-        if as_float(row.get("stock_score")) < config.min_score:
-            continue
-        if as_float(row.get("relative_volume")) < config.min_relative_volume:
-            continue
-        if str(row.get("vwap_state") or "").lower() != "above":
-            continue
-        trade = tradability.get(symbol) or {}
-        if not trade.get("tradeable") or trade.get("state") != "active":
-            continue
-        quote = quotes.get(symbol) or {}
-        bid = as_float(quote.get("bid_price"))
-        ask = as_float(quote.get("ask_price"))
-        last = as_float(quote.get("last_trade_price"))
-        ref = ask or last
-        if ref <= 0 or bid <= 0 or ask <= 0:
-            continue
-        spread_bps = ((ask - bid) / ref) * 10000
-        if spread_bps > config.max_spread_bps:
-            append_log({"event": "candidate_rejected", "symbol": symbol, "reason": "spread_too_wide", "spread_bps": round(spread_bps, 2)})
-            continue
-        return {"scan": row, "quote": quote, "tradability": trade, "spread_bps": spread_bps}
+        return {
+            "scan": item["scan"],
+            "quote": item["quote"],
+            "tradability": item["tradability"],
+            "spread_bps": item["spread_bps"],
+            "bridge_rank_score": item["rank_score"],
+            "bridge_evidence_profile": item["evidence_profile"],
+        }
     return None
 
 
@@ -992,12 +1164,20 @@ async def manage_positions(broker: RobinhoodBroker, config: BridgeConfig, state:
                 "time_in_force": "gfd",
                 "market_hours": market_hours,
             }
-        review = await broker.review_order(args)
+        try:
+            review = await broker.review_order(args)
+        except Exception as exc:  # noqa: BLE001 - keep managing other positions after one broker refusal
+            append_log({"event": "exit_review_failed", "symbol": symbol, "reason": exit_reason, "pnl_pct": pnl_pct, "error": repr(exc)})
+            continue
         append_log({"event": "exit_review", "symbol": symbol, "reason": exit_reason, "pnl_pct": pnl_pct, "review": review})
         if not config.live:
             continue
         place_args = {**args, "ref_id": str(uuid.uuid4())}
-        placed = await broker.place_order(place_args)
+        try:
+            placed = await broker.place_order(place_args)
+        except Exception as exc:  # noqa: BLE001 - log and retry on a later cycle if the exit is still valid
+            append_log({"event": "exit_place_failed", "symbol": symbol, "reason": exit_reason, "pnl_pct": pnl_pct, "order_args": args, "error": repr(exc)})
+            continue
         append_log({"event": "exit_placed", "symbol": symbol, "reason": exit_reason, "order": placed})
         log_broker_action(
             config,
