@@ -3,7 +3,15 @@
   "date": "2026-06-16",
   "day_start_value": 100000.0,
   "halted": false,
-  "last_order_ids": [],
+  "last_order_ids": [
+    "c454c914-5909-4e85-b428-79da6be8a52c",
+    "ea5fe1fe-fb1c-4b5d-bb6f-9318c58e100f",
+    "b29b81ea-afbd-44df-8a6c-b7d86e20ddff",
+    "ed171f7e-41dc-4653-8e55-59f2145d5478",
+    "c1906da8-8519-40ac-9f6c-1c3c2ef3c34c",
+    "d520880f-e701-49bc-9644-d200a8354fd2",
+    "637904c4-c087-4fc6-b826-2483ab92c57b"
+  ],
   "scope": "86c3dc1f806e2dd2",
-  "trade_count": 0
+  "trade_count": 7
 }

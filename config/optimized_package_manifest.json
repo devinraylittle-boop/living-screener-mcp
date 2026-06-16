@@ -12,6 +12,8 @@
     "autonomous_readiness_gates",
     "alpaca_paper_credential_validator",
     "alpaca_paper_stock_option_crypto_router",
+    "alpaca_paper_start_status_stop_scripts",
+    "alpaca_paper_watchdog",
     "robinhood_stage_3_equity_bridge",
     "stage_4_5_live_refusal_guard",
     "operator_runbooks",
@@ -23,6 +25,9 @@
     "*.pyc",
     "data/stock_bridge_*.out.log",
     "data/stock_bridge_*.err.log",
+    "data/alpaca_paper_*.out.log",
+    "data/alpaca_paper_*.err.log",
+    "data/watchdog_*.log",
     "local_env_files",
     "sqlite_runtime_databases",
     "packaged_dist_archives"

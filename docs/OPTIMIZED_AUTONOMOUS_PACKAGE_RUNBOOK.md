@@ -63,6 +63,7 @@ Important runbooks:
 - `docs/BROKER_CREDENTIAL_SETUP.md`
 - `docs/ANOMALY_STRATEGY_ROADMAP.md`
 - `docs/BAD_SETUP_LEARNING_SYSTEM.md`
+- `docs/TOMORROW_REMOTE_CONTROL_RUNBOOK.md`
 
 Excluded from clean distribution:
 
@@ -169,4 +170,3 @@ To earn Stage 4:
 5. Rotate secrets and document secret storage.
 6. Capture at least 100 closed paper trades across at least 20 market days.
 7. Produce walk-forward validation and strategy-promotion reports.
-
