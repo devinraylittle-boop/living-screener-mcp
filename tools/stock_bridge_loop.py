@@ -21,6 +21,12 @@ from fastmcp import Client
 
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tools.paper_lifecycle_ledger import record_entry as record_paper_lifecycle_entry
+from tools.paper_lifecycle_ledger import record_exit as record_paper_lifecycle_exit
+
 STATE_PATH = ROOT / "data" / "stock_bridge_state.json"
 LOG_PATH = ROOT / "data" / "stock_bridge_loop.jsonl"
 READINESS_GATES_PATH = ROOT / "config" / "autonomous_readiness_gates.json"
@@ -281,6 +287,11 @@ def whole_share_quantity(notional: float, limit_price: float) -> int:
     return int(notional // limit_price)
 
 
+def trim_decimal(value: float, places: int = 9) -> str:
+    text = f"{value:.{places}f}".rstrip("0").rstrip(".")
+    return text or "0"
+
+
 def is_fractional_tradable(tradability: dict[str, Any]) -> bool:
     return str(tradability.get("fractional_tradability") or "").lower() == "tradable"
 
@@ -451,6 +462,38 @@ def tool_payload(result: Any) -> Any:
             except json.JSONDecodeError:
                 return {"text": text}
     return result
+
+
+def sanitized_order_args(args: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: ("***" if key in {"account_number", "account_id", "api_key", "secret_key"} and value else value)
+        for key, value in args.items()
+    }
+
+
+def nested_order(payload: dict[str, Any]) -> dict[str, Any]:
+    order = payload.get("order") if isinstance(payload, dict) else {}
+    return order if isinstance(order, dict) else {}
+
+
+def order_identifier(payload: dict[str, Any]) -> str | None:
+    order = nested_order(payload)
+    close_position = payload.get("close_position") if isinstance(payload, dict) else {}
+    if isinstance(order, dict) and order.get("id"):
+        return str(order.get("id"))
+    if isinstance(close_position, dict) and close_position.get("id"):
+        return str(close_position.get("id"))
+    return None
+
+
+def order_status(payload: dict[str, Any]) -> str | None:
+    order = nested_order(payload)
+    close_position = payload.get("close_position") if isinstance(payload, dict) else {}
+    if isinstance(order, dict) and order.get("status"):
+        return str(order.get("status"))
+    if isinstance(close_position, dict) and close_position.get("status"):
+        return str(close_position.get("status"))
+    return None
 
 
 class RobinhoodBroker:
@@ -671,6 +714,14 @@ class AlpacaBroker:
 
     async def place_order(self, args: dict[str, Any]) -> dict[str, Any]:
         return await self.route_order(args, submit=True)
+
+    async def close_position(self, symbol: str, qty: float | None = None) -> dict[str, Any]:
+        clean_symbol = str(symbol or "").upper().strip()
+        if not clean_symbol:
+            raise ExecutionRejected("Close position requires a symbol.")
+        query = f"?{urlencode({'qty': trim_decimal(qty)})}" if qty is not None and qty > 0 else ""
+        result = self._trading(f"/v2/positions/{clean_symbol}{query}", method="DELETE", timeout=30)
+        return {"broker": "alpaca", "asset_class": "stock", "close_position": result, "symbol": clean_symbol, "qty": qty}
 
     async def route_order(self, args: dict[str, Any], submit: bool) -> dict[str, Any]:
         asset_class = normalize_asset_class(args.get("asset_class"))
@@ -1105,6 +1156,23 @@ def position_value(position: dict[str, Any], quote: dict[str, Any]) -> float:
     return qty * last
 
 
+async def place_exit_order(broker: RobinhoodBroker, symbol: str, qty: float, args: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return await broker.place_order({**args, "ref_id": str(uuid.uuid4())})
+    except Exception as exc:  # noqa: BLE001 - fallback handles broker-specific close paths
+        if hasattr(broker, "close_position"):
+            append_log(
+                {
+                    "event": "exit_place_order_failed_trying_close_position",
+                    "symbol": symbol,
+                    "order_args": sanitized_order_args(args),
+                    "error": repr(exc),
+                }
+            )
+            return await broker.close_position(symbol, qty)  # type: ignore[attr-defined]
+        raise
+
+
 async def manage_positions(broker: RobinhoodBroker, config: BridgeConfig, state: dict[str, Any]) -> None:
     positions = await broker.positions()
     symbols = [str(pos.get("symbol") or "").upper() for pos in positions if pos.get("symbol")]
@@ -1172,13 +1240,27 @@ async def manage_positions(broker: RobinhoodBroker, config: BridgeConfig, state:
         append_log({"event": "exit_review", "symbol": symbol, "reason": exit_reason, "pnl_pct": pnl_pct, "review": review})
         if not config.live:
             continue
-        place_args = {**args, "ref_id": str(uuid.uuid4())}
         try:
-            placed = await broker.place_order(place_args)
+            placed = await place_exit_order(broker, symbol, qty, args)
         except Exception as exc:  # noqa: BLE001 - log and retry on a later cycle if the exit is still valid
-            append_log({"event": "exit_place_failed", "symbol": symbol, "reason": exit_reason, "pnl_pct": pnl_pct, "order_args": args, "error": repr(exc)})
+            append_log({"event": "exit_place_failed", "symbol": symbol, "reason": exit_reason, "pnl_pct": pnl_pct, "order_args": sanitized_order_args(args), "error": repr(exc)})
             continue
         append_log({"event": "exit_placed", "symbol": symbol, "reason": exit_reason, "order": placed})
+        if not is_real_cash_execution(config):
+            try:
+                record_paper_lifecycle_exit(
+                    broker=config.broker,
+                    scope=state_scope(config),
+                    symbol=symbol,
+                    order_id=order_identifier(placed),
+                    order_status=order_status(placed) or "submitted",
+                    quantity=qty,
+                    entry_reference_price=avg,
+                    exit_reference_price=last,
+                    exit_reason=exit_reason,
+                )
+            except Exception as exc:  # noqa: BLE001 - lifecycle evidence must not kill risk management
+                append_log({"event": "paper_lifecycle_exit_log_failed", "symbol": symbol, "error": repr(exc)})
         log_broker_action(
             config,
             {
@@ -1418,6 +1500,52 @@ async def run_cycle(broker: RobinhoodBroker, config: BridgeConfig, state: dict[s
     state["trade_count"] = int(state.get("trade_count") or 0) + 1
     state.setdefault("last_order_ids", []).append(order.get("id"))
     append_log({"event": "entry_placed", "symbol": symbol, "intent_hash": intent.get("intent_hash"), "order": placed})
+    if not is_real_cash_execution(config):
+        try:
+            review_quote = review.get("quote_data") if isinstance(review, dict) and isinstance(review.get("quote_data"), dict) else {}
+            ref_price = (
+                as_float(order.get("filled_avg_price"))
+                or as_float(order.get("average_price"))
+                or as_float(order.get("price"))
+                or as_float(review_quote.get("ask_price"))
+            )
+            quote = selected.get("quote") or {}
+            if ref_price <= 0:
+                ref_price = as_float(quote.get("ask_price")) or as_float(quote.get("last_trade_price"))
+            quantity = as_float(order.get("filled_qty") or order.get("qty") or order.get("cumulative_quantity"))
+            if quantity <= 0 and ref_price > 0:
+                quantity = notional / ref_price
+            scan = selected.get("scan") or {}
+            record_paper_lifecycle_entry(
+                broker=config.broker,
+                scope=state_scope(config),
+                symbol=symbol,
+                order_id=order_identifier(placed),
+                order_status=order_status(placed) or "submitted",
+                notional=notional,
+                quantity=quantity if quantity > 0 else None,
+                reference_price=ref_price if ref_price > 0 else None,
+                setup={
+                    "stock_score": as_float(scan.get("stock_score")),
+                    "relative_volume": as_float(scan.get("relative_volume")),
+                    "vwap_state": scan.get("vwap_state"),
+                    "stock_setup_quality": scan.get("stock_setup_quality"),
+                    "bridge_rank_score": selected.get("bridge_rank_score"),
+                    "bridge_evidence_profile": selected.get("bridge_evidence_profile"),
+                    "intent_hash": intent.get("intent_hash"),
+                },
+                risk={
+                    "max_order_notional": config.max_order_notional,
+                    "max_daily_loss": config.max_daily_loss,
+                    "stop_loss_pct": config.stop_loss_pct,
+                    "take_profit_pct": config.take_profit_pct,
+                    "max_open_positions": config.max_open_positions,
+                    "max_trades_per_day": config.max_trades_per_day,
+                    "spread_bps": selected.get("spread_bps"),
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - lifecycle evidence must not kill order handling
+            append_log({"event": "paper_lifecycle_entry_log_failed", "symbol": symbol, "error": repr(exc)})
     log_broker_action(
         config,
         {

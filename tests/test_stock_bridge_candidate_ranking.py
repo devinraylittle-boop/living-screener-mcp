@@ -201,6 +201,36 @@ class StockBridgeCandidateRankingTests(unittest.TestCase):
         self.assertIn("exit_review", events)
         self.assertIn("exit_place_failed", events)
 
+    def test_alpaca_exit_order_failure_falls_back_to_close_position(self) -> None:
+        class CloseFallbackBroker:
+            def __init__(self) -> None:
+                self.closed: list[tuple[str, float | None]] = []
+
+            async def positions(self) -> list[dict[str, str]]:
+                return [{"symbol": "CELH", "shares_available_for_sells": "8.523355", "quantity": "8.523355", "average_buy_price": "40"}]
+
+            async def quotes(self, symbols: list[str]) -> dict[str, dict[str, str]]:
+                return {"CELH": {"last_trade_price": "41", "bid_price": "40.99", "ask_price": "41.01"}}
+
+            async def review_order(self, args: dict[str, Any]) -> dict[str, Any]:
+                return {"order_checks": {}, "normalized_intent": args}
+
+            async def place_order(self, args: dict[str, Any]) -> dict[str, Any]:
+                raise RuntimeError("generic exit refused")
+
+            async def close_position(self, symbol: str, qty: float | None = None) -> dict[str, Any]:
+                self.closed.append((symbol, qty))
+                return {"broker": "alpaca", "close_position": {"id": "close-1"}, "symbol": symbol, "qty": qty}
+
+        broker = CloseFallbackBroker()
+        with patch("tools.stock_bridge_loop.append_log") as append_log:
+            run(manage_positions(broker, config(live=True, take_profit_pct=0.01), {}))  # type: ignore[arg-type]
+
+        events = [call.args[0]["event"] for call in append_log.call_args_list]
+        self.assertIn("exit_place_order_failed_trying_close_position", events)
+        self.assertIn("exit_placed", events)
+        self.assertEqual(broker.closed, [("CELH", 8.523355)])
+
 
 if __name__ == "__main__":
     unittest.main()

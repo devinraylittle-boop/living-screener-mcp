@@ -28,6 +28,7 @@ class OptimizedPackageManifestTests(unittest.TestCase):
             "*.pyc",
             "data/stock_bridge_loop.jsonl",
             "data/stock_bridge_state.json",
+            "data/paper_lifecycle_ledger.jsonl",
             "data/stock_bridge_*.out.log",
             "data/stock_bridge_*.err.log",
             "sqlite_runtime_databases",

@@ -163,6 +163,14 @@ class AlpacaExecutionRouterTests(unittest.TestCase):
         self.assertEqual(positions[0]["quantity"], "8.523355")
         self.assertEqual(positions[0]["shares_available_for_sells"], "8.000000")
 
+    def test_alpaca_close_position_uses_official_position_endpoint(self) -> None:
+        broker = FakeAlpacaBroker(config())
+        result = run(broker.close_position("CELH", 8.5233551234))
+
+        self.assertEqual(result["broker"], "alpaca")
+        self.assertEqual(broker.calls[-1]["method"], "DELETE")
+        self.assertEqual(broker.calls[-1]["path"], "/v2/positions/CELH?qty=8.523355123")
+
     def test_option_buy_to_open_limit_order_routes_to_options_executor(self) -> None:
         broker = FakeAlpacaBroker(config())
         result = run(
