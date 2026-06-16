@@ -24,6 +24,22 @@ class StockBridgeLiveStageGateTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "Full or limited autonomous live trading remains blocked"):
                 enforce_live_readiness_gate(live=True)
 
+    def test_stage_five_alpaca_live_cash_route_requires_alpaca_auth(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "AUTONOMY_STAGE": "stage_5_full_autonomous_with_strict_caps",
+                "ALPACA_LIVE_CASH_AUTONOMY_AUTH": "",
+            },
+            clear=False,
+        ):
+            with self.assertRaisesRegex(SystemExit, "Alpaca live-cash Stage 5 is wired"):
+                enforce_live_readiness_gate(
+                    live=True,
+                    broker="alpaca",
+                    alpaca_base_url="https://api.alpaca.markets",
+                )
+
     def test_stage_four_live_is_refused_until_gates_are_satisfied(self) -> None:
         with patch.dict(os.environ, {"AUTONOMY_STAGE": "stage_4_limited_autonomous_live_trades"}, clear=False):
             with self.assertRaisesRegex(SystemExit, "requested stage_4_limited_autonomous_live_trades"):
@@ -52,7 +68,7 @@ class StockBridgeLiveStageGateTests(unittest.TestCase):
 
     def test_alpaca_live_endpoint_is_not_allowed_in_stage_three_scope(self) -> None:
         with patch.dict(os.environ, {"AUTONOMY_STAGE": "stage_3_human_approved_live_trades"}, clear=False):
-            with self.assertRaisesRegex(SystemExit, "Robinhood equity orders only"):
+            with self.assertRaisesRegex(SystemExit, "only allowed under Stage 5"):
                 enforce_live_readiness_gate(
                     live=True,
                     broker="alpaca",
@@ -73,6 +89,44 @@ class StockBridgeLiveStageGateTests(unittest.TestCase):
 
         self.assertTrue(config.live)
         self.assertEqual(config.broker, "alpaca")
+
+    def test_parse_args_allows_stage_five_alpaca_live_cash_with_dedicated_live_keys_and_auth(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "AUTONOMY_STAGE": "stage_5_full_autonomous_with_strict_caps",
+                "ALPACA_LIVE_CASH_AUTONOMY_AUTH": "ENABLE_ALPACA_LIVE_CASH_AUTONOMY",
+                "ALPACA_BASE_URL": "https://api.alpaca.markets",
+                "ALPACA_LIVE_API_KEY_ID": "live-key",
+                "ALPACA_LIVE_API_SECRET_KEY": "live-secret",
+                "STOCK_BRIDGE_MAX_DAILY_LOSS": "2",
+                "STOCK_BRIDGE_MAX_ORDER_NOTIONAL": "25",
+            },
+            clear=False,
+        ):
+            config = parse_args(["--broker", "alpaca", "--live", "--once"])
+
+        self.assertTrue(config.live)
+        self.assertEqual(config.broker, "alpaca")
+        self.assertEqual(config.alpaca_api_key_id, "live-key")
+        self.assertEqual(config.alpaca_api_secret_key, "live-secret")
+
+    def test_parse_args_refuses_alpaca_live_without_dedicated_live_keys(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "AUTONOMY_STAGE": "stage_5_full_autonomous_with_strict_caps",
+                "ALPACA_LIVE_CASH_AUTONOMY_AUTH": "ENABLE_ALPACA_LIVE_CASH_AUTONOMY",
+                "ALPACA_BASE_URL": "https://api.alpaca.markets",
+                "ALPACA_API_KEY_ID": "generic-key",
+                "ALPACA_API_SECRET_KEY": "generic-secret",
+                "ALPACA_LIVE_API_KEY_ID": "",
+                "ALPACA_LIVE_API_SECRET_KEY": "",
+            },
+            clear=False,
+        ):
+            with self.assertRaisesRegex(SystemExit, "dedicated ALPACA_LIVE_API_KEY_ID"):
+                parse_args(["--broker", "alpaca", "--live", "--once"])
 
     def test_parse_args_still_requires_auth_for_robinhood_live(self) -> None:
         with patch.dict(

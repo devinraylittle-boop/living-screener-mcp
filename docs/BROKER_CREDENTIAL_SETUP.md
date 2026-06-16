@@ -18,17 +18,20 @@ python tools/validate_alpaca_credentials.py
 Live validation, read-only proof only:
 
 ```powershell
-$env:ALPACA_BASE_URL="https://api.alpaca.markets"
+$env:ALPACA_LIVE_BASE_URL="https://api.alpaca.markets"
 $env:ALPACA_DATA_URL="https://data.alpaca.markets"
-$env:ALPACA_EXPECTED_ENV="live"
-$env:ALPACA_API_KEY_ID="<live key id>"
-$env:ALPACA_API_SECRET_KEY="<live secret key>"
-python tools/validate_alpaca_credentials.py
+$env:ALPACA_LIVE_API_KEY_ID="<live key id>"
+$env:ALPACA_LIVE_API_SECRET_KEY="<live secret key>"
+powershell -ExecutionPolicy Bypass -File tools/status_alpaca_live_account.ps1
 ```
 
 The validator prints sanitized account status, buying power, options level, crypto status, crypto asset probe, and options contract probe. It does not place orders and does not print secrets.
 
 `ALPACA_BASE_URL` may include or omit the `/v2` suffix. The validator and bridge normalize it before making requests.
+
+For autonomous live cash, keep live Alpaca keys in `ALPACA_LIVE_API_KEY_ID`
+and `ALPACA_LIVE_API_SECRET_KEY`. Do not reuse paper-key variables for the
+live endpoint.
 
 Alpaca's official authentication docs say paper Trading API calls use `paper-api.alpaca.markets`, while live Trading API calls use `api.alpaca.markets`. If a key returns `401` on `paper-api.alpaca.markets` but works on `api.alpaca.markets`, treat it as a live key and do not use it for paper automation.
 

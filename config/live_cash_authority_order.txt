@@ -4,9 +4,9 @@ This authority package is for future live-cash promotion only. It does not activ
 
 ACCOUNT AND MARKET AUTHORITY
 - Account owner: Devin.
-- Broker/API: Robinhood Trading MCP, agentic cash account ending 6199, equities route only.
+- Broker/API: Alpaca Trading API live cash account at https://api.alpaca.markets, plus Robinhood Trading MCP agentic cash account ending 6199 as secondary equities route when available.
 - Account type: Cash account.
-- Mode: LIMITED LIVE-CASH AUTONOMY AFTER PROMOTION. Until promotion gates pass, live-cash autonomy remains disabled and Alpaca paper autonomy remains the active autonomous lane.
+- Mode: LIMITED LIVE-CASH AUTONOMY AFTER PROMOTION. Alpaca live cash is an authorized Stage 5 route after its live-account validator, broker reconciliation, and all Stage 5 gates pass.
 - Allowed instruments: US-listed equities and ETFs only.
 - Allowed symbols/universe: SPY, QQQ, IWM, DIA, SOFI, HOOD, RBLX, PLTR, BAC, JPM, KO, PG, UBER, SHOP, AMD, NVDA, AAPL, MSFT, AMZN, GOOGL, META.
 - Prohibited instruments: Options, crypto, futures, forex, event contracts, mutual funds, fixed income, leveraged ETFs, inverse ETFs, warrants, OTC securities, shorts, margin, and any symbol outside the allowed universe.

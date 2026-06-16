@@ -155,6 +155,12 @@ Check the separate live-cash authority package:
 powershell -ExecutionPolicy Bypass -File tools\status_live_cash_authority.ps1
 ```
 
+Check the Alpaca live cash account route:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\status_alpaca_live_account.ps1
+```
+
 Check runtime evidence for external alerting, secrets rotation, and monthly
 model review:
 
@@ -162,13 +168,15 @@ model review:
 powershell -ExecutionPolicy Bypass -File tools\status_runtime_evidence.ps1
 ```
 
-Expected current status is `STAGE5_LOCKED_PAPER_ONLY`.
+Expected current status before live Alpaca credentials and all gates are green is
+`STAGE5_ALPACA_LIVE_CASH_AUTHORIZED_RUNTIME_GATED`.
 
-Expected final decision is `GO_ALPACA_PAPER_AUTONOMY_NO_GO_LIVE_CASH`.
+Expected final decision before all gates are green is
+`ALPACA_LIVE_CASH_AUTHORIZED_ROUTE_ADDED_NO_AUTONOMOUS_ORDERS_UNTIL_ACCOUNT_AND_STAGE_GATES_PASS`.
 
-This is intentional. If you are away from the computer, the system should protect the account by allowing Alpaca paper autonomy and refusing unsupervised live cash trading.
+This is intentional. If you are away from the computer, the system should protect the account by allowing only routes whose broker account, monitoring, reconciliation, and risk gates are actually green.
 
-The current full-autonomy execution order has been completed for Alpaca paper autonomy. The separate live-cash authority package has also been completed, but it does not activate live cash by itself. The remaining sample-size, market-day, reconciliation, alerting, secrets, and 90-day items are live-cash promotion gates, not blockers to the current paper-only package.
+The current full-autonomy execution order has been completed. The separate live-cash authority package now includes Alpaca live cash as an authorized Stage 5 route, but it does not activate live cash by itself. The remaining live-account, reconciliation, alerting, secrets, and clean-record items are live-cash activation gates.
 
 Stage 5 live autonomy requires all Stage 4 gates plus:
 

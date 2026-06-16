@@ -1,7 +1,7 @@
 {
   "version": 1,
   "classification": "limited_live_trading_ready",
-  "scope": "Small, human-supervised Robinhood equity orders only; Alpaca paper automation ready; full autonomous live trading blocked.",
+  "scope": "Small cash-account live autonomy may route through Alpaca live cash or the Robinhood agentic cash account only after the applicable broker account, reconciliation, monitoring, secrets, and strategy gates pass.",
   "global_live_default": false,
   "required_before_limited_autonomous_live": {
     "min_closed_paper_trades": 100,
@@ -72,6 +72,17 @@
       "live_orders": true,
       "paper_orders": true,
       "human_required": false,
+      "allowed_live_brokers": [
+        "alpaca_live_cash",
+        "robinhood_agentic_cash"
+      ],
+      "allowed_asset_classes": [
+        "us_equities",
+        "us_etfs"
+      ],
+      "max_order_notional_usd": 25.0,
+      "max_daily_loss_pct_of_equity": 2.0,
+      "max_daily_loss_usd_cap_until_account_growth": 2.5,
       "requires_90_day_clean_record": true,
       "requires_external_monitoring": true,
       "requires_monthly_model_review": true

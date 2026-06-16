@@ -15,7 +15,8 @@ class AutonomousReadinessGateTests(unittest.TestCase):
 
         self.assertFalse(gates["global_live_default"])
         self.assertEqual(gates["classification"], "limited_live_trading_ready")
-        self.assertIn("full autonomous live trading blocked", gates["scope"].lower())
+        self.assertIn("alpaca live cash", gates["scope"].lower())
+        self.assertIn("only after", gates["scope"].lower())
         self.assertTrue(gates["required_before_limited_autonomous_live"]["requires_kill_switch"])
         self.assertTrue(gates["required_before_limited_autonomous_live"]["requires_alerting"])
         self.assertTrue(gates["required_before_limited_autonomous_live"]["requires_broker_reconciliation"])
@@ -30,6 +31,7 @@ class AutonomousReadinessGateTests(unittest.TestCase):
         self.assertTrue(stages["stage_3_human_approved_live_trades"]["human_required"])
         self.assertTrue(stages["stage_4_limited_autonomous_live_trades"]["requires_all_gates"])
         self.assertTrue(stages["stage_5_full_autonomous_with_strict_caps"]["requires_external_monitoring"])
+        self.assertIn("alpaca_live_cash", stages["stage_5_full_autonomous_with_strict_caps"]["allowed_live_brokers"])
 
     def test_hard_blocks_include_broker_data_and_loss_controls(self) -> None:
         gates = json.loads(GATES_PATH.read_text(encoding="utf-8"))
