@@ -1,0 +1,300 @@
+{
+  "version": 1,
+  "generated_from": "AI Trading Bots and Stock Market Anomalies research attachment",
+  "default_policy": {
+    "cash_live_enabled": false,
+    "paper_enabled": true,
+    "requires_cost_model": true,
+    "requires_out_of_sample_validation": true,
+    "requires_manual_promotion": true
+  },
+  "promotion_gate": {
+    "min_closed_paper_trades": 50,
+    "min_distinct_market_days": 15,
+    "min_profit_factor_after_costs": 1.2,
+    "max_strategy_drawdown_pct": 8.0,
+    "requires_gap_risk_model": true,
+    "requires_slippage_model": true,
+    "requires_kill_switch": true
+  },
+  "strategies": [
+    {
+      "id": "pead_text_surprise",
+      "name": "Earnings Drift With Text Surprise",
+      "priority": 1,
+      "status": "research_backlog",
+      "default_lane": "paper",
+      "cash_live_enabled": false,
+      "horizon": "5_to_15_trading_days",
+      "asset_classes": ["equity"],
+      "hypothesis": "The market underreacts to numeric earnings surprise, guidance language, and earnings-call text.",
+      "required_data": [
+        "earnings_timestamps",
+        "earnings_surprise",
+        "press_release_text",
+        "earnings_call_text",
+        "overnight_return",
+        "sector_return",
+        "liquidity"
+      ],
+      "features": [
+        "standardized_unexpected_earnings",
+        "text_surprise_score",
+        "tone_change",
+        "guidance_language",
+        "overnight_gap",
+        "sector_residual_return",
+        "spread_bps"
+      ],
+      "entry_rule": "Positive numeric and text surprise with supportive overnight move and no broad risk-off shock.",
+      "exit_rule": "Time exit after 5-15 trading days or earlier when residual alpha decays.",
+      "risk_notes": [
+        "Point-in-time transcript and release timestamps are mandatory.",
+        "Cap sector and earnings-season concentration.",
+        "Reject illiquid contracts or shares when spread cost overwhelms expected drift."
+      ],
+      "model_family": "gradient_boosted_tree_or_tabular_classifier"
+    },
+    {
+      "id": "announcement_aware_reversal",
+      "name": "Announcement-Aware Reversal",
+      "priority": 2,
+      "status": "paper_candidate",
+      "default_lane": "paper",
+      "cash_live_enabled": false,
+      "horizon": "1_to_3_trading_days",
+      "asset_classes": ["equity"],
+      "hypothesis": "Extreme non-news residual moves partially reverse when caused by liquidity pressure rather than information.",
+      "required_data": [
+        "daily_returns",
+        "intraday_bars",
+        "earnings_calendar",
+        "news_flags",
+        "spreads",
+        "sector_returns"
+      ],
+      "features": [
+        "prior_day_residual_return",
+        "earnings_window_flag",
+        "fresh_news_flag",
+        "relative_volume",
+        "spread_bps",
+        "sector_confirmation",
+        "residual_z_score"
+      ],
+      "entry_rule": "Fade extreme residual extensions only when no earnings/news/macro event explains the move.",
+      "exit_rule": "Exit on 1-3 day mean reversion, new information, or volatility stop.",
+      "risk_notes": [
+        "Never blindly fade earnings repricing.",
+        "Kill trade on fresh catalyst.",
+        "Use wider friction assumptions in high-volatility tapes."
+      ],
+      "model_family": "ranking_model_or_gradient_boosted_classifier"
+    },
+    {
+      "id": "sector_filtered_momentum",
+      "name": "Sector-Filtered Medium-Term Momentum",
+      "priority": 3,
+      "status": "research_backlog",
+      "default_lane": "shadow",
+      "cash_live_enabled": false,
+      "horizon": "weeks_to_months",
+      "asset_classes": ["equity", "etf"],
+      "hypothesis": "Intermediate winners continue when sector and regime filters avoid momentum crash conditions.",
+      "required_data": [
+        "adjusted_daily_returns",
+        "sector_map",
+        "market_regime",
+        "earnings_calendar",
+        "transaction_cost_estimates"
+      ],
+      "features": [
+        "six_to_twelve_month_momentum",
+        "last_month_skip_return",
+        "sector_relative_strength",
+        "realized_volatility_regime",
+        "breadth",
+        "turnover_cost"
+      ],
+      "entry_rule": "Rank liquid names by medium-term momentum with sector confirmation and no imminent earnings event.",
+      "exit_rule": "Rebalance on schedule or exit when momentum rank/regime deteriorates.",
+      "risk_notes": [
+        "Momentum can crash during sharp market rebounds.",
+        "Control turnover and sector concentration.",
+        "Use this as a portfolio/ranking layer before a scalp trigger."
+      ],
+      "model_family": "cross_sectional_ranker"
+    },
+    {
+      "id": "relative_volume_breakout_failure",
+      "name": "Relative-Volume Breakout Or Failure",
+      "priority": 4,
+      "status": "paper_candidate",
+      "default_lane": "paper",
+      "cash_live_enabled": false,
+      "horizon": "intraday_to_short_swing",
+      "asset_classes": ["equity"],
+      "hypothesis": "Volatility compression plus volume expansion predicts continuation, while failed holds beyond obvious levels predict reversal.",
+      "required_data": [
+        "intraday_ohlcv",
+        "vwap",
+        "sector_etf_intraday",
+        "spread_estimates",
+        "event_calendar"
+      ],
+      "features": [
+        "bollinger_bandwidth_percentile",
+        "atr_percentile",
+        "moving_average_compression",
+        "relative_volume",
+        "vwap_slope",
+        "level_breach_atr",
+        "close_location_value",
+        "sector_confirmation"
+      ],
+      "entry_rule": "Trade continuation only when RVOL, VWAP slope, and sector confirmation align; fade failed breaches that close back inside range.",
+      "exit_rule": "Exit on close back inside range, VWAP target, time stop, or invalidation of breached level.",
+      "risk_notes": [
+        "Reject information-rich gaps unless strategy is event-specific.",
+        "Avoid hindsight level selection in backtests.",
+        "Use strict size limits in high-attention names."
+      ],
+      "model_family": "continuation_vs_failure_classifier"
+    },
+    {
+      "id": "overnight_momentum_basket",
+      "name": "Overnight Momentum Basket",
+      "priority": 5,
+      "status": "shadow_candidate",
+      "default_lane": "shadow",
+      "cash_live_enabled": false,
+      "horizon": "close_to_open",
+      "asset_classes": ["equity", "etf"],
+      "hypothesis": "Momentum returns concentrate in the close-to-open window for diversified liquid baskets.",
+      "required_data": [
+        "adjusted_open_close_prices",
+        "earnings_calendar",
+        "auction_cost_assumptions",
+        "borrow_availability_if_shorting"
+      ],
+      "features": [
+        "close_to_open_return",
+        "open_to_close_return",
+        "momentum_rank",
+        "overnight_contribution_share",
+        "event_risk_flag",
+        "spread_bps"
+      ],
+      "entry_rule": "Enter diversified momentum basket near close while excluding event-risk names.",
+      "exit_rule": "Exit next open or maintain rolling overnight basket if rank persists.",
+      "risk_notes": [
+        "Strict overnight gross exposure limits required.",
+        "Auction slippage can erase edge.",
+        "No live use until open/close execution assumptions are validated."
+      ],
+      "model_family": "cross_sectional_ranker"
+    },
+    {
+      "id": "etf_flow_dislocation",
+      "name": "ETF Flow Dislocation Basket",
+      "priority": 6,
+      "status": "research_backlog",
+      "default_lane": "shadow",
+      "cash_live_enabled": false,
+      "horizon": "days_to_weeks",
+      "asset_classes": ["equity", "etf"],
+      "hypothesis": "Extreme ETF creations/redemptions create non-fundamental stock-level demand shocks that partially reverse.",
+      "required_data": [
+        "etf_flows",
+        "etf_holdings",
+        "basket_overlap",
+        "stock_liquidity",
+        "fundamental_catalyst_flags"
+      ],
+      "features": [
+        "stock_etf_flow_exposure",
+        "etf_ownership_percentile",
+        "residual_return",
+        "liquidity",
+        "factor_exposure"
+      ],
+      "entry_rule": "Fade extreme non-fundamental flow exposure while controlling factor and sector exposures.",
+      "exit_rule": "Exit as flow pressure normalizes or after fixed reversion horizon.",
+      "risk_notes": [
+        "Advanced data requirement.",
+        "Borrow and factor exposure must be modeled.",
+        "Use as watchlist/context layer before execution."
+      ],
+      "model_family": "portfolio_level_ranker"
+    },
+    {
+      "id": "options_led_relative_strength",
+      "name": "Options-Led Relative Strength",
+      "priority": 7,
+      "status": "blocked_data",
+      "default_lane": "shadow",
+      "cash_live_enabled": false,
+      "horizon": "1_to_5_trading_days",
+      "asset_classes": ["equity", "option"],
+      "hypothesis": "Liquid options markets sometimes lead stock returns through informed demand and volatility/skew changes.",
+      "required_data": [
+        "options_chain",
+        "option_quotes",
+        "implied_volatility_surface",
+        "option_volume",
+        "open_interest",
+        "stock_intraday_returns"
+      ],
+      "features": [
+        "abnormal_call_put_volume",
+        "iv_change",
+        "skew_change",
+        "stock_residual_return",
+        "option_spread_pct",
+        "quote_age_seconds"
+      ],
+      "entry_rule": "Follow stock names where liquid option signals and price action align, avoiding unmodeled binary events.",
+      "exit_rule": "Exit when option lead dissipates, after 1-5 days, or on chain-quality degradation.",
+      "risk_notes": [
+        "Requires Tradier or equivalent options data.",
+        "Do not assume every gamma narrative is actionable.",
+        "Chain quality gate is mandatory."
+      ],
+      "model_family": "option_stock_lead_classifier"
+    },
+    {
+      "id": "retail_attention_burst",
+      "name": "Retail Attention Burst",
+      "priority": 8,
+      "status": "paper_only_high_risk",
+      "default_lane": "paper",
+      "cash_live_enabled": false,
+      "horizon": "same_day_to_2_days",
+      "asset_classes": ["equity", "option"],
+      "hypothesis": "Speculative attention bursts can continue briefly while flow accelerates, then reverse sharply after attention peaks.",
+      "required_data": [
+        "social_message_counts",
+        "retail_flow_proxy",
+        "options_activity",
+        "intraday_ohlcv",
+        "spread_estimates"
+      ],
+      "features": [
+        "social_velocity",
+        "call_share",
+        "price_acceleration",
+        "relative_volume",
+        "spread_widening",
+        "failure_to_extend"
+      ],
+      "entry_rule": "Paper only: classify continuation versus exhaustion after attention and price acceleration.",
+      "exit_rule": "Very short duration, hard stop, no averaging down.",
+      "risk_notes": [
+        "Dangerous per unit of hype.",
+        "Tiny paper size only until slippage model is proven.",
+        "Live promotion should be exceptional."
+      ],
+      "model_family": "event_classifier"
+    }
+  ]
+}

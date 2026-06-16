@@ -1,7 +1,9 @@
 {
-  "date": "2026-06-14",
-  "day_start_value": 99.62,
+  "broker": "alpaca",
+  "date": "2026-06-16",
+  "day_start_value": 100000.0,
   "halted": false,
   "last_order_ids": [],
+  "scope": "86c3dc1f806e2dd2",
   "trade_count": 0
 }

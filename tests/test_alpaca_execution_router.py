@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from typing import Any
 
-from tools.stock_bridge_loop import AlpacaBroker, BridgeConfig, ExecutionRejected
+from tools.stock_bridge_loop import AlpacaBroker, BridgeConfig, ExecutionRejected, RobinhoodBroker, state_scope
 
 
 def run(coro):
@@ -42,6 +42,7 @@ def config(**overrides: Any) -> BridgeConfig:
         "market_hours": "auto",
         "enable_crypto_execution": False,
         "allow_market_options": False,
+        "allow_market_crypto": False,
         "max_option_contract_cost": 15.0,
         "max_option_account_risk": 20.0,
     }
@@ -94,6 +95,14 @@ class FakeAlpacaBroker(AlpacaBroker):
 
 
 class AlpacaExecutionRouterTests(unittest.TestCase):
+    def test_alpaca_base_url_accepts_optional_v2_suffix(self) -> None:
+        cfg_without_suffix = config(alpaca_base_url="https://paper-api.alpaca.markets")
+        cfg_with_suffix = config(alpaca_base_url="https://paper-api.alpaca.markets/v2")
+        broker = FakeAlpacaBroker(cfg_with_suffix)
+
+        self.assertEqual(broker.base_url, "https://paper-api.alpaca.markets")
+        self.assertEqual(state_scope(cfg_with_suffix), state_scope(cfg_without_suffix))
+
     def test_stock_order_still_routes_to_stock_executor(self) -> None:
         broker = FakeAlpacaBroker(config())
         result = run(
@@ -161,6 +170,67 @@ class AlpacaExecutionRouterTests(unittest.TestCase):
         broker = FakeAlpacaBroker(config(enable_crypto_execution=False), account={"crypto_status": "ACTIVE"})
         with self.assertRaisesRegex(ExecutionRejected, "disabled"):
             run(broker.review_order({"asset_class": "crypto", "symbol": "BTC/USD", "side": "buy", "type": "market", "dollar_amount": "5"}))
+
+    def test_crypto_market_order_rejected_by_default_even_when_crypto_active(self) -> None:
+        broker = FakeAlpacaBroker(config(enable_crypto_execution=True), account={"crypto_status": "ACTIVE"})
+        with self.assertRaisesRegex(ExecutionRejected, "Market crypto orders are disabled"):
+            run(broker.review_order({"asset_class": "crypto", "symbol": "BTC/USD", "side": "buy", "type": "market", "dollar_amount": "5"}))
+
+    def test_crypto_limit_order_routes_through_same_alpaca_orders_endpoint(self) -> None:
+        broker = FakeAlpacaBroker(config(enable_crypto_execution=True), account={"crypto_status": "ACTIVE"})
+        result = run(
+            broker.review_order(
+                {
+                    "asset_class": "crypto",
+                    "symbol": "BTC/USD",
+                    "side": "buy",
+                    "type": "limit",
+                    "dollar_amount": "5",
+                    "limit_price": "65000",
+                    "time_in_force": "gtc",
+                }
+            )
+        )
+        self.assertEqual(result["asset_class"], "crypto")
+        self.assertEqual(result["normalized_intent"]["symbol"], "BTC/USD")
+        self.assertEqual(result["normalized_intent"]["notional"], "5")
+        self.assertEqual(result["normalized_intent"]["limit_price"], "65000")
+
+    def test_crypto_order_rejects_qty_and_notional_together(self) -> None:
+        broker = FakeAlpacaBroker(config(enable_crypto_execution=True), account={"crypto_status": "ACTIVE"})
+        with self.assertRaisesRegex(ExecutionRejected, "either notional"):
+            run(
+                broker.review_order(
+                    {
+                        "asset_class": "crypto",
+                        "symbol": "BTC/USD",
+                        "side": "buy",
+                        "type": "limit",
+                        "dollar_amount": "5",
+                        "quantity": "0.001",
+                        "limit_price": "65000",
+                    }
+                )
+            )
+
+    def test_robinhood_capabilities_mark_missing_options_and_crypto_tools(self) -> None:
+        broker = RobinhoodBroker(config())
+        broker.tools = {
+            "get_portfolio",
+            "get_equity_positions",
+            "get_equity_orders",
+            "get_equity_quotes",
+            "get_equity_tradability",
+            "review_equity_order",
+            "place_equity_order",
+            "cancel_equity_order",
+        }
+        capabilities = broker.capabilities()
+        self.assertTrue(capabilities["equity_order"]["ready"])
+        self.assertFalse(capabilities["options"]["ready"])
+        self.assertEqual(capabilities["options_status"], "ROLLING_OUT_OR_NOT_EXPOSED")
+        self.assertFalse(capabilities["crypto"]["ready"])
+        self.assertEqual(capabilities["crypto_status"], "NOT_EXPOSED_BY_CURRENT_MCP")
 
     def test_contract_lookup_returns_active_tradable_exact_contract(self) -> None:
         broker = FakeAlpacaBroker(config())

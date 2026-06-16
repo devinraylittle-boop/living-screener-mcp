@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "classification": "limited_live_trading_ready",
+  "scope": "Small, human-supervised Robinhood equity orders only; Alpaca paper automation ready; full autonomous live trading blocked.",
+  "global_live_default": false,
+  "required_before_limited_autonomous_live": {
+    "min_closed_paper_trades": 100,
+    "min_distinct_market_days": 20,
+    "min_consecutive_green_paper_weeks": 2,
+    "min_profit_factor_after_costs": 1.2,
+    "max_paper_drawdown_pct": 8.0,
+    "max_open_positions": 2,
+    "max_position_notional_usd": 25.0,
+    "max_risk_per_trade_pct_of_equity": 0.5,
+    "max_daily_loss_pct_of_equity": 2.0,
+    "max_weekly_loss_pct_of_equity": 5.0,
+    "max_monthly_drawdown_pct_of_equity": 10.0,
+    "max_spread_bps_equity": 35.0,
+    "max_option_spread_pct": 18.0,
+    "min_trade_journal_coverage_pct": 100.0,
+    "requires_broker_reconciliation": true,
+    "requires_duplicate_order_guard": true,
+    "requires_kill_switch": true,
+    "requires_secrets_rotation": true,
+    "requires_alerting": true,
+    "requires_operator_runbook": true
+  },
+  "hard_blocks": [
+    "missing_or_stale_market_data",
+    "broker_review_failure",
+    "unreconciled_position_or_order_state",
+    "daily_loss_limit_reached",
+    "weekly_loss_limit_reached",
+    "open_order_exists_for_symbol",
+    "spread_or_quote_age_outside_limits",
+    "strategy_not_promoted_from_paper",
+    "missing_journal_intent",
+    "secrets_or_environment_mismatch"
+  ],
+  "stage_limits": {
+    "stage_0_manual_only": {
+      "live_orders": false,
+      "paper_orders": false,
+      "human_required": true
+    },
+    "stage_1_signal_generation_only": {
+      "live_orders": false,
+      "paper_orders": false,
+      "human_required": true
+    },
+    "stage_2_paper_trading_automation": {
+      "live_orders": false,
+      "paper_orders": true,
+      "human_required": false
+    },
+    "stage_3_human_approved_live_trades": {
+      "live_orders": true,
+      "paper_orders": true,
+      "human_required": true,
+      "max_order_notional_usd": 10.0,
+      "max_daily_loss_usd": 5.0
+    },
+    "stage_4_limited_autonomous_live_trades": {
+      "live_orders": true,
+      "paper_orders": true,
+      "human_required": false,
+      "max_order_notional_usd": 25.0,
+      "max_daily_loss_pct_of_equity": 2.0,
+      "requires_all_gates": true
+    },
+    "stage_5_full_autonomous_with_strict_caps": {
+      "live_orders": true,
+      "paper_orders": true,
+      "human_required": false,
+      "requires_90_day_clean_record": true,
+      "requires_external_monitoring": true,
+      "requires_monthly_model_review": true
+    }
+  }
+}

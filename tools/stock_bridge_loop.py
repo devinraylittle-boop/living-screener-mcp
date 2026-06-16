@@ -23,7 +23,9 @@ from fastmcp import Client
 ROOT = Path(__file__).resolve().parents[1]
 STATE_PATH = ROOT / "data" / "stock_bridge_state.json"
 LOG_PATH = ROOT / "data" / "stock_bridge_loop.jsonl"
+READINESS_GATES_PATH = ROOT / "config" / "autonomous_readiness_gates.json"
 LIVE_AUTH_VALUE = "ENABLE_AGENTIC_STOCK_BRIDGE"
+ALLOWED_LIVE_STAGE = "stage_3_human_approved_live_trades"
 
 
 @dataclass(frozen=True)
@@ -59,6 +61,7 @@ class BridgeConfig:
     market_hours: str
     enable_crypto_execution: bool
     allow_market_options: bool
+    allow_market_crypto: bool
     max_option_contract_cost: float
     max_option_account_risk: float
 
@@ -124,6 +127,35 @@ def save_state(state: dict[str, Any]) -> None:
     STATE_PATH.write_text(json.dumps(state, indent=2, sort_keys=True, default=str), encoding="utf-8")
 
 
+def load_readiness_gates() -> dict[str, Any]:
+    try:
+        return json.loads(READINESS_GATES_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SystemExit(f"Live mode refused. Readiness gates could not be loaded: {exc}") from exc
+
+
+def requested_autonomy_stage() -> str:
+    return os.getenv("AUTONOMY_STAGE", ALLOWED_LIVE_STAGE).strip() or ALLOWED_LIVE_STAGE
+
+
+def enforce_live_readiness_gate(live: bool) -> None:
+    gates = load_readiness_gates()
+    if gates.get("global_live_default") is not False:
+        raise SystemExit("Live mode refused. Readiness gates must keep global_live_default=false.")
+    stage = requested_autonomy_stage()
+    stage_limits = gates.get("stage_limits") or {}
+    if stage not in stage_limits:
+        raise SystemExit(f"Live mode refused. Unknown AUTONOMY_STAGE={stage!r}.")
+    if live and stage != ALLOWED_LIVE_STAGE:
+        raise SystemExit(
+            "Live mode refused. The bridge currently permits only "
+            f"{ALLOWED_LIVE_STAGE}; requested {stage}. Full or limited autonomous live trading remains blocked "
+            "until readiness gates, monitoring, paper sample size, reconciliation, and operator runbooks are satisfied."
+        )
+    if live and not stage_limits.get(stage, {}).get("human_required"):
+        raise SystemExit("Live mode refused. Current live bridge requires human-approved Stage 3 operation.")
+
+
 def today_key() -> str:
     return datetime.now().strftime("%Y-%m-%d")
 
@@ -141,6 +173,13 @@ def as_bool(value: Any) -> bool:
     if isinstance(value, bool):
         return value
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def normalize_trading_base_url(base_url: str) -> str:
+    cleaned = str(base_url or "").strip().rstrip("/")
+    if cleaned.lower().endswith("/v2"):
+        return cleaned[:-3].rstrip("/")
+    return cleaned
 
 
 class ExecutionRejected(ValueError):
@@ -252,6 +291,15 @@ def alert_types(order_checks: Any) -> list[str]:
 def blocking_broker_alerts(order_checks: Any, allowed_alert_types: tuple[str, ...]) -> list[str]:
     allowed = {item.strip().upper() for item in allowed_alert_types if item.strip()}
     return [item for item in alert_types(order_checks) if item not in allowed]
+
+
+def capability_state(required: set[str], available: set[str]) -> dict[str, Any]:
+    missing = sorted(required - available)
+    return {
+        "ready": not missing,
+        "required": sorted(required),
+        "missing": missing,
+    }
 
 
 def stock_intent_stop_risk_override_allowed(intent: dict[str, Any], notional: float, config: BridgeConfig) -> bool:
@@ -378,6 +426,27 @@ def tool_payload(result: Any) -> Any:
 
 
 class RobinhoodBroker:
+    equity_read_tools = {"get_portfolio", "get_equity_positions", "get_equity_orders", "get_equity_quotes", "get_equity_tradability"}
+    equity_order_tools = {"review_equity_order", "place_equity_order", "cancel_equity_order"}
+    option_tools = {
+        "get_option_chains",
+        "get_option_instruments",
+        "get_option_quotes",
+        "get_option_positions",
+        "get_option_orders",
+        "review_option_order",
+        "place_option_order",
+        "cancel_option_order",
+    }
+    crypto_tools = {
+        "get_crypto_positions",
+        "get_crypto_quotes",
+        "get_crypto_orders",
+        "review_crypto_order",
+        "place_crypto_order",
+        "cancel_crypto_order",
+    }
+
     def __init__(self, config: BridgeConfig):
         self.config = config
         self.client = Client(config.mcp_url, auth="oauth", timeout=config.auth_timeout_seconds)
@@ -387,10 +456,13 @@ class RobinhoodBroker:
         await self.client.__aenter__()
         tools = await self.client.list_tools()
         self.tools = {str(getattr(tool, "name", "")) for tool in tools}
-        required = {"get_portfolio", "get_equity_positions", "get_equity_orders", "get_equity_quotes", "get_equity_tradability", "review_equity_order", "place_equity_order", "cancel_equity_order"}
+        required = set(self.equity_read_tools)
+        if self.config.live:
+            required |= self.equity_order_tools
         missing = sorted(required - self.tools)
         if missing:
-            raise RuntimeError(f"Robinhood MCP missing required equity tools: {', '.join(missing)}")
+            raise RuntimeError(f"Robinhood MCP missing required tools for this bridge mode: {', '.join(missing)}")
+        append_log({"event": "robinhood_capability_report", "capabilities": self.capabilities()})
         return self
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -422,17 +494,60 @@ class RobinhoodBroker:
         rows = (payload or {}).get("results") or []
         return {str(row.get("symbol") or "").upper(): row for row in rows}
 
+    async def place_order(self, args: dict[str, Any]) -> dict[str, Any]:
+        asset_class = normalize_asset_class(args.get("asset_class"))
+        if asset_class == "option":
+            return await self.place_option_order(args)
+        if asset_class == "crypto":
+            return await self.place_crypto_order(args)
+        return await self.call("place_equity_order", args)
+
+    def capabilities(self) -> dict[str, Any]:
+        options = capability_state(self.option_tools, self.tools)
+        crypto = capability_state(self.crypto_tools, self.tools)
+        return {
+            "broker": "robinhood",
+            "equity_read": capability_state(self.equity_read_tools, self.tools),
+            "equity_order": capability_state(self.equity_order_tools, self.tools),
+            "options": options,
+            "crypto": crypto,
+            "options_status": "READY" if options["ready"] else "ROLLING_OUT_OR_NOT_EXPOSED",
+            "crypto_status": "READY" if crypto["ready"] else "NOT_EXPOSED_BY_CURRENT_MCP",
+        }
+
     async def review_order(self, args: dict[str, Any]) -> dict[str, Any]:
+        asset_class = normalize_asset_class(args.get("asset_class"))
+        if asset_class == "option":
+            return await self.review_option_order(args)
+        if asset_class == "crypto":
+            return await self.review_crypto_order(args)
         return await self.call("review_equity_order", args)
 
-    async def place_order(self, args: dict[str, Any]) -> dict[str, Any]:
-        return await self.call("place_equity_order", args)
+    async def review_option_order(self, args: dict[str, Any]) -> dict[str, Any]:
+        if "review_option_order" not in self.tools:
+            raise ExecutionRejected("Robinhood options execution is not exposed in this MCP session.")
+        return await self.call("review_option_order", args)
+
+    async def place_option_order(self, args: dict[str, Any]) -> dict[str, Any]:
+        if "place_option_order" not in self.tools:
+            raise ExecutionRejected("Robinhood options placement is not exposed in this MCP session.")
+        return await self.call("place_option_order", args)
+
+    async def review_crypto_order(self, args: dict[str, Any]) -> dict[str, Any]:
+        if "review_crypto_order" not in self.tools:
+            raise ExecutionRejected("Robinhood crypto execution is not exposed in this MCP session.")
+        return await self.call("review_crypto_order", args)
+
+    async def place_crypto_order(self, args: dict[str, Any]) -> dict[str, Any]:
+        if "place_crypto_order" not in self.tools:
+            raise ExecutionRejected("Robinhood crypto placement is not exposed in this MCP session.")
+        return await self.call("place_crypto_order", args)
 
 
 class AlpacaBroker:
     def __init__(self, config: BridgeConfig):
         self.config = config
-        self.base_url = config.alpaca_base_url.rstrip("/")
+        self.base_url = normalize_trading_base_url(config.alpaca_base_url)
         self.data_url = config.alpaca_data_url.rstrip("/")
         self.headers = {
             "APCA-API-KEY-ID": config.alpaca_api_key_id,
@@ -563,18 +678,32 @@ class AlpacaBroker:
             raise ExecutionRejected("Crypto execution is disabled. Set ENABLE_CRYPTO_EXECUTION=true to allow crypto routing.")
         if crypto_status != "ACTIVE":
             raise ExecutionRejected(f"Crypto execution rejected because Alpaca crypto_status is {crypto_status or 'UNKNOWN'}.")
+        if args.get("dollar_amount") and (args.get("quantity") or args.get("qty")):
+            raise ExecutionRejected("Crypto orders must use either notional/dollar_amount or qty, not both.")
         payload: dict[str, Any] = {
             "symbol": args["symbol"],
             "side": args["side"],
             "type": args.get("type", "market"),
             "time_in_force": args.get("time_in_force", "gtc"),
         }
+        if payload["side"] not in {"buy", "sell"}:
+            raise ExecutionRejected("Crypto executor requires side=buy or side=sell.")
+        if payload["type"] not in {"market", "limit", "stop_limit"}:
+            raise ExecutionRejected("Crypto executor allows only market, limit, and stop_limit orders.")
+        if payload["type"] == "market" and not self.config.allow_market_crypto:
+            raise ExecutionRejected("Market crypto orders are disabled. Use a limit order or set ALLOW_MARKET_CRYPTO=true.")
+        if payload["time_in_force"] not in {"gtc", "ioc"}:
+            raise ExecutionRejected("Crypto time_in_force must be gtc or ioc.")
         if args.get("dollar_amount") or args.get("notional"):
             payload["notional"] = str(args.get("dollar_amount") or args.get("notional"))
         if args.get("quantity") or args.get("qty"):
             payload["qty"] = str(args.get("quantity") or args.get("qty"))
+        if not payload.get("notional") and not payload.get("qty"):
+            raise ExecutionRejected("Crypto executor requires notional/dollar_amount or qty.")
         if args.get("limit_price"):
             payload["limit_price"] = str(args["limit_price"])
+        if payload["type"] in {"limit", "stop_limit"} and not payload.get("limit_price"):
+            raise ExecutionRejected("Crypto limit and stop_limit orders require limit_price.")
         if not submit:
             return {"broker": "alpaca", "asset_class": "crypto", "order_checks": {}, "normalized_intent": payload}
         order = self._trading("/v2/orders", method="POST", payload=payload, timeout=30)
@@ -929,7 +1058,7 @@ def log_broker_action(config: BridgeConfig, payload: dict[str, Any]) -> None:
 
 def state_scope(config: BridgeConfig) -> str:
     if config.broker == "alpaca":
-        raw = f"{config.broker}:{config.alpaca_base_url}:{config.alpaca_api_key_id}"
+        raw = f"{config.broker}:{normalize_trading_base_url(config.alpaca_base_url)}:{config.alpaca_api_key_id}"
     else:
         raw = f"{config.broker}:{config.account_number}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
@@ -1128,6 +1257,7 @@ def parse_args(argv: list[str]) -> BridgeConfig:
     parser.add_argument("--market-hours", default=os.getenv("STOCK_BRIDGE_MARKET_HOURS", "auto"))
     parser.add_argument("--enable-crypto-execution", action="store_true", default=as_bool(os.getenv("ENABLE_CRYPTO_EXECUTION", "false")))
     parser.add_argument("--allow-market-options", action="store_true", default=as_bool(os.getenv("ALLOW_MARKET_OPTIONS", "false")))
+    parser.add_argument("--allow-market-crypto", action="store_true", default=as_bool(os.getenv("ALLOW_MARKET_CRYPTO", "false")))
     parser.add_argument("--max-option-contract-cost", type=float, default=float(os.getenv("MAX_OPTION_CONTRACT_COST", os.getenv("STOCK_BRIDGE_MAX_ORDER_NOTIONAL", "10"))))
     parser.add_argument("--max-option-account-risk", type=float, default=float(os.getenv("MAX_OPTION_ACCOUNT_RISK", os.getenv("STOCK_BRIDGE_MAX_DAILY_LOSS", "20"))))
     args = parser.parse_args(argv)
@@ -1138,6 +1268,7 @@ def parse_args(argv: list[str]) -> BridgeConfig:
         if item.strip()
     )
     config = BridgeConfig(**raw)
+    enforce_live_readiness_gate(config.live)
     if config.live and os.getenv("STOCK_BRIDGE_LIVE_AUTH") != LIVE_AUTH_VALUE:
         raise SystemExit(
             "Live mode refused. Set STOCK_BRIDGE_LIVE_AUTH=ENABLE_AGENTIC_STOCK_BRIDGE "

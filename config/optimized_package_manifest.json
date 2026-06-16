@@ -1,0 +1,40 @@
+{
+  "package_name": "living-screener-autonomous-trading-optimized",
+  "version": "2026-06-16",
+  "readiness": "limited_live_trading_ready",
+  "safe_default_stage": "stage_2_paper_trading_automation",
+  "maximum_current_live_stage": "stage_3_human_approved_live_trades",
+  "full_autonomous_live_stage": "blocked_until_readiness_gates_pass",
+  "included_capabilities": [
+    "scanner_and_risk_services",
+    "journal_and_postmortem_services",
+    "anomaly_strategy_registry",
+    "autonomous_readiness_gates",
+    "alpaca_paper_credential_validator",
+    "alpaca_paper_stock_option_crypto_router",
+    "robinhood_stage_3_equity_bridge",
+    "stage_4_5_live_refusal_guard",
+    "operator_runbooks",
+    "focused_safety_tests"
+  ],
+  "excluded_runtime_noise": [
+    "__pycache__",
+    ".pytest_cache",
+    "*.pyc",
+    "data/stock_bridge_*.out.log",
+    "data/stock_bridge_*.err.log",
+    "local_env_files",
+    "sqlite_runtime_databases",
+    "packaged_dist_archives"
+  ],
+  "required_next_build_items_for_stage_4": [
+    "paper_lifecycle_ledger",
+    "broker_reconciliation_service",
+    "external_alerting",
+    "operator_kill_switch",
+    "secrets_rotation",
+    "minimum_paper_sample_size",
+    "walk_forward_validation",
+    "strategy_promotion_report"
+  ]
+}
