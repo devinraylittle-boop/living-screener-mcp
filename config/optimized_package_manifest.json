@@ -22,6 +22,8 @@
     "stage4_readiness_report",
     "stage5_readiness_report",
     "stage5_paper_only_lock_report",
+    "full_autonomy_execution_order_validator",
+    "full_autonomy_execution_order_template",
     "operator_runbooks",
     "stage3_human_approved_robinhood_live_profile",
     "stage3_status_and_kill_switch_scripts",
@@ -55,6 +57,7 @@
     "strategy_promotion_report",
     "stage5_90_day_clean_record",
     "external_monitoring",
-    "monthly_model_review"
+    "monthly_model_review",
+    "completed_full_autonomy_execution_order"
   ]
 }

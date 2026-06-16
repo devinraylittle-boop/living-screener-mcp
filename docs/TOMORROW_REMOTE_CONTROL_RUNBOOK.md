@@ -143,11 +143,19 @@ Check Stage 5 readiness:
 powershell -ExecutionPolicy Bypass -File tools\status_stage5.ps1
 ```
 
+Check the uploaded full-autonomy execution order:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\status_execution_order.ps1
+```
+
 Expected current status is `STAGE5_LOCKED_PAPER_ONLY`.
 
 Expected final decision is `NO_GO_LIVE_AUTONOMY`.
 
 This is intentional. If you are away from the computer, the system should protect the account by allowing Alpaca paper research only and refusing unsupervised live cash trading.
+
+The current full-autonomy execution order is a template and still contains unresolved bracketed fields. Until every authority and risk field is completed and validated, the execution order itself requires live autonomy to remain blocked.
 
 Stage 5 live autonomy requires all Stage 4 gates plus:
 
