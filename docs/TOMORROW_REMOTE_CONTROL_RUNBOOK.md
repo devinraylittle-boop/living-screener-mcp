@@ -134,3 +134,28 @@ Stage 4 live autonomy must stay blocked until every runtime gate is green:
 - secrets rotation is confirmed
 
 The Stage 4 report is read-only. It cannot place orders.
+
+# Stage 5 Full Autonomous Readiness
+
+Check Stage 5 readiness:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\status_stage5.ps1
+```
+
+Expected current status is `STAGE5_LOCKED_PAPER_ONLY`.
+
+Expected final decision is `NO_GO_LIVE_AUTONOMY`.
+
+This is intentional. If you are away from the computer, the system should protect the account by allowing Alpaca paper research only and refusing unsupervised live cash trading.
+
+Stage 5 live autonomy requires all Stage 4 gates plus:
+
+- 90-day clean record
+- external monitoring
+- monthly model review
+- continuous broker reconciliation
+- confirmed secrets rotation
+- no unresolved live-position or open-order conflicts
+
+If any critical check is red, do not enable live cash autonomy.

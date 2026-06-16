@@ -20,6 +20,8 @@
     "stage_4_5_live_refusal_guard",
     "broker_reconciliation_report",
     "stage4_readiness_report",
+    "stage5_readiness_report",
+    "stage5_paper_only_lock_report",
     "operator_runbooks",
     "stage3_human_approved_robinhood_live_profile",
     "stage3_status_and_kill_switch_scripts",
@@ -50,6 +52,9 @@
     "secrets_rotation",
     "minimum_paper_sample_size",
     "walk_forward_validation",
-    "strategy_promotion_report"
+    "strategy_promotion_report",
+    "stage5_90_day_clean_record",
+    "external_monitoring",
+    "monthly_model_review"
   ]
 }
