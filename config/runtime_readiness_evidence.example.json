@@ -1,0 +1,20 @@
+{
+  "external_alerting": {
+    "enabled": false,
+    "channels": [],
+    "last_test_at": null,
+    "last_test_status": "not_tested",
+    "monitoring_outside_local_machine": false
+  },
+  "secrets_rotation": {
+    "confirmed": false,
+    "operator_confirmed": false,
+    "rotated_at": null,
+    "live_broker_keys_separated": false,
+    "no_live_secrets_in_package": true
+  },
+  "monthly_model_review": {
+    "established": false,
+    "next_due": null
+  }
+}

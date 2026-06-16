@@ -155,6 +155,13 @@ Check the separate live-cash authority package:
 powershell -ExecutionPolicy Bypass -File tools\status_live_cash_authority.ps1
 ```
 
+Check runtime evidence for external alerting, secrets rotation, and monthly
+model review:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\status_runtime_evidence.ps1
+```
+
 Expected current status is `STAGE5_LOCKED_PAPER_ONLY`.
 
 Expected final decision is `GO_ALPACA_PAPER_AUTONOMY_NO_GO_LIVE_CASH`.
