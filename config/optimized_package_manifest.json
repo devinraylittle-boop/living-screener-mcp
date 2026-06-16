@@ -18,7 +18,11 @@
     "alpaca_paper_watchdog",
     "robinhood_stage_3_equity_bridge",
     "stage_4_5_live_refusal_guard",
+    "broker_reconciliation_report",
+    "stage4_readiness_report",
     "operator_runbooks",
+    "stage3_human_approved_robinhood_live_profile",
+    "stage3_status_and_kill_switch_scripts",
     "focused_safety_tests"
   ],
   "excluded_runtime_noise": [
@@ -40,6 +44,7 @@
   "required_next_build_items_for_stage_4": [
     "paper_lifecycle_ledger",
     "broker_reconciliation_service",
+    "broker_reconciliation_runtime_evidence",
     "external_alerting",
     "operator_kill_switch",
     "secrets_rotation",

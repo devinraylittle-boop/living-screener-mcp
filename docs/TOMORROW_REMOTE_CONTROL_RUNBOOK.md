@@ -92,3 +92,45 @@ powershell -ExecutionPolicy Bypass -File tools\status_paper_lifecycle.ps1
 
 This report is evidence only. `PAPER_PROMOTION_BLOCKED` means keep paper trading and continue collecting closed paper trades until the configured readiness gates pass.
 
+# Stage 3 Human-Approved Live Lane
+
+Check Stage 3 code readiness:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\status_stage3.ps1
+```
+
+Stage 3 is limited to small, human-approved Robinhood equity orders only:
+
+- max order notional: $10
+- max daily loss: $5
+- human approval required for every live order
+- Alpaca remains paper-only in this package
+- Stage 4/5 autonomous live trading remains blocked
+
+Emergency stop for a local Robinhood stock bridge:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\stop_stock_bridge.ps1
+```
+
+# Stage 4 Limited Autonomous Live Readiness
+
+Check Stage 4 readiness:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\status_stage4.ps1
+```
+
+Expected current status is `STAGE4_CODE_READY_RUNTIME_BLOCKED`.
+
+Stage 4 live autonomy must stay blocked until every runtime gate is green:
+
+- paper promotion reaches the configured minimum sample size and quality gates
+- broker reconciliation is current and clean
+- no duplicate open orders exist
+- kill switches are present
+- external alerting is live
+- secrets rotation is confirmed
+
+The Stage 4 report is read-only. It cannot place orders.
