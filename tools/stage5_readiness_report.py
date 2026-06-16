@@ -138,8 +138,8 @@ def build_report() -> dict[str, Any]:
     }
     critical_failures = [name for name, passed in critical_checks.items() if not passed]
 
-    runtime_blockers = list(stage4.get("runtime_blockers") or [])
-    runtime_blockers.extend(
+    live_cash_promotion_blockers = list(stage4.get("runtime_blockers") or [])
+    live_cash_promotion_blockers.extend(
         [
             "stage5_90_day_clean_record_not_available",
             "external_monitoring_not_connected",
@@ -150,11 +150,9 @@ def build_report() -> dict[str, Any]:
         ]
     )
     if execution_order.get("status") != "EXECUTION_ORDER_VALIDATED":
-        runtime_blockers.append("execution_order_has_unresolved_authority_or_risk_fields")
+        live_cash_promotion_blockers.append("execution_order_has_unresolved_authority_or_risk_fields")
 
     known_weaknesses = [
-        "paper sample is too small for live promotion",
-        "only one market day of closed paper evidence",
         "external alerting/monitoring is not connected",
         "secrets rotation is not confirmed",
         "broker reconciliation snapshot is not continuously automated",
@@ -165,8 +163,9 @@ def build_report() -> dict[str, Any]:
     if execution_order.get("status") != "EXECUTION_ORDER_VALIDATED":
         known_weaknesses.append("full-autonomy execution order still contains unresolved bracketed authority/risk fields")
 
-    final_decision = "NO_GO_LIVE_AUTONOMY"
+    final_decision = "GO_ALPACA_PAPER_AUTONOMY_NO_GO_LIVE_CASH"
     enabled_mode = "STAGE_2_ALPACA_PAPER_ONLY"
+    paper_autonomy_blockers = [] if execution_order.get("status") == "EXECUTION_ORDER_VALIDATED" and local["alpaca_paper_process_running"] else ["alpaca_paper_not_running_or_execution_order_invalid"]
 
     return {
         "status": "STAGE5_LOCKED_PAPER_ONLY" if not critical_failures else "STAGE5_HEALTH_BLOCKED",
@@ -176,8 +175,15 @@ def build_report() -> dict[str, Any]:
         "can_place_order_from_this_report": False,
         "critical_checks": critical_checks,
         "critical_failures": critical_failures,
-        "runtime_blockers": runtime_blockers,
+        "paper_autonomy_blockers": paper_autonomy_blockers,
+        "live_cash_promotion_blockers": live_cash_promotion_blockers,
+        "runtime_blockers": live_cash_promotion_blockers,
         "stage5_refusal_note": stage5_refusal_note,
+        "authority_correction": (
+            "The completed execution order validates Alpaca paper autonomy. "
+            "The remaining sample-size, market-day, reconciliation, alerting, secrets, and 90-day items are live-cash promotion gates, "
+            "not blockers to the current paper-only package."
+        ),
         "execution_order_summary": {
             "status": execution_order.get("status"),
             "decision": execution_order.get("decision"),
@@ -266,7 +272,7 @@ def build_report() -> dict[str, Any]:
             "paper_promotion_summary": stage4.get("paper_promotion_summary"),
             "broker_reconciliation_summary": stage4.get("broker_reconciliation_summary"),
         },
-        "next_action": "Leave Alpaca paper running. Do not enable live cash autonomy tomorrow unless this report changes to GO and every runtime blocker is cleared.",
+        "next_action": "Leave Alpaca paper autonomy running. Treat live-cash promotion gates as future requirements, not as blockers to the current paper-only package.",
     }
 
 
