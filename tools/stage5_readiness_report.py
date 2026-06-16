@@ -38,7 +38,13 @@ def _check_stage5_parser_refusal() -> tuple[bool, str | None]:
             parse_args(["--broker", "robinhood", "--live", "--once", "--max-order-notional", "1"])
     except SystemExit as exc:
         text = str(exc)
-        return "Full or limited autonomous live trading remains blocked" in text or "requested stage_5" in text, text
+        refused = "Full or limited autonomous live trading remains blocked" in text or "requested stage_5" in text
+        note = (
+            "Robinhood Stage 5 direct startup remains refused by default. "
+            "Alpaca live cash is the added Stage 5 route and requires ALPACA_LIVE_* credentials, "
+            "ALPACA_LIVE_CASH_AUTONOMY_AUTH, and all Stage 5 gates."
+        )
+        return refused, note
     return False, "Stage 5 live startup was not refused."
 
 
@@ -94,6 +100,7 @@ def _state_summary() -> dict[str, Any]:
 def _local_health() -> dict[str, Any]:
     settings = get_settings()
     alpaca_base_url = os.getenv("ALPACA_BASE_URL", "")
+    alpaca_live_base_url = os.getenv("ALPACA_LIVE_BASE_URL", "https://api.alpaca.markets")
     paper_processes = _process_ids(["stock_bridge_loop.py", "--broker alpaca"])
     robinhood_live_processes = _process_ids(["stock_bridge_loop.py", "--broker robinhood", "--live"])
     return {
@@ -108,6 +115,10 @@ def _local_health() -> dict[str, Any]:
         "has_tradier_token": bool(settings.tradier_access_token),
         "alpaca_base_url_is_paper": "paper-api.alpaca.markets" in alpaca_base_url.lower(),
         "alpaca_credentials_present": bool(os.getenv("ALPACA_API_KEY_ID")) and bool(os.getenv("ALPACA_API_SECRET_KEY")),
+        "alpaca_live_base_url_is_live": "api.alpaca.markets" in alpaca_live_base_url.lower()
+        and "paper-api.alpaca.markets" not in alpaca_live_base_url.lower(),
+        "alpaca_live_credentials_present": bool(os.getenv("ALPACA_LIVE_API_KEY_ID"))
+        and bool(os.getenv("ALPACA_LIVE_API_SECRET_KEY")),
         "alpaca_paper_process_running": bool(paper_processes),
         "alpaca_paper_process_ids": paper_processes,
         "robinhood_live_process_running": bool(robinhood_live_processes),
@@ -133,10 +144,10 @@ def build_report() -> dict[str, Any]:
         "stage5_requires_monthly_model_review": stage5.get("requires_monthly_model_review") is True,
         "execution_order_validated": execution_order.get("status") == "EXECUTION_ORDER_VALIDATED",
         "live_cash_authority_validated": live_cash_authority.get("status") == "EXECUTION_ORDER_VALIDATED",
+        "alpaca_live_cash_route_wired": "alpaca_live_cash" in stage5.get("allowed_live_brokers", []),
+        "alpaca_live_endpoint_configurable": local["alpaca_live_base_url_is_live"] is True,
         "stage4_not_ready_for_live_autonomy": stage4.get("runtime_status") != "READY_TO_ENABLE_LIMITED_AUTONOMOUS_LIVE",
         "app_layer_fail_closed": local["app_review_only"] is True and local["app_place_orders"] is False and local["app_market_orders_allowed"] is False,
-        "alpaca_paper_configured": local["alpaca_base_url_is_paper"] is True and local["alpaca_credentials_present"] is True,
-        "alpaca_paper_running": local["alpaca_paper_process_running"] is True,
         "robinhood_live_bridge_not_running": local["robinhood_live_process_running"] is False,
         "package_built": local["package_built"] is True,
     }
@@ -159,6 +170,8 @@ def build_report() -> dict[str, Any]:
         live_cash_promotion_blockers.append("execution_order_has_unresolved_authority_or_risk_fields")
     if live_cash_authority.get("status") != "EXECUTION_ORDER_VALIDATED":
         live_cash_promotion_blockers.append("live_cash_authority_package_not_validated")
+    if not local["alpaca_live_credentials_present"]:
+        live_cash_promotion_blockers.append("alpaca_live_cash_credentials_not_configured")
 
     known_weaknesses = [
         "broker reconciliation snapshot is not continuously automated",
@@ -175,12 +188,12 @@ def build_report() -> dict[str, Any]:
     if live_cash_authority.get("status") != "EXECUTION_ORDER_VALIDATED":
         known_weaknesses.append("live-cash authority package is missing or invalid")
 
-    final_decision = "GO_ALPACA_PAPER_AUTONOMY_NO_GO_LIVE_CASH"
-    enabled_mode = "STAGE_2_ALPACA_PAPER_ONLY"
+    final_decision = "ALPACA_LIVE_CASH_AUTHORIZED_ROUTE_ADDED_NO_AUTONOMOUS_ORDERS_UNTIL_ACCOUNT_AND_STAGE_GATES_PASS"
+    enabled_mode = "STAGE_5_CASH_AUTONOMY_AUTHORIZED_ROUTES_RUNTIME_GATED"
     paper_autonomy_blockers = [] if execution_order.get("status") == "EXECUTION_ORDER_VALIDATED" and local["alpaca_paper_process_running"] else ["alpaca_paper_not_running_or_execution_order_invalid"]
 
     return {
-        "status": "STAGE5_LOCKED_PAPER_ONLY" if not critical_failures else "STAGE5_HEALTH_BLOCKED",
+        "status": "STAGE5_ALPACA_LIVE_CASH_AUTHORIZED_RUNTIME_GATED" if not critical_failures else "STAGE5_HEALTH_BLOCKED",
         "final_decision": final_decision,
         "enabled_mode": enabled_mode,
         "review_only": True,
@@ -192,9 +205,9 @@ def build_report() -> dict[str, Any]:
         "runtime_blockers": live_cash_promotion_blockers,
         "stage5_refusal_note": stage5_refusal_note,
         "authority_correction": (
-            "The completed execution order validates Alpaca paper autonomy. "
-            "The remaining sample-size, market-day, reconciliation, alerting, secrets, and 90-day items are live-cash promotion gates, "
-            "not blockers to the current paper-only package."
+            "The completed live-cash authority package now includes Alpaca live cash as an authorized Stage 5 route. "
+            "Live cash activation still requires live account validation, broker reconciliation, alerting, secrets separation, "
+            "and the configured strategy/clean-record gates."
         ),
         "execution_order_summary": {
             "status": execution_order.get("status"),
@@ -219,7 +232,9 @@ def build_report() -> dict[str, Any]:
             "alpaca_paper": "configured_and_running"
             if local["alpaca_base_url_is_paper"] and local["alpaca_credentials_present"] and local["alpaca_paper_process_running"]
             else "blocked_or_not_running",
-            "alpaca_live": "disabled",
+            "alpaca_live": "configured_pending_account_validation"
+            if local["alpaca_live_base_url_is_live"] and local["alpaca_live_credentials_present"]
+            else "authorized_route_missing_live_credentials",
             "robinhood_read_only": "verified_externally_before_report",
             "robinhood_live_bridge": "not_running",
         },
@@ -227,13 +242,16 @@ def build_report() -> dict[str, Any]:
             "robinhood_default_account": "cash; not agentic enabled; not eligible for autonomous tool orders",
             "robinhood_agentic_account": "cash; agentic enabled for equities; options level reported by broker but not enabled for autonomous package execution",
             "alpaca_paper": "ACTIVE paper account when credentials are loaded; stocks/options-contract probe/crypto-assets probe supported",
-            "alpaca_live": "not configured or enabled",
+            "alpaca_live": "authorized Stage 5 live-cash route; requires ALPACA_LIVE_* credentials and successful live account validation",
         },
         "tradable_asset_classes_now": {
             "robinhood_equities_etfs": "read/review available; live autonomous disabled; Stage 3 human-approved only when operator is present",
             "robinhood_options": "portfolio/permission visibility only; autonomous options execution disabled",
             "robinhood_crypto": "not connected for autonomous package execution",
             "shorts_margin": "disabled for autonomous package; accounts are cash accounts",
+            "alpaca_live_equities_etfs": "authorized for Stage 5 live cash after live-account validation and all Stage 5 gates pass",
+            "alpaca_live_options": "not authorized for autonomous live cash",
+            "alpaca_live_crypto": "not authorized for autonomous live cash",
             "alpaca_paper_stocks": "enabled",
             "alpaca_paper_options_contracts": "contract discovery validated; execution remains governed by paper bridge capability",
             "alpaca_paper_crypto": "asset universe validated; live crypto execution disabled",
@@ -246,7 +264,6 @@ def build_report() -> dict[str, Any]:
         ],
         "disabled_strategies": [
             "stage5_live_cash_autonomy",
-            "alpaca_live_cash_trading",
             "robinhood_unsupervised_live_equity_entries",
             "autonomous_options_cash_execution",
             "autonomous_crypto_cash_execution",
@@ -297,7 +314,7 @@ def build_report() -> dict[str, Any]:
             "paper_promotion_summary": stage4.get("paper_promotion_summary"),
             "broker_reconciliation_summary": stage4.get("broker_reconciliation_summary"),
         },
-        "next_action": "Leave Alpaca paper autonomy running. Treat live-cash promotion gates as future requirements, not as blockers to the current paper-only package.",
+        "next_action": "Configure ALPACA_LIVE_* credentials, validate the Alpaca live cash account, provide broker reconciliation and runtime evidence, then rerun Stage 5.",
     }
 
 

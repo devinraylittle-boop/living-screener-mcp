@@ -32,6 +32,8 @@ LOG_PATH = ROOT / "data" / "stock_bridge_loop.jsonl"
 READINESS_GATES_PATH = ROOT / "config" / "autonomous_readiness_gates.json"
 LIVE_AUTH_VALUE = "ENABLE_AGENTIC_STOCK_BRIDGE"
 ALLOWED_LIVE_STAGE = "stage_3_human_approved_live_trades"
+FULL_AUTONOMY_STAGE = "stage_5_full_autonomous_with_strict_caps"
+ALPACA_LIVE_CASH_AUTH_VALUE = "ENABLE_ALPACA_LIVE_CASH_AUTONOMY"
 
 
 @dataclass(frozen=True)
@@ -163,6 +165,16 @@ def is_alpaca_paper_submission(live: bool, broker: str, alpaca_base_url: str, st
     )
 
 
+def is_alpaca_live_cash_submission(live: bool, broker: str, alpaca_base_url: str, stage: str | None = None) -> bool:
+    resolved_stage = stage if stage is not None else requested_autonomy_stage()
+    return (
+        live
+        and broker == "alpaca"
+        and resolved_stage == FULL_AUTONOMY_STAGE
+        and alpaca_endpoint_environment(alpaca_base_url) == "live"
+    )
+
+
 def enforce_live_readiness_gate(live: bool, broker: str = "robinhood", alpaca_base_url: str = "") -> None:
     gates = load_readiness_gates()
     if gates.get("global_live_default") is not False:
@@ -173,6 +185,13 @@ def enforce_live_readiness_gate(live: bool, broker: str = "robinhood", alpaca_ba
         raise SystemExit(f"Live mode refused. Unknown AUTONOMY_STAGE={stage!r}.")
     if is_alpaca_paper_submission(live, broker, alpaca_base_url, stage):
         return
+    if is_alpaca_live_cash_submission(live, broker, alpaca_base_url, stage):
+        if os.getenv("ALPACA_LIVE_CASH_AUTONOMY_AUTH") == ALPACA_LIVE_CASH_AUTH_VALUE:
+            return
+        raise SystemExit(
+            "Live mode refused. Alpaca live-cash Stage 5 is wired, but requires "
+            "ALPACA_LIVE_CASH_AUTONOMY_AUTH=ENABLE_ALPACA_LIVE_CASH_AUTONOMY plus all Stage 5 readiness gates."
+        )
     if live and stage != ALLOWED_LIVE_STAGE:
         raise SystemExit(
             "Live mode refused. The bridge currently permits only "
@@ -182,10 +201,7 @@ def enforce_live_readiness_gate(live: bool, broker: str = "robinhood", alpaca_ba
     if live and not stage_limits.get(stage, {}).get("human_required"):
         raise SystemExit("Live mode refused. Current live bridge requires human-approved Stage 3 operation.")
     if live and broker == "alpaca":
-        raise SystemExit(
-            "Live mode refused. Stage 3 is currently scoped to small, human-supervised Robinhood equity orders only. "
-            "Alpaca remains approved for paper automation until separate Alpaca live-cash readiness is proven."
-        )
+        raise SystemExit("Live mode refused. Alpaca live cash is only allowed under Stage 5 full-autonomy authority.")
 
 
 def enforce_live_config_caps(config: BridgeConfig) -> None:
@@ -194,16 +210,19 @@ def enforce_live_config_caps(config: BridgeConfig) -> None:
     gates = load_readiness_gates()
     stage = requested_autonomy_stage()
     stage_limit = (gates.get("stage_limits") or {}).get(stage) or {}
-    max_order_notional = as_float(stage_limit.get("max_order_notional_usd"))
+    required = gates.get("required_before_limited_autonomous_live") or {}
+    max_order_notional = as_float(stage_limit.get("max_order_notional_usd") or required.get("max_position_notional_usd"))
     max_daily_loss = as_float(stage_limit.get("max_daily_loss_usd"))
+    if max_daily_loss <= 0:
+        max_daily_loss = min(2.50, config.account_value * as_float(required.get("max_daily_loss_pct_of_equity")) / 100)
     if max_order_notional > 0 and config.max_order_notional > max_order_notional:
         raise SystemExit(
-            f"Live mode refused. Stage 3 max_order_notional ${config.max_order_notional:.2f} exceeds "
+            f"Live mode refused. {stage} max_order_notional ${config.max_order_notional:.2f} exceeds "
             f"configured cap ${max_order_notional:.2f}."
         )
     if max_daily_loss > 0 and config.max_daily_loss > max_daily_loss:
         raise SystemExit(
-            f"Live mode refused. Stage 3 max_daily_loss ${config.max_daily_loss:.2f} exceeds "
+            f"Live mode refused. {stage} max_daily_loss ${config.max_daily_loss:.2f} exceeds "
             f"configured cap ${max_daily_loss:.2f}."
         )
 
@@ -1711,6 +1730,8 @@ def parse_args(argv: list[str]) -> BridgeConfig:
     parser.add_argument("--alpaca-data-url", default=os.getenv("ALPACA_DATA_URL", "https://data.alpaca.markets"))
     parser.add_argument("--alpaca-api-key-id", default=os.getenv("ALPACA_API_KEY_ID", ""))
     parser.add_argument("--alpaca-api-secret-key", default=os.getenv("ALPACA_API_SECRET_KEY", ""))
+    parser.add_argument("--alpaca-live-api-key-id", default=os.getenv("ALPACA_LIVE_API_KEY_ID", ""))
+    parser.add_argument("--alpaca-live-api-secret-key", default=os.getenv("ALPACA_LIVE_API_SECRET_KEY", ""))
     parser.add_argument("--live", action="store_true", default=as_bool(os.getenv("STOCK_BRIDGE_LIVE", "false")))
     parser.add_argument("--interval-seconds", type=int, default=int(os.getenv("STOCK_BRIDGE_INTERVAL_SECONDS", "60")))
     parser.add_argument("--once", action="store_true")
@@ -1739,6 +1760,20 @@ def parse_args(argv: list[str]) -> BridgeConfig:
     parser.add_argument("--max-option-account-risk", type=float, default=float(os.getenv("MAX_OPTION_ACCOUNT_RISK", os.getenv("STOCK_BRIDGE_MAX_DAILY_LOSS", "20"))))
     args = parser.parse_args(argv)
     raw = vars(args)
+    alpaca_live_api_key_id = raw.pop("alpaca_live_api_key_id")
+    alpaca_live_api_secret_key = raw.pop("alpaca_live_api_secret_key")
+    if (
+        raw["live"]
+        and raw["broker"] == "alpaca"
+        and alpaca_endpoint_environment(raw["alpaca_base_url"]) == "live"
+    ):
+        if not alpaca_live_api_key_id or not alpaca_live_api_secret_key:
+            raise SystemExit(
+                "Live mode refused. Alpaca live-cash trading requires dedicated "
+                "ALPACA_LIVE_API_KEY_ID and ALPACA_LIVE_API_SECRET_KEY credentials."
+            )
+        raw["alpaca_api_key_id"] = alpaca_live_api_key_id
+        raw["alpaca_api_secret_key"] = alpaca_live_api_secret_key
     raw["allowed_broker_alert_types"] = tuple(
         item.strip().upper()
         for item in str(raw["allowed_broker_alert_types"]).split(",")
@@ -1750,6 +1785,7 @@ def parse_args(argv: list[str]) -> BridgeConfig:
     if (
         config.live
         and os.getenv("STOCK_BRIDGE_LIVE_AUTH") != LIVE_AUTH_VALUE
+        and os.getenv("ALPACA_LIVE_CASH_AUTONOMY_AUTH") != ALPACA_LIVE_CASH_AUTH_VALUE
         and not is_alpaca_paper_submission(config.live, config.broker, config.alpaca_base_url)
     ):
         raise SystemExit(
