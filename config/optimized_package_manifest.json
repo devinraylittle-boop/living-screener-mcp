@@ -8,6 +8,8 @@
   "included_capabilities": [
     "scanner_and_risk_services",
     "journal_and_postmortem_services",
+    "paper_lifecycle_ledger",
+    "paper_promotion_report",
     "anomaly_strategy_registry",
     "autonomous_readiness_gates",
     "alpaca_paper_credential_validator",
@@ -25,6 +27,7 @@
     "*.pyc",
     "data/stock_bridge_loop.jsonl",
     "data/stock_bridge_state.json",
+    "data/paper_lifecycle_ledger.jsonl",
     "data/stock_bridge_*.out.log",
     "data/stock_bridge_*.err.log",
     "data/alpaca_paper_*.out.log",

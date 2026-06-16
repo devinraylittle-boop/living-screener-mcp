@@ -82,4 +82,13 @@ data\watchdog_alpaca_paper.log
 This controls Alpaca paper only. It does not enable live-cash Stage 4 or Stage 5 autonomy.
 
 Live cash remains blocked except human-approved Stage 3 Robinhood equity trades.
+# Paper Promotion Evidence
+
+Check whether the active paper lane has enough promotion-grade evidence:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\status_paper_lifecycle.ps1
+```
+
+This report is evidence only. `PAPER_PROMOTION_BLOCKED` means keep paper trading and continue collecting closed paper trades until the configured readiness gates pass.
 
