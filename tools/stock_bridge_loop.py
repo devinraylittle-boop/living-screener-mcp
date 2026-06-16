@@ -138,7 +138,26 @@ def requested_autonomy_stage() -> str:
     return os.getenv("AUTONOMY_STAGE", ALLOWED_LIVE_STAGE).strip() or ALLOWED_LIVE_STAGE
 
 
-def enforce_live_readiness_gate(live: bool) -> None:
+def alpaca_endpoint_environment(base_url: str) -> str:
+    normalized = normalize_trading_base_url(base_url).lower()
+    if "paper-api.alpaca.markets" in normalized:
+        return "paper"
+    if "api.alpaca.markets" in normalized:
+        return "live"
+    return "custom"
+
+
+def is_alpaca_paper_submission(live: bool, broker: str, alpaca_base_url: str, stage: str | None = None) -> bool:
+    resolved_stage = stage if stage is not None else requested_autonomy_stage()
+    return (
+        live
+        and broker == "alpaca"
+        and resolved_stage == "stage_2_paper_trading_automation"
+        and alpaca_endpoint_environment(alpaca_base_url) == "paper"
+    )
+
+
+def enforce_live_readiness_gate(live: bool, broker: str = "robinhood", alpaca_base_url: str = "") -> None:
     gates = load_readiness_gates()
     if gates.get("global_live_default") is not False:
         raise SystemExit("Live mode refused. Readiness gates must keep global_live_default=false.")
@@ -146,6 +165,8 @@ def enforce_live_readiness_gate(live: bool) -> None:
     stage_limits = gates.get("stage_limits") or {}
     if stage not in stage_limits:
         raise SystemExit(f"Live mode refused. Unknown AUTONOMY_STAGE={stage!r}.")
+    if is_alpaca_paper_submission(live, broker, alpaca_base_url, stage):
+        return
     if live and stage != ALLOWED_LIVE_STAGE:
         raise SystemExit(
             "Live mode refused. The bridge currently permits only "
@@ -195,6 +216,13 @@ def normalize_asset_class(value: Any) -> str:
     if normalized in {"crypto", "cryptocurrency"}:
         return "crypto"
     raise ExecutionRejected(f"Unsupported asset_class: {value}")
+
+
+def normalize_alpaca_stock_time_in_force(value: Any) -> str:
+    normalized = str(value or "day").strip().lower()
+    if normalized in {"gfd", "day"}:
+        return "day"
+    return normalized
 
 
 def require_whole_contract_qty(value: Any) -> str:
@@ -656,7 +684,7 @@ class AlpacaBroker:
             "symbol": args["symbol"],
             "side": args["side"],
             "type": args["type"],
-            "time_in_force": args.get("time_in_force", "day"),
+            "time_in_force": normalize_alpaca_stock_time_in_force(args.get("time_in_force", "day")),
         }
         if args.get("dollar_amount"):
             payload["notional"] = str(args["dollar_amount"])
@@ -1048,9 +1076,15 @@ def build_entry_order_args(config: BridgeConfig, selected: dict[str, Any], notio
     )
 
 
+def is_real_cash_execution(config: BridgeConfig) -> bool:
+    if config.broker == "alpaca" and alpaca_endpoint_environment(config.alpaca_base_url) == "paper":
+        return False
+    return bool(config.live)
+
+
 def log_broker_action(config: BridgeConfig, payload: dict[str, Any]) -> None:
     try:
-        payload = {"is_options_order": False, "is_real_cash": True, **payload}
+        payload = {"is_options_order": False, "is_real_cash": is_real_cash_execution(config), **payload}
         post_json_url(f"{config.base_url.rstrip('/')}/trade/manual-action", payload, timeout=30)
     except Exception as exc:  # noqa: BLE001 - logging must not kill executor
         append_log({"event": "journal_log_failed", "error": repr(exc), "payload": payload})
@@ -1268,8 +1302,12 @@ def parse_args(argv: list[str]) -> BridgeConfig:
         if item.strip()
     )
     config = BridgeConfig(**raw)
-    enforce_live_readiness_gate(config.live)
-    if config.live and os.getenv("STOCK_BRIDGE_LIVE_AUTH") != LIVE_AUTH_VALUE:
+    enforce_live_readiness_gate(config.live, config.broker, config.alpaca_base_url)
+    if (
+        config.live
+        and os.getenv("STOCK_BRIDGE_LIVE_AUTH") != LIVE_AUTH_VALUE
+        and not is_alpaca_paper_submission(config.live, config.broker, config.alpaca_base_url)
+    ):
         raise SystemExit(
             "Live mode refused. Set STOCK_BRIDGE_LIVE_AUTH=ENABLE_AGENTIC_STOCK_BRIDGE "
             "to acknowledge real-money autonomous trading risk."

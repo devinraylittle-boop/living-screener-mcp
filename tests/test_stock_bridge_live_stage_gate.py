@@ -4,7 +4,7 @@ import os
 import unittest
 from unittest.mock import patch
 
-from tools.stock_bridge_loop import enforce_live_readiness_gate
+from tools.stock_bridge_loop import enforce_live_readiness_gate, parse_args
 
 
 class StockBridgeLiveStageGateTests(unittest.TestCase):
@@ -32,6 +32,50 @@ class StockBridgeLiveStageGateTests(unittest.TestCase):
     def test_paper_or_dry_run_can_use_requested_stage_without_live_orders(self) -> None:
         with patch.dict(os.environ, {"AUTONOMY_STAGE": "stage_2_paper_trading_automation"}, clear=False):
             enforce_live_readiness_gate(live=False)
+
+    def test_alpaca_paper_submission_is_allowed_in_stage_two(self) -> None:
+        with patch.dict(os.environ, {"AUTONOMY_STAGE": "stage_2_paper_trading_automation"}, clear=False):
+            enforce_live_readiness_gate(
+                live=True,
+                broker="alpaca",
+                alpaca_base_url="https://paper-api.alpaca.markets/v2",
+            )
+
+    def test_alpaca_live_endpoint_is_not_allowed_in_stage_two(self) -> None:
+        with patch.dict(os.environ, {"AUTONOMY_STAGE": "stage_2_paper_trading_automation"}, clear=False):
+            with self.assertRaisesRegex(SystemExit, "requested stage_2_paper_trading_automation"):
+                enforce_live_readiness_gate(
+                    live=True,
+                    broker="alpaca",
+                    alpaca_base_url="https://api.alpaca.markets",
+                )
+
+    def test_parse_args_allows_alpaca_paper_submit_without_real_money_auth(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "AUTONOMY_STAGE": "stage_2_paper_trading_automation",
+                "ALPACA_BASE_URL": "https://paper-api.alpaca.markets/v2",
+                "STOCK_BRIDGE_LIVE_AUTH": "",
+            },
+            clear=False,
+        ):
+            config = parse_args(["--broker", "alpaca", "--live", "--once"])
+
+        self.assertTrue(config.live)
+        self.assertEqual(config.broker, "alpaca")
+
+    def test_parse_args_still_requires_auth_for_robinhood_live(self) -> None:
+        with patch.dict(
+            os.environ,
+            {
+                "AUTONOMY_STAGE": "stage_3_human_approved_live_trades",
+                "STOCK_BRIDGE_LIVE_AUTH": "",
+            },
+            clear=False,
+        ):
+            with self.assertRaisesRegex(SystemExit, "Live mode refused"):
+                parse_args(["--broker", "robinhood", "--live", "--once"])
 
 
 if __name__ == "__main__":

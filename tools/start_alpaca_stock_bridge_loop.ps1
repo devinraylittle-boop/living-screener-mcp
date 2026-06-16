@@ -36,6 +36,10 @@ $env:SCREENER_BASE_URL = $BaseUrl
 $env:STOCK_BRIDGE_BROKER = "alpaca"
 $env:ALPACA_BASE_URL = $AlpacaBaseUrl
 $env:ALPACA_DATA_URL = $AlpacaDataUrl
+$isPaperEndpoint = $AlpacaBaseUrl.ToLowerInvariant().Contains("paper-api.alpaca.markets")
+if (-not $env:AUTONOMY_STAGE) {
+    $env:AUTONOMY_STAGE = if ($isPaperEndpoint) { "stage_2_paper_trading_automation" } else { "stage_3_human_approved_live_trades" }
+}
 $env:STOCK_BRIDGE_MAX_ORDER_NOTIONAL = [string]$MaxOrderNotional
 $env:STOCK_BRIDGE_MAX_DAILY_LOSS = [string]$MaxDailyLoss
 $env:STOCK_BRIDGE_MIN_SCORE = [string]$MinScore
@@ -55,7 +59,7 @@ $env:ALLOW_MARKET_CRYPTO = if ($AllowMarketCrypto) { "true" } else { "false" }
 $argsList = @("tools\stock_bridge_loop.py", "--broker", "alpaca")
 if ($Live) {
     $env:STOCK_BRIDGE_LIVE = "true"
-    if ($env:STOCK_BRIDGE_LIVE_AUTH -ne "ENABLE_AGENTIC_STOCK_BRIDGE") {
+    if ((-not $isPaperEndpoint) -and $env:STOCK_BRIDGE_LIVE_AUTH -ne "ENABLE_AGENTIC_STOCK_BRIDGE") {
         Write-Host "Live mode requires standing authorization."
         Write-Host "Run this first in the same PowerShell session:"
         Write-Host '$env:STOCK_BRIDGE_LIVE_AUTH="ENABLE_AGENTIC_STOCK_BRIDGE"'
@@ -76,6 +80,8 @@ Write-Host "Base: $BaseUrl"
 Write-Host "Broker: alpaca"
 Write-Host "Alpaca API: $AlpacaBaseUrl"
 Write-Host "Live: $Live"
+Write-Host "Autonomy stage: $env:AUTONOMY_STAGE"
+Write-Host "Paper endpoint: $isPaperEndpoint"
 Write-Host "Max order notional: $MaxOrderNotional"
 Write-Host "Max daily loss: $MaxDailyLoss"
 Write-Host "Min score: $MinScore"

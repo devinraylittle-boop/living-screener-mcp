@@ -47,7 +47,12 @@ $excludeFilePatterns = @(
     "data\*.sqlite3",
     "data\*.sqlite3-*",
     "data\stock_bridge_*.out.log",
-    "data\stock_bridge_*.err.log"
+    "data\stock_bridge_*.err.log",
+    "data\alpaca_paper_*.out.log",
+    "data\alpaca_paper_*.err.log",
+    "data\watchdog_*.log",
+    "data\watchdog_*.out.log",
+    "data\watchdog_*.err.log"
 )
 
 function Get-RelativeRepoPath {

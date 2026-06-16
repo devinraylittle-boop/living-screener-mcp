@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from typing import Any
 
-from tools.stock_bridge_loop import AlpacaBroker, BridgeConfig, ExecutionRejected, RobinhoodBroker, state_scope
+from tools.stock_bridge_loop import AlpacaBroker, BridgeConfig, ExecutionRejected, RobinhoodBroker, is_real_cash_execution, state_scope
 
 
 def run(coro):
@@ -103,6 +103,10 @@ class AlpacaExecutionRouterTests(unittest.TestCase):
         self.assertEqual(broker.base_url, "https://paper-api.alpaca.markets")
         self.assertEqual(state_scope(cfg_with_suffix), state_scope(cfg_without_suffix))
 
+    def test_alpaca_paper_execution_is_not_real_cash_for_journal(self) -> None:
+        self.assertFalse(is_real_cash_execution(config(live=True, alpaca_base_url="https://paper-api.alpaca.markets/v2")))
+        self.assertTrue(is_real_cash_execution(config(live=True, alpaca_base_url="https://api.alpaca.markets")))
+
     def test_stock_order_still_routes_to_stock_executor(self) -> None:
         broker = FakeAlpacaBroker(config())
         result = run(
@@ -120,6 +124,24 @@ class AlpacaExecutionRouterTests(unittest.TestCase):
         self.assertEqual(result["asset_class"], "stock")
         self.assertEqual(broker.calls[-1]["path"], "/v2/orders")
         self.assertEqual(broker.calls[-1]["payload"]["notional"], "2.00")
+
+    def test_stock_order_maps_robinhood_gfd_to_alpaca_day(self) -> None:
+        broker = FakeAlpacaBroker(config())
+        result = run(
+            broker.place_order(
+                {
+                    "asset_class": "stock",
+                    "symbol": "CELH",
+                    "side": "buy",
+                    "type": "market",
+                    "dollar_amount": "250.00",
+                    "time_in_force": "gfd",
+                }
+            )
+        )
+
+        self.assertEqual(result["asset_class"], "stock")
+        self.assertEqual(broker.calls[-1]["payload"]["time_in_force"], "day")
 
     def test_option_buy_to_open_limit_order_routes_to_options_executor(self) -> None:
         broker = FakeAlpacaBroker(config())
