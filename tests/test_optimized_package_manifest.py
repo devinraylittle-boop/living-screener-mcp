@@ -44,6 +44,7 @@ class OptimizedPackageManifestTests(unittest.TestCase):
             "paper_lifecycle_ledger",
             "broker_reconciliation_service",
             "external_alerting",
+            "runtime_readiness_evidence_file",
             "operator_kill_switch",
             "minimum_paper_sample_size",
             "walk_forward_validation",

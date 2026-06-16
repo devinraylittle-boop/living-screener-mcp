@@ -14,6 +14,7 @@ if str(ROOT) not in sys.path:
 
 from tools.broker_reconciliation import build_reconciliation_report
 from tools.paper_lifecycle_ledger import summarize as summarize_paper_lifecycle
+from tools.runtime_evidence import build_runtime_evidence_report
 from tools.stock_bridge_loop import parse_args
 
 GATES_PATH = ROOT / "config" / "autonomous_readiness_gates.json"
@@ -40,14 +41,18 @@ def build_report() -> dict[str, Any]:
     required = gates.get("required_before_limited_autonomous_live") or {}
     stage4 = (gates.get("stage_limits") or {}).get("stage_4_limited_autonomous_live_trades") or {}
     paper = summarize_paper_lifecycle()
-    reconciliation = build_reconciliation_report()
+    snapshot_path_text = os.getenv("BROKER_RECONCILIATION_SNAPSHOT_PATH", "").strip()
+    reconciliation = build_reconciliation_report(snapshot_path=Path(snapshot_path_text) if snapshot_path_text else None)
+    runtime_evidence = build_runtime_evidence_report()
     stage4_refused, stage4_refusal_note = _check_stage4_parser_refusal()
 
     required_files = [
         "tools/broker_reconciliation.py",
         "tools/paper_lifecycle_ledger.py",
+        "tools/runtime_evidence.py",
         "tools/stage4_readiness_report.py",
         "tools/status_stage4.ps1",
+        "tools/status_runtime_evidence.ps1",
         "tools/status_paper_lifecycle.ps1",
         "tools/status_stock_bridge.ps1",
         "tools/stop_stock_bridge.ps1",
@@ -72,8 +77,8 @@ def build_report() -> dict[str, Any]:
         "kill_switch_ready": reconciliation.get("checks", {}).get("kill_switch_present") is True
         and reconciliation.get("checks", {}).get("paper_kill_switch_present") is True,
         "operator_runbook_ready": (ROOT / "docs" / "TOMORROW_REMOTE_CONTROL_RUNBOOK.md").exists(),
-        "external_alerting_ready": False,
-        "secrets_rotation_confirmed": False,
+        "external_alerting_ready": runtime_evidence.get("external_alerting_ready") is True,
+        "secrets_rotation_confirmed": runtime_evidence.get("secrets_rotation_ready") is True,
     }
 
     code_blockers = [name for name, passed in code_checks.items() if not passed]
@@ -108,8 +113,17 @@ def build_report() -> dict[str, Any]:
             "max_drawdown_pct": paper.get("max_drawdown_pct"),
             "blockers": paper.get("blockers"),
         },
+        "runtime_evidence_summary": {
+            "status": runtime_evidence.get("status"),
+            "source": runtime_evidence.get("source"),
+            "external_alerting_ready": runtime_evidence.get("external_alerting_ready"),
+            "secrets_rotation_ready": runtime_evidence.get("secrets_rotation_ready"),
+            "monthly_model_review_ready": runtime_evidence.get("monthly_model_review_ready"),
+            "blockers": runtime_evidence.get("blockers"),
+        },
         "broker_reconciliation_summary": {
             "status": reconciliation.get("status"),
+            "snapshot_source": reconciliation.get("snapshot_source"),
             "open_order_count": reconciliation.get("open_order_count"),
             "open_position_count": reconciliation.get("open_position_count"),
             "duplicate_open_order_symbols": reconciliation.get("duplicate_open_order_symbols"),

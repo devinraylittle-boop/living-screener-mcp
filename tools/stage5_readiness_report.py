@@ -15,6 +15,7 @@ if str(ROOT) not in sys.path:
 
 from app.config import get_settings
 from tools.execution_order_validator import DEFAULT_LIVE_CASH_ORDER_PATH, validate_execution_order_file
+from tools.runtime_evidence import build_runtime_evidence_report
 from tools.stage4_readiness_report import build_report as build_stage4_report
 from tools.stock_bridge_loop import parse_args
 
@@ -121,6 +122,7 @@ def build_report() -> dict[str, Any]:
     stage4 = build_stage4_report()
     execution_order = validate_execution_order_file()
     live_cash_authority = validate_execution_order_file(DEFAULT_LIVE_CASH_ORDER_PATH)
+    runtime_evidence = build_runtime_evidence_report()
     local = _local_health()
     stage5_refused, stage5_refusal_note = _check_stage5_parser_refusal()
 
@@ -141,11 +143,13 @@ def build_report() -> dict[str, Any]:
     critical_failures = [name for name, passed in critical_checks.items() if not passed]
 
     live_cash_promotion_blockers = list(stage4.get("runtime_blockers") or [])
+    live_cash_promotion_blockers.append("stage5_90_day_clean_record_not_available")
+    if runtime_evidence.get("external_alerting_ready") is not True:
+        live_cash_promotion_blockers.append("external_monitoring_not_connected")
+    if runtime_evidence.get("monthly_model_review_ready") is not True:
+        live_cash_promotion_blockers.append("monthly_model_review_not_established")
     live_cash_promotion_blockers.extend(
         [
-            "stage5_90_day_clean_record_not_available",
-            "external_monitoring_not_connected",
-            "monthly_model_review_not_established",
             "options_realtime_broker_truth_not_connected",
             "live_crypto_not_connected",
             "operator_absent_tomorrow_requires_no_live_cash_autonomy",
@@ -157,13 +161,15 @@ def build_report() -> dict[str, Any]:
         live_cash_promotion_blockers.append("live_cash_authority_package_not_validated")
 
     known_weaknesses = [
-        "external alerting/monitoring is not connected",
-        "secrets rotation is not confirmed",
         "broker reconciliation snapshot is not continuously automated",
         "options realtime truth remains broker/manual or unconnected",
         "no autonomous live crypto connector is active",
         "L2/order-flow, catalyst context, and sector-relative strength are still missing or diagnostic only",
     ]
+    if runtime_evidence.get("external_alerting_ready") is not True:
+        known_weaknesses.append("external alerting/monitoring is not connected")
+    if runtime_evidence.get("secrets_rotation_ready") is not True:
+        known_weaknesses.append("secrets rotation is not confirmed")
     if execution_order.get("status") != "EXECUTION_ORDER_VALIDATED":
         known_weaknesses.append("full-autonomy execution order still contains unresolved bracketed authority/risk fields")
     if live_cash_authority.get("status") != "EXECUTION_ORDER_VALIDATED":
@@ -201,6 +207,13 @@ def build_report() -> dict[str, Any]:
             "decision": live_cash_authority.get("decision"),
             "blockers": live_cash_authority.get("blockers"),
             "unresolved_bracketed_fields": live_cash_authority.get("unresolved_bracketed_fields"),
+        },
+        "runtime_evidence_summary": {
+            "status": runtime_evidence.get("status"),
+            "external_alerting_ready": runtime_evidence.get("external_alerting_ready"),
+            "secrets_rotation_ready": runtime_evidence.get("secrets_rotation_ready"),
+            "monthly_model_review_ready": runtime_evidence.get("monthly_model_review_ready"),
+            "source": runtime_evidence.get("source"),
         },
         "broker_connection_status": {
             "alpaca_paper": "configured_and_running"
