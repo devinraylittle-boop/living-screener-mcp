@@ -1181,6 +1181,42 @@ def position_value(position: dict[str, Any], quote: dict[str, Any]) -> float:
     return qty * last
 
 
+def build_exit_order_args(config: BridgeConfig, symbol: str, qty: float, quote: dict[str, Any]) -> tuple[dict[str, str] | None, str | None]:
+    market_hours = resolve_market_hours(config)
+    whole_qty = abs(qty - round(qty)) <= 0.000001
+    if market_hours == "regular_hours" and not whole_qty:
+        return (
+            {
+                "account_number": config.account_number,
+                "symbol": symbol,
+                "side": "sell",
+                "type": "market",
+                "quantity": f"{qty:.6f}",
+                "time_in_force": "gfd",
+                "market_hours": "regular_hours",
+            },
+            None,
+        )
+    if not whole_qty:
+        return None, "fractional_exit_requires_regular_hours_market_order"
+    limit_price = marketable_limit_price("sell", quote)
+    if limit_price <= 0:
+        return None, "no_valid_exit_limit_price"
+    return (
+        {
+            "account_number": config.account_number,
+            "symbol": symbol,
+            "side": "sell",
+            "type": "limit",
+            "quantity": str(int(round(qty))),
+            "limit_price": f"{limit_price:.2f}",
+            "time_in_force": "gfd",
+            "market_hours": market_hours,
+        },
+        None,
+    )
+
+
 async def place_exit_order(broker: RobinhoodBroker, symbol: str, qty: float, args: dict[str, Any]) -> dict[str, Any]:
     try:
         return await broker.place_order({**args, "ref_id": str(uuid.uuid4())})
@@ -1219,44 +1255,10 @@ async def manage_positions(broker: RobinhoodBroker, config: BridgeConfig, state:
             exit_reason = "take_profit"
         if not exit_reason:
             continue
-        market_hours = resolve_market_hours(config)
-        if market_hours == "regular_hours":
-            args = {
-                "account_number": config.account_number,
-                "symbol": symbol,
-                "side": "sell",
-                "type": "market",
-                "quantity": f"{qty:.6f}",
-                "time_in_force": "gfd",
-                "market_hours": "regular_hours",
-            }
-        else:
-            if abs(qty - round(qty)) > 0.000001:
-                append_log(
-                    {
-                        "event": "exit_skipped_extended_fractional_not_supported",
-                        "symbol": symbol,
-                        "quantity": qty,
-                        "reason": exit_reason,
-                        "market_hours": market_hours,
-                        "note": "Robinhood equity tool supports fractional market orders in regular hours; extended-hours fractional exits may be rejected.",
-                    }
-                )
-                continue
-            limit_price = marketable_limit_price("sell", quotes.get(symbol) or {})
-            if limit_price <= 0:
-                append_log({"event": "exit_skipped_no_extended_limit_price", "symbol": symbol, "reason": exit_reason})
-                continue
-            args = {
-                "account_number": config.account_number,
-                "symbol": symbol,
-                "side": "sell",
-                "type": "limit",
-                "quantity": str(int(round(qty))),
-                "limit_price": f"{limit_price:.2f}",
-                "time_in_force": "gfd",
-                "market_hours": market_hours,
-            }
+        args, skip_reason = build_exit_order_args(config, symbol, qty, quotes.get(symbol) or {})
+        if not args:
+            append_log({"event": "exit_skipped_order_shape", "symbol": symbol, "reason": skip_reason, "exit_reason": exit_reason})
+            continue
         try:
             review = await broker.review_order(args)
         except Exception as exc:  # noqa: BLE001 - keep managing other positions after one broker refusal
@@ -1303,6 +1305,97 @@ async def manage_positions(broker: RobinhoodBroker, config: BridgeConfig, state:
         )
 
 
+def rotation_exit_candidate(
+    positions: list[dict[str, Any]],
+    position_quotes: dict[str, dict[str, Any]],
+    selected: dict[str, Any],
+    config: BridgeConfig,
+) -> dict[str, Any] | None:
+    selected_rank = as_float(selected.get("bridge_rank_score"))
+    if selected_rank < max(85.0, config.min_score + 8.0):
+        return None
+    if as_float(selected.get("spread_bps"), 9999.0) > min(config.max_spread_bps, 35.0):
+        return None
+    weakest: dict[str, Any] | None = None
+    weakest_pnl = 0.0
+    for pos in positions:
+        symbol = str(pos.get("symbol") or "").upper()
+        qty = as_float(pos.get("shares_available_for_sells") or pos.get("quantity"))
+        avg = as_float(pos.get("average_buy_price"))
+        last = as_float((position_quotes.get(symbol) or {}).get("last_trade_price"))
+        if not symbol or qty <= 0 or avg <= 0 or last <= 0:
+            continue
+        pnl_pct = (last - avg) / avg
+        if pnl_pct > 0:
+            continue
+        if weakest is None or pnl_pct < weakest_pnl:
+            weakest = {"symbol": symbol, "qty": qty, "pnl_pct": pnl_pct, "quote": position_quotes.get(symbol) or {}, "position": pos}
+            weakest_pnl = pnl_pct
+    return weakest
+
+
+async def maybe_rotate_position_for_better_setup(
+    broker: RobinhoodBroker,
+    config: BridgeConfig,
+    state: dict[str, Any],
+    positions: list[dict[str, Any]],
+    open_symbols: set[str],
+    candidates: list[dict[str, Any]],
+    candidate_quotes: dict[str, dict[str, Any]],
+    tradability: dict[str, dict[str, Any]],
+) -> bool:
+    if is_real_cash_execution(config):
+        append_log({"event": "rotation_skipped_real_cash_disabled", "open_symbols": sorted(open_symbols)})
+        return False
+    selected = select_long_candidate(candidates, candidate_quotes, tradability, open_symbols, config)
+    if not selected:
+        append_log({"event": "rotation_skipped_no_superior_candidate", "open_symbols": sorted(open_symbols)})
+        return False
+    position_quotes = await broker.quotes(sorted(open_symbols))
+    exit_target = rotation_exit_candidate(positions, position_quotes, selected, config)
+    if not exit_target:
+        append_log(
+            {
+                "event": "rotation_skipped_hold_existing_positions",
+                "candidate_symbol": selected["scan"]["ticker"],
+                "candidate_rank_score": selected.get("bridge_rank_score"),
+                "reason": "candidate_not_strong_enough_or_no_flat_losing_position",
+            }
+        )
+        return False
+    args, skip_reason = build_exit_order_args(config, exit_target["symbol"], exit_target["qty"], exit_target["quote"])
+    if not args:
+        append_log({"event": "rotation_exit_skipped_order_shape", "symbol": exit_target["symbol"], "reason": skip_reason})
+        return False
+    review = await broker.review_order(args)
+    append_log(
+        {
+            "event": "rotation_exit_review",
+            "exit_symbol": exit_target["symbol"],
+            "exit_pnl_pct": exit_target["pnl_pct"],
+            "candidate_symbol": selected["scan"]["ticker"],
+            "candidate_rank_score": selected.get("bridge_rank_score"),
+            "review": review,
+            "next_action": "Close first; re-evaluate the new candidate on the next cycle before opening.",
+        }
+    )
+    if not config.live:
+        return True
+    placed = await place_exit_order(broker, exit_target["symbol"], exit_target["qty"], args)
+    append_log(
+        {
+            "event": "rotation_exit_placed",
+            "exit_symbol": exit_target["symbol"],
+            "candidate_symbol": selected["scan"]["ticker"],
+            "order": placed,
+        }
+    )
+    state["rotation_pending_candidate"] = selected["scan"]["ticker"]
+    state["rotation_pending_since"] = utc_now()
+    save_state(state)
+    return True
+
+
 def build_entry_order_args(config: BridgeConfig, selected: dict[str, Any], notional: float, buying_power: float) -> tuple[dict[str, str] | None, str | None]:
     symbol = selected["scan"]["ticker"].upper()
     market_hours = resolve_market_hours(config)
@@ -1310,6 +1403,22 @@ def build_entry_order_args(config: BridgeConfig, selected: dict[str, Any], notio
         return None, "equity_market_closed"
     quote = selected.get("quote") or {}
     trade = selected.get("tradability") or {}
+    limit_price = marketable_limit_price("buy", quote)
+    whole_qty = whole_share_quantity(min(notional, buying_power), limit_price)
+    if limit_price > 0 and whole_qty >= 1:
+        return (
+            {
+                "account_number": config.account_number,
+                "symbol": symbol,
+                "side": "buy",
+                "type": "limit",
+                "quantity": str(whole_qty),
+                "limit_price": f"{limit_price:.2f}",
+                "time_in_force": "gfd",
+                "market_hours": market_hours,
+            },
+            None,
+        )
     if market_hours == "regular_hours":
         if not is_fractional_tradable(trade):
             ref_price = as_float(quote.get("ask_price")) or as_float(quote.get("last_trade_price"))
@@ -1342,25 +1451,11 @@ def build_entry_order_args(config: BridgeConfig, selected: dict[str, Any], notio
             },
             None,
         )
-    limit_price = marketable_limit_price("buy", quote)
-    quantity = whole_share_quantity(min(notional, buying_power), limit_price)
     if limit_price <= 0:
         return None, "no_valid_extended_limit_price"
-    if quantity < 1:
+    if whole_qty < 1:
         return None, f"extended_hours_requires_whole_share_limit_order_but_budget_{notional:.2f}_is_below_limit_{limit_price:.2f}"
-    return (
-        {
-            "account_number": config.account_number,
-            "symbol": symbol,
-            "side": "buy",
-            "type": "limit",
-            "quantity": str(quantity),
-            "limit_price": f"{limit_price:.2f}",
-            "time_in_force": "gfd",
-            "market_hours": market_hours,
-        },
-        None,
-    )
+    return None, "extended_hours_order_shape_unavailable"
 
 
 def is_real_cash_execution(config: BridgeConfig) -> bool:
@@ -1440,8 +1535,27 @@ async def run_cycle(broker: RobinhoodBroker, config: BridgeConfig, state: dict[s
     positions = await broker.positions()
     open_symbols = {str(pos.get("symbol") or "").upper() for pos in positions if as_float(pos.get("quantity")) > 0}
     open_orders = [order for order in await broker.orders_today() if str(order.get("state") or "").lower() in {"new", "queued", "confirmed", "unconfirmed", "partially_filled"}]
-    if len(open_symbols) >= config.max_open_positions or open_orders:
+    if open_orders:
         append_log({"event": "entry_skipped_capacity", "open_symbols": sorted(open_symbols), "open_order_count": len(open_orders)})
+        save_state(state)
+        return
+    candidates = scan_candidates(config)
+    symbols = [str(row.get("ticker") or "").upper() for row in candidates if row.get("ticker")]
+    quotes = await broker.quotes(symbols[:20])
+    tradability = await broker.tradability(symbols[:10])
+    if len(open_symbols) >= config.max_open_positions:
+        rotated = await maybe_rotate_position_for_better_setup(
+            broker,
+            config,
+            state,
+            positions,
+            open_symbols,
+            candidates,
+            quotes,
+            tradability,
+        )
+        if not rotated:
+            append_log({"event": "entry_skipped_capacity", "open_symbols": sorted(open_symbols), "open_order_count": len(open_orders)})
         save_state(state)
         return
     if int(state.get("trade_count") or 0) >= config.max_trades_per_day:
@@ -1453,10 +1567,6 @@ async def run_cycle(broker: RobinhoodBroker, config: BridgeConfig, state: dict[s
         append_log({"event": "entry_skipped_buying_power", "buying_power": buying_power, "min_order_notional": config.min_order_notional})
         save_state(state)
         return
-    candidates = scan_candidates(config)
-    symbols = [str(row.get("ticker") or "").upper() for row in candidates if row.get("ticker")]
-    quotes = await broker.quotes(symbols[:20])
-    tradability = await broker.tradability(symbols[:10])
     selected = select_long_candidate(candidates, quotes, tradability, open_symbols, config)
     if not selected:
         append_log({"event": "no_trade", "reason": "no_long_candidate_passed_bridge_filters"})

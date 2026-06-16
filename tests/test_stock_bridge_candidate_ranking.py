@@ -5,7 +5,14 @@ import unittest
 from typing import Any
 from unittest.mock import patch
 
-from tools.stock_bridge_loop import BridgeConfig, manage_positions, rank_long_candidates, select_long_candidate
+from tools.stock_bridge_loop import (
+    BridgeConfig,
+    build_entry_order_args,
+    manage_positions,
+    rank_long_candidates,
+    rotation_exit_candidate,
+    select_long_candidate,
+)
 
 
 def run(coro):
@@ -166,6 +173,66 @@ class StockBridgeCandidateRankingTests(unittest.TestCase):
         self.assertIn("bridge_evidence_profile", selected)
         append_log.assert_called_once()
         self.assertEqual(append_log.call_args.args[0]["event"], "candidate_ranking_summary")
+
+    def test_entry_order_prefers_whole_share_limit_when_budget_allows(self) -> None:
+        selected = {
+            "scan": {"ticker": "EDGE"},
+            "quote": {"bid_price": "9.99", "ask_price": "10.00", "last_trade_price": "10.00"},
+            "tradability": {"tradeable": True, "state": "active", "fractional_tradability": "tradable"},
+        }
+
+        with patch("tools.stock_bridge_loop.resolve_market_hours", return_value="regular_hours"):
+            args, reason = build_entry_order_args(config(), selected, notional=25, buying_power=25)
+
+        self.assertIsNone(reason)
+        self.assertEqual(args["type"], "limit")
+        self.assertEqual(args["quantity"], "2")
+        self.assertEqual(args["limit_price"], "10.02")
+
+    def test_entry_order_uses_fractional_market_only_when_whole_share_is_unavailable(self) -> None:
+        selected = {
+            "scan": {"ticker": "EDGE"},
+            "quote": {"bid_price": "99.90", "ask_price": "100.00", "last_trade_price": "100.00"},
+            "tradability": {"tradeable": True, "state": "active", "fractional_tradability": "tradable"},
+        }
+
+        with patch("tools.stock_bridge_loop.resolve_market_hours", return_value="regular_hours"):
+            args, reason = build_entry_order_args(config(), selected, notional=15, buying_power=15)
+
+        self.assertIsNone(reason)
+        self.assertEqual(args["type"], "market")
+        self.assertEqual(args["dollar_amount"], "15.00")
+
+    def test_rotation_only_selects_flat_or_losing_position_for_strong_candidate(self) -> None:
+        selected = {
+            "scan": {"ticker": "EDGE"},
+            "bridge_rank_score": 91,
+            "spread_bps": 8,
+        }
+        positions = [
+            {"symbol": "WIN", "quantity": "1", "average_buy_price": "10"},
+            {"symbol": "WEAK", "quantity": "1", "average_buy_price": "10"},
+        ]
+        position_quotes = {
+            "WIN": {"last_trade_price": "10.50", "bid_price": "10.49", "ask_price": "10.50"},
+            "WEAK": {"last_trade_price": "9.90", "bid_price": "9.89", "ask_price": "9.90"},
+        }
+
+        target = rotation_exit_candidate(positions, position_quotes, selected, config())
+
+        self.assertIsNotNone(target)
+        self.assertEqual(target["symbol"], "WEAK")
+
+    def test_rotation_rejects_marginal_candidate(self) -> None:
+        selected = {
+            "scan": {"ticker": "EDGE"},
+            "bridge_rank_score": 80,
+            "spread_bps": 8,
+        }
+        positions = [{"symbol": "WEAK", "quantity": "1", "average_buy_price": "10"}]
+        position_quotes = {"WEAK": {"last_trade_price": "9.90", "bid_price": "9.89", "ask_price": "9.90"}}
+
+        self.assertIsNone(rotation_exit_candidate(positions, position_quotes, selected, config()))
 
     def test_existing_hard_gates_still_block_invalid_candidate(self) -> None:
         bad = candidate("BAD", 95, relative_volume=2.0, vwap_state="below")
