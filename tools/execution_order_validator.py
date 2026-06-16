@@ -57,7 +57,11 @@ def validate_execution_order_text(text: str, *, source: str = "inline") -> dict[
         "unresolved_bracketed_fields": fields,
         "missing_sections": missing_sections,
         "decision": "NO_GO_LIVE_AUTONOMY" if blockers else "ORDER_TEXT_READY_FOR_STAGE_GATE_REVIEW",
-        "next_action": "Complete every bracketed authority/risk field, then re-run Stage 5 readiness. Live autonomy remains disabled until all Stage 5 gates pass.",
+        "next_action": (
+            "Complete every bracketed authority/risk field, then re-run Stage 5 readiness. Live autonomy remains disabled until all Stage 5 gates pass."
+            if blockers
+            else "Execution order text is complete. Re-run Stage 5 readiness; live autonomy remains disabled until every runtime gate passes."
+        ),
     }
 
 

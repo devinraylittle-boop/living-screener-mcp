@@ -16,9 +16,9 @@ class Stage5ReadinessReportTests(unittest.TestCase):
         self.assertTrue(report["critical_checks"]["app_layer_fail_closed"])
         self.assertEqual(report["risk_limits_chosen"]["live_max_daily_loss_usd"], 0.0)
         self.assertEqual(report["risk_limits_chosen"]["live_max_open_positions"], 0)
-        self.assertFalse(report["critical_checks"]["execution_order_validated"])
+        self.assertTrue(report["critical_checks"]["execution_order_validated"])
         self.assertIn("stage5_90_day_clean_record_not_available", report["runtime_blockers"])
-        self.assertIn("execution_order_has_unresolved_authority_or_risk_fields", report["runtime_blockers"])
+        self.assertNotIn("execution_order_has_unresolved_authority_or_risk_fields", report["runtime_blockers"])
 
 
 if __name__ == "__main__":

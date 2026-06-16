@@ -152,6 +152,19 @@ def build_report() -> dict[str, Any]:
     if execution_order.get("status") != "EXECUTION_ORDER_VALIDATED":
         runtime_blockers.append("execution_order_has_unresolved_authority_or_risk_fields")
 
+    known_weaknesses = [
+        "paper sample is too small for live promotion",
+        "only one market day of closed paper evidence",
+        "external alerting/monitoring is not connected",
+        "secrets rotation is not confirmed",
+        "broker reconciliation snapshot is not continuously automated",
+        "options realtime truth remains broker/manual or unconnected",
+        "no autonomous live crypto connector is active",
+        "L2/order-flow, catalyst context, and sector-relative strength are still missing or diagnostic only",
+    ]
+    if execution_order.get("status") != "EXECUTION_ORDER_VALIDATED":
+        known_weaknesses.append("full-autonomy execution order still contains unresolved bracketed authority/risk fields")
+
     final_decision = "NO_GO_LIVE_AUTONOMY"
     enabled_mode = "STAGE_2_ALPACA_PAPER_ONLY"
 
@@ -246,17 +259,7 @@ def build_report() -> dict[str, Any]:
             "stock_bridge_state": local["bridge_state"],
             "decision_journal": "app event storage available through local database when running",
         },
-        "known_weaknesses": [
-            "paper sample is too small for live promotion",
-            "only one market day of closed paper evidence",
-            "external alerting/monitoring is not connected",
-            "secrets rotation is not confirmed",
-            "broker reconciliation snapshot is not continuously automated",
-            "options realtime truth remains broker/manual or unconnected",
-            "no autonomous live crypto connector is active",
-            "L2/order-flow, catalyst context, and sector-relative strength are still missing or diagnostic only",
-            "full-autonomy execution order still contains unresolved bracketed authority/risk fields",
-        ],
+        "known_weaknesses": known_weaknesses,
         "stage4_summary": {
             "status": stage4.get("status"),
             "runtime_status": stage4.get("runtime_status"),

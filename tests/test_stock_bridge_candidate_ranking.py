@@ -290,7 +290,7 @@ class StockBridgeCandidateRankingTests(unittest.TestCase):
                 return {"broker": "alpaca", "close_position": {"id": "close-1"}, "symbol": symbol, "qty": qty}
 
         broker = CloseFallbackBroker()
-        with patch("tools.stock_bridge_loop.append_log") as append_log:
+        with patch("tools.stock_bridge_loop.append_log") as append_log, patch("tools.stock_bridge_loop.resolve_market_hours", return_value="regular_hours"):
             run(manage_positions(broker, config(live=True, take_profit_pct=0.01), {}))  # type: ignore[arg-type]
 
         events = [call.args[0]["event"] for call in append_log.call_args_list]
