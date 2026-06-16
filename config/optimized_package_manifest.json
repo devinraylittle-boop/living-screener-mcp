@@ -24,6 +24,7 @@
     "stage5_paper_only_lock_report",
     "full_autonomy_execution_order_validator",
     "full_autonomy_execution_order_template",
+    "live_cash_authority_package",
     "operator_runbooks",
     "stage3_human_approved_robinhood_live_profile",
     "stage3_status_and_kill_switch_scripts",
