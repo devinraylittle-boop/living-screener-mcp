@@ -181,6 +181,31 @@ def enforce_live_readiness_gate(live: bool, broker: str = "robinhood", alpaca_ba
         )
     if live and not stage_limits.get(stage, {}).get("human_required"):
         raise SystemExit("Live mode refused. Current live bridge requires human-approved Stage 3 operation.")
+    if live and broker == "alpaca":
+        raise SystemExit(
+            "Live mode refused. Stage 3 is currently scoped to small, human-supervised Robinhood equity orders only. "
+            "Alpaca remains approved for paper automation until separate Alpaca live-cash readiness is proven."
+        )
+
+
+def enforce_live_config_caps(config: BridgeConfig) -> None:
+    if not config.live or is_alpaca_paper_submission(config.live, config.broker, config.alpaca_base_url):
+        return
+    gates = load_readiness_gates()
+    stage = requested_autonomy_stage()
+    stage_limit = (gates.get("stage_limits") or {}).get(stage) or {}
+    max_order_notional = as_float(stage_limit.get("max_order_notional_usd"))
+    max_daily_loss = as_float(stage_limit.get("max_daily_loss_usd"))
+    if max_order_notional > 0 and config.max_order_notional > max_order_notional:
+        raise SystemExit(
+            f"Live mode refused. Stage 3 max_order_notional ${config.max_order_notional:.2f} exceeds "
+            f"configured cap ${max_order_notional:.2f}."
+        )
+    if max_daily_loss > 0 and config.max_daily_loss > max_daily_loss:
+        raise SystemExit(
+            f"Live mode refused. Stage 3 max_daily_loss ${config.max_daily_loss:.2f} exceeds "
+            f"configured cap ${max_daily_loss:.2f}."
+        )
 
 
 def today_key() -> str:
@@ -1586,7 +1611,7 @@ def parse_args(argv: list[str]) -> BridgeConfig:
     parser.add_argument("--min-order-notional", type=float, default=float(os.getenv("STOCK_BRIDGE_MIN_ORDER_NOTIONAL", "1")))
     parser.add_argument("--max-open-positions", type=int, default=int(os.getenv("STOCK_BRIDGE_MAX_OPEN_POSITIONS", "3")))
     parser.add_argument("--max-trades-per-day", type=int, default=int(os.getenv("STOCK_BRIDGE_MAX_TRADES_PER_DAY", "10")))
-    parser.add_argument("--max-daily-loss", type=float, default=float(os.getenv("STOCK_BRIDGE_MAX_DAILY_LOSS", "20")))
+    parser.add_argument("--max-daily-loss", type=float, default=float(os.getenv("STOCK_BRIDGE_MAX_DAILY_LOSS", "5")))
     parser.add_argument("--stop-loss-pct", type=float, default=float(os.getenv("STOCK_BRIDGE_STOP_LOSS_PCT", "0.0035")))
     parser.add_argument("--take-profit-pct", type=float, default=float(os.getenv("STOCK_BRIDGE_TAKE_PROFIT_PCT", "0.0045")))
     parser.add_argument("--allowed-broker-alert-types", default=os.getenv("STOCK_BRIDGE_ALLOWED_BROKER_ALERT_TYPES", "EQUITY_SUITABILITY"))
@@ -1611,6 +1636,7 @@ def parse_args(argv: list[str]) -> BridgeConfig:
     )
     config = BridgeConfig(**raw)
     enforce_live_readiness_gate(config.live, config.broker, config.alpaca_base_url)
+    enforce_live_config_caps(config)
     if (
         config.live
         and os.getenv("STOCK_BRIDGE_LIVE_AUTH") != LIVE_AUTH_VALUE

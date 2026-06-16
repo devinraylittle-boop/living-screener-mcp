@@ -1,7 +1,7 @@
 param(
     [string]$BaseUrl = "https://living-screener-mcp.onrender.com",
     [decimal]$MaxOrderNotional = 15,
-    [decimal]$MaxDailyLoss = 20,
+    [decimal]$MaxDailyLoss = 5,
     [decimal]$MinScore = 76,
     [decimal]$MinRelativeVolume = 0.45,
     [decimal]$MaxSpreadBps = 35,
